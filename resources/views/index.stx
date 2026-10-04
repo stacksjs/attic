@@ -169,6 +169,8 @@ const loadingMessages = state(false)
 const access = state('granted')
 const fixture = state(false)
 const resurface = state('inbox')
+const removal = state('confirm')
+const accessible = state(true)
 const query = state('')
 const results = state([])
 const searching = state(false)
@@ -309,6 +311,8 @@ async function loadStatus() {
   access.set(status.access)
   fixture.set(status.fixture)
   resurface.set(status.settings.resurface)
+  removal.set(status.settings.removal)
+  accessible.set(status.accessibility)
 }
 
 async function loadLists() {
@@ -431,7 +435,8 @@ async function archive(key = selectedKey()) {
     }
     selectNeighbour(key)
     await loadLists()
-    say(`Archived ${target.title}: ${result.messages.toLocaleString()} messages${result.attachmentsCopied ? `, ${result.attachmentsCopied} attachments` : ''} kept.`)
+    const kept = `${result.messages.toLocaleString()} messages${result.attachmentsCopied ? `, ${result.attachmentsCopied} attachments` : ''} kept`
+    say(`Archived ${target.title}: ${kept}. ${result.messagesApp?.detail ?? ''}`.trim())
   }
   catch (error) {
     say(error.message)
@@ -445,10 +450,16 @@ async function unarchive(key = selectedKey()) {
   const target = list().find(c => c.key === key)
   if (!target || target.state !== 'archived')
     return
-  await post('/api/unarchive', { key })
-  selectNeighbour(key)
-  await loadLists()
-  say(`${target.title} is back in the Inbox.`)
+  busy.set(key)
+  try {
+    const result = await post('/api/unarchive', { key })
+    selectNeighbour(key)
+    await loadLists()
+    say(`${target.title} is back in the Inbox. ${result.messagesApp?.detail ?? ''}`.trim())
+  }
+  finally {
+    busy.set('')
+  }
 }
 
 async function openInMessages(key = selectedKey()) {
@@ -457,45 +468,6 @@ async function openInMessages(key = selectedKey()) {
   }
   catch (error) {
     say(error.message)
-  }
-}
-
-/**
- * Messages is the only thing that can delete from Messages without fighting
- * iCloud. So: make sure Attic's copy is complete, then open the conversation
- * there for the person to delete. Attic notices when it has gone.
- */
-async function removeFromMessages(key = selectedKey()) {
-  const target = list().find(c => c.key === key)
-  if (!target || !target.inMessages)
-    return
-  busy.set(key)
-  try {
-    const result = await post('/api/archive', { key })
-    if (!result.verified) {
-      say('Attic could not copy every message yet, so nothing was removed.')
-      return
-    }
-    const answer = await showMessageBox({
-      type: 'info',
-      title: `Remove ${target.title} from Messages?`,
-      message: `Attic has a complete copy: ${result.messages.toLocaleString()} messages${result.attachmentsCopied ? ` and ${result.attachmentsCopied} attachments` : ''}. Messages will open on this conversation. Choose Conversation > Delete Conversation there. Messages keeps it in Recently Deleted for 30 days, and Attic keeps it for good.`,
-      buttons: ['Open in Messages', 'Cancel'],
-      defaultId: 0,
-      cancelId: 1,
-    })
-    if (answer.response !== 0)
-      return
-    await post('/api/open', { key })
-    if (target.state !== 'archived')
-      selectNeighbour(key)
-    await loadLists()
-  }
-  catch (error) {
-    say(error.message)
-  }
-  finally {
-    busy.set('')
   }
 }
 
@@ -520,6 +492,16 @@ async function forget(key = selectedKey()) {
   await loadLists()
 }
 
+async function setRemoval(mode) {
+  const saved = await post('/api/settings', { removal: mode })
+  removal.set(saved.removal)
+}
+
+async function allowAccessibility() {
+  const result = await post('/api/accessibility', {})
+  accessible.set(result.trusted)
+}
+
 async function setResurface(mode) {
   const saved = await post('/api/settings', { resurface: mode })
   resurface.set(saved.resurface)
@@ -538,8 +520,6 @@ async function rowMenu(event, c) {
     : [{ id: 'archive', title: 'Archive', icon: 'archivebox', shortcut: 'ctrl+cmd+a' }]
   items.push({ separator: true })
   items.push({ id: 'open', title: 'Show in Messages', icon: 'message', shortcut: 'cmd+o', disabled: !c.openable })
-  if (c.inMessages)
-    items.push({ id: 'remove', title: 'Remove from Messages…', icon: 'trash', shortcut: 'cmd+delete' })
   if (c.saved) {
     items.push({ separator: true })
     items.push({ id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'xmark.bin' })
@@ -551,8 +531,6 @@ async function rowMenu(event, c) {
     unarchive(c.key)
   else if (choice === 'open')
     openInMessages(c.key)
-  else if (choice === 'remove')
-    removeFromMessages(c.key)
   else if (choice === 'forget')
     forget(c.key)
 }
@@ -573,7 +551,6 @@ async function installMenus() {
           { label: 'Move to Inbox', shortcut: 'cmd+shift+u', onClick: () => unarchive() },
           { separator: true },
           { label: 'Show in Messages', shortcut: 'cmd+o', onClick: () => openInMessages() },
-          { label: 'Remove from Messages…', shortcut: 'cmd+delete', onClick: () => removeFromMessages() },
           { separator: true },
           { label: 'Delete Attic\'s Copy…', onClick: () => forget() },
         ],
@@ -693,6 +670,20 @@ onMount(async () => {
         <input type="radio" name="resurface" :checked="resurface() === 'stay'" @change="setResurface('stay')">
         <span>Keep it archived</span>
       </label>
+      <div class="font-semibold mt-4 mb-1.5" style="color: var(--label)">When you archive from iMessage</div>
+      <label class="flex items-center gap-2 py-0.5">
+        <input type="radio" name="removal" :checked="removal() === 'auto'" @change="setRemoval('auto')">
+        <span>Remove it from Messages</span>
+      </label>
+      <label class="flex items-center gap-2 py-0.5">
+        <input type="radio" name="removal" :checked="removal() === 'confirm'" @change="setRemoval('confirm')">
+        <span>Remove it, I confirm in Messages</span>
+      </label>
+      <label class="flex items-center gap-2 py-0.5">
+        <input type="radio" name="removal" :checked="removal() === 'off'" @change="setRemoval('off')">
+        <span>Keep it in Messages</span>
+      </label>
+      <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages</button>
       <div :if="fixture()" class="mt-3 tag">Sample data</div>
     </div>
   </nav>
@@ -800,9 +791,6 @@ onMount(async () => {
       </button>
       <button class="toolbar-button" title="Show in Messages (⌘O)" :disabled="!detail()?.openable" @click="openInMessages()">
         <span class="i-hugeicons-message-02 text-[16px]"></span>
-      </button>
-      <button :if="detail()?.inMessages" class="toolbar-button" title="Remove from Messages… (⌘⌫)" :disabled="busy() !== ''" @click="removeFromMessages()">
-        <span class="i-hugeicons-delete-02 text-[16px]"></span>
       </button>
     </header>
 

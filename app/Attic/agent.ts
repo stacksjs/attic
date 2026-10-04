@@ -11,6 +11,7 @@ import { Archiver } from './archiver'
 import { Contacts } from './contacts'
 import { messagesUrl } from './conversations'
 import { formatHandle } from './handles'
+import { accessibilityTrusted, eventually, recoverInMessages, removeFromMessages } from './messages-app'
 import { MessagesAccessError, MessagesDb } from './messages-db'
 import { addressBookDir, ATTACHMENTS_DIR, DATABASE_PATH, DATA_DIR, messagesDbPath, PORT_FILE } from './paths'
 import { ArchiveStore } from './store'
@@ -247,6 +248,86 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return store.setting('resurface') === 'stay' ? 'stay' : 'inbox'
   }
 
+  /**
+   * What archiving an iMessage conversation does to Messages: remove it there
+   * and confirm Messages' alert ('auto'), remove it and leave the alert to
+   * the person ('confirm'), or leave Messages alone ('off').
+   */
+  type RemovalMode = 'auto' | 'confirm' | 'off'
+  function removalMode(): RemovalMode {
+    const value = store.setting('removal')
+    return value === 'auto' || value === 'off' ? value : 'confirm'
+  }
+
+  /** Sample data must never reach the real Messages app. */
+  const usingSample = !!process.env.ATTIC_MESSAGES_DB
+
+  function liveConversation(key: string): LiveConversation | undefined {
+    try {
+      return archiver.live().find(c => c.key === key)
+    }
+    catch {
+      return undefined
+    }
+  }
+
+  /** Every label Messages might give the row: the contact's name, then the number. */
+  function rowNames(key: string): string[] {
+    const summary = summaryFor(key)
+    const stored = store.conversation(key)
+    const participants = liveConversation(key)?.participants ?? stored?.participants ?? []
+    const names = [summary?.title]
+    if (summary?.kind === 'direct' && participants[0])
+      names.push(formatHandle(participants[0]), participants[0])
+    return [...new Set(names.filter((n): n is string => !!n))]
+  }
+
+  function urlFor(key: string): string | null {
+    const live = liveConversation(key)
+    const stored = store.conversation(key)
+    const kind = live?.kind ?? stored?.kind
+    if (!kind)
+      return null
+    return messagesUrl({ kind, groupId: live?.groupId ?? stored?.groupId ?? null, participants: live?.participants ?? stored?.participants ?? [] })
+  }
+
+  interface MessagesOutcome {
+    attempted: boolean
+    removed: boolean
+    detail: string
+  }
+
+  async function takeOutOfMessages(key: string): Promise<MessagesOutcome> {
+    const mode = removalMode()
+    if (mode === 'off')
+      return { attempted: false, removed: false, detail: 'Kept in Messages, as set.' }
+    if (usingSample)
+      return { attempted: false, removed: false, detail: 'Sample data: the real Messages app is not touched.' }
+    if (!liveConversation(key)?.messageCount)
+      return { attempted: false, removed: true, detail: 'Already gone from Messages.' }
+
+    const outcome = await removeFromMessages(rowNames(key), urlFor(key), mode === 'auto')
+    if (!outcome.ok)
+      return { attempted: true, removed: false, detail: outcome.detail }
+    if (mode === 'confirm')
+      return { attempted: true, removed: false, detail: 'Confirm the delete in Messages.' }
+    const gone = await eventually(() => !liveConversation(key)?.messageCount)
+    archiver.sync(resurfaceMode())
+    return { attempted: true, removed: gone, detail: gone ? 'Removed from Messages.' : 'Messages has not removed it yet.' }
+  }
+
+  async function bringBackToMessages(key: string): Promise<MessagesOutcome> {
+    const stored = store.conversation(key)
+    if (!stored?.removedAt || usingSample)
+      return { attempted: false, removed: false, detail: '' }
+    const outcome = await recoverInMessages(rowNames(key))
+    if (!outcome.ok)
+      return { attempted: true, removed: true, detail: outcome.code === 3 ? 'No longer in Messages\' Recently Deleted, so Attic\'s copy is all there is.' : outcome.detail }
+    const back = await eventually(() => !!liveConversation(key)?.messageCount)
+    archiver.sync(resurfaceMode())
+    return { attempted: true, removed: !back, detail: back ? 'Recovered in Messages.' : 'Messages has not recovered it yet.' }
+  }
+
   let lastState: AccessState = access()
   let lastStamp = ''
   function stamp(): string {
@@ -353,7 +434,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
             fixture: !!process.env.ATTIC_MESSAGES_DB,
             archived: stored.filter(c => c.state === 'archived').length,
             saved: stored.length,
-            settings: { resurface: resurfaceMode() },
+            settings: { resurface: resurfaceMode(), removal: removalMode() },
+            accessibility: usingSample ? true : await accessibilityTrusted(false),
           })
         }
         case 'GET /api/conversations': {
@@ -388,16 +470,22 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           if (!key)
             return problem('key is required')
           const result: ArchiveResult = archiver.archive(key)
+          // Only a complete, verified copy may leave Messages.
+          const messagesApp = result.verified ? await takeOutOfMessages(key) : { attempted: false, removed: false, detail: 'The copy is not complete yet, so Messages was not touched.' }
           broadcast({ type: 'changed', resurfaced: [], removed: [] })
-          return json(result)
+          return json({ ...result, messagesApp })
         }
         case 'POST /api/unarchive': {
           const key = keyFrom(await body(req))
           if (!key)
             return problem('key is required')
+          const messagesApp = await bringBackToMessages(key)
           archiver.unarchive(key)
           broadcast({ type: 'changed', resurfaced: [], removed: [] })
-          return json({ ok: true })
+          return json({ ok: true, messagesApp })
+        }
+        case 'POST /api/accessibility': {
+          return json({ trusted: await accessibilityTrusted(true) })
         }
         case 'POST /api/forget': {
           const key = keyFrom(await body(req))
@@ -444,7 +532,9 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const data = await body(req)
           if (data.resurface === 'inbox' || data.resurface === 'stay')
             store.setSetting('resurface', data.resurface)
-          return json({ resurface: resurfaceMode() })
+          if (data.removal === 'auto' || data.removal === 'confirm' || data.removal === 'off')
+            store.setSetting('removal', data.removal)
+          return json({ resurface: resurfaceMode(), removal: removalMode() })
         }
         case 'POST /api/privacy': {
           openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')

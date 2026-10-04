@@ -1,7 +1,7 @@
 {
   "name": "attic",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Archive iMessage conversations on your Mac, natively.",
   "license": "MIT",
@@ -23,6 +23,8 @@
     "build:ui": "bun x --bun stx build --pages resources/views --out storage/attic/web --no-sitemap",
     "app": "bun run build:ui && bun app/Desktop/launcher.ts",
     "app:sample": "bun run build:ui && bun scripts/app-sample.ts",
+    "build:helper": "mkdir -p storage/attic/bin && swiftc -O app/Desktop/messages-control.swift -o storage/attic/bin/attic-messages",
+    "build:app": "bun scripts/build-app.ts",
     "deploy": "./buddy deploy",
     "lint": "./buddy lint",
     "lint:fix": "./buddy lint:fix",
