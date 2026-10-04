@@ -1,65 +1,855 @@
-<script server>
-/**
- * The starter page `buddy new` gives every app, at `/`.
- *
- * Everything that names the site comes from the app's own config: the title
- * from APP_NAME and the canonical URL from APP_URL (via config/app.ts), so a
- * deploy of an untouched app describes itself rather than anyone else.
- * Replace this file with your own homepage.
- */
-import { config } from '@stacksjs/config'
-
-const appName = config.app.name || 'My App'
-
-// APP_URL is often a bare host (`my-app.localhost`), which is not a valid
-// canonical href on its own.
-const rawUrl = String(config.app.url || '').replace(/\/+$/, '')
-const siteUrl = rawUrl && !/^https?:\/\//.test(rawUrl) ? `https://${rawUrl}` : rawUrl
-const canonicalUrl = siteUrl ? `${siteUrl}/` : ''
-
-const pageDescription = `${appName} is up and running.`
-
-const nextSteps = [
-  { icon: 'i-hugeicons-file-edit', title: 'Edit this page', path: 'resources/views/index.stx' },
-  { icon: 'i-hugeicons-database-01', title: 'Define a model', path: 'app/Models' },
-  { icon: 'i-hugeicons-route-01', title: 'Add an API route', path: 'routes/api.ts' },
-  { icon: 'i-hugeicons-settings-02', title: 'Configure the app', path: 'config/app.ts' },
-]
-</script>
-
-@nolayout
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ appName }}</title>
-    <meta name="description" content="{{ pageDescription }}">
-    @if(canonicalUrl)
-      <link rel="canonical" href="{{ canonicalUrl }}">
-    @endif
-  </head>
-  <body class="min-h-screen bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
-    <main class="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-16">
-      <p class="text-sm font-medium text-neutral-500 dark:text-neutral-400">Your app is running</p>
-      <h1 class="mt-2 text-4xl font-semibold tracking-tight">{{ appName }}</h1>
-      <p class="mt-4 text-neutral-600 dark:text-neutral-300">
-        Start with <code class="rounded bg-neutral-200 px-1.5 py-0.5 text-sm dark:bg-neutral-800">./buddy dev</code>, then make it yours.
-      </p>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Attic</title>
+  <!--
+    Attic's window. Served by the Attic agent on 127.0.0.1 and rendered by the
+    Craft runtime with the titlebar hidden over the system's window material,
+    so the page draws its own Mail-style chrome: a translucent sidebar under
+    the traffic lights, a conversation list, and the transcript.
+  -->
+  <style>
+    :root {
+      --label: rgba(0, 0, 0, .86);
+      --secondary: rgba(0, 0, 0, .52);
+      --tertiary: rgba(0, 0, 0, .3);
+      --separator: rgba(0, 0, 0, .09);
+      --accent: #007aff;
+      --sidebar-selected: rgba(0, 0, 0, .08);
+      --list-bg: rgba(255, 255, 255, .78);
+      --pane-bg: #ffffff;
+      --row-selected: #0a6cff;
+      --bubble-in: #e9e9eb;
+      --bubble-in-text: #000;
+      --bubble-imessage: #0b84fe;
+      --bubble-sms: #34c759;
+      --chip: rgba(0, 0, 0, .05);
+      --amber: #bf6f00;
+      --window-controls-height: var(--craft-window-controls-height, 28px);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --label: rgba(255, 255, 255, .88);
+        --secondary: rgba(255, 255, 255, .55);
+        --tertiary: rgba(255, 255, 255, .28);
+        --separator: rgba(255, 255, 255, .1);
+        --accent: #0a84ff;
+        --sidebar-selected: rgba(255, 255, 255, .1);
+        --list-bg: rgba(30, 30, 30, .72);
+        --pane-bg: #1e1e1e;
+        --row-selected: #0a6cff;
+        --bubble-in: #3a3a3c;
+        --bubble-in-text: #fff;
+        --chip: rgba(255, 255, 255, .07);
+        --amber: #ffb340;
+      }
+    }
+    @supports (color: -apple-system-label) {
+      :root {
+        --label: -apple-system-label;
+        --secondary: -apple-system-secondary-label;
+        --tertiary: -apple-system-tertiary-label;
+        --separator: -apple-system-separator;
+        --accent: -apple-system-control-accent;
+      }
+    }
 
-      <ul class="mt-10 divide-y divide-neutral-200 border-y border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
-        @foreach(nextSteps as step)
-          <li class="flex items-center gap-4 py-4">
-            <span class="{{ step.icon }} size-5 text-neutral-500 dark:text-neutral-400" aria-hidden="true"></span>
-            <span class="font-medium">{{ step.title }}</span>
-            <code class="ml-auto text-sm text-neutral-500 dark:text-neutral-400">{{ step.path }}</code>
-          </li>
-        @endforeach
-      </ul>
+    html, body { height: 100%; margin: 0; }
+    body {
+      font: 13px/1.38 -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      color: var(--label);
+      background: transparent;
+      -webkit-user-select: none;
+      user-select: none;
+      cursor: default;
+      overflow: hidden;
+    }
+    button { font: inherit; color: inherit; }
+    .selectable { -webkit-user-select: text; user-select: text; cursor: text; }
 
-      <p class="mt-10 text-sm text-neutral-500 dark:text-neutral-400">
-        <a class="underline underline-offset-4 hover:text-neutral-900 dark:hover:text-neutral-100" href="https://stacksjs.com/docs">Read the Stacks docs</a>
-      </p>
-    </main>
-  </body>
+    .sidebar-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 9px; margin: 1px 10px; border-radius: 7px;
+      background: none; border: 0; width: calc(100% - 20px); text-align: left;
+    }
+    .sidebar-item[aria-current='true'] { background: var(--sidebar-selected); }
+    .sidebar-item .count { margin-left: auto; color: var(--secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+    .row {
+      display: grid; grid-template-columns: 40px 1fr; gap: 10px;
+      padding: 9px 12px 9px 18px; margin: 0 8px; border-radius: 9px; position: relative;
+    }
+    .row + .row::before {
+      content: ''; position: absolute; top: 0; left: 68px; right: 10px; height: 1px; background: var(--separator);
+    }
+    .row[aria-selected='true'] { background: var(--row-selected); color: #fff; }
+    .row[aria-selected='true']::before, .row[aria-selected='true'] + .row::before { display: none; }
+    .row[aria-selected='true'] .muted { color: rgba(255, 255, 255, .78); }
+    .row .unread {
+      position: absolute; left: 5px; top: 50%; width: 9px; height: 9px; margin-top: -5px;
+      border-radius: 50%; background: var(--accent);
+    }
+    .muted { color: var(--secondary); }
+
+    .avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: linear-gradient(180deg, #a5abb8, #858994);
+      color: #fff; font-weight: 600; font-size: 15px; letter-spacing: .02em;
+    }
+    .avatar.large { width: 30px; height: 30px; font-size: 12px; }
+
+    .tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+      background: var(--chip); color: var(--secondary);
+    }
+    .row[aria-selected='true'] .tag { background: rgba(255, 255, 255, .2); color: #fff; }
+
+    .toolbar-button {
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 28px; padding: 0 10px; border-radius: 7px;
+      border: 0; background: transparent; color: var(--label);
+    }
+    .toolbar-button:hover { background: var(--chip); }
+    .toolbar-button:active { background: var(--sidebar-selected); }
+    .toolbar-button[disabled] { opacity: .4; }
+
+    .bubble {
+      max-width: min(70%, 520px); padding: 6px 12px; border-radius: 18px;
+      white-space: pre-wrap; overflow-wrap: anywhere; position: relative;
+    }
+    .bubble.in { background: var(--bubble-in); color: var(--bubble-in-text); }
+    .bubble.out { background: var(--bubble-imessage); color: #fff; }
+    .bubble.out.sms { background: var(--bubble-sms); }
+    .bubble.attic { box-shadow: inset 0 0 0 1.5px var(--amber); }
+    .reactions {
+      position: absolute; top: -12px; display: flex; gap: 2px;
+      background: var(--pane-bg); border-radius: 10px; padding: 1px 4px;
+      box-shadow: 0 0 0 1px var(--separator); font-size: 11px;
+    }
+    .bubble.in .reactions { right: -10px; }
+    .bubble.out .reactions { left: -10px; }
+
+    .search {
+      width: 100%; height: 28px; box-sizing: border-box; padding: 0 8px 0 26px;
+      border-radius: 7px; border: 0; outline: none;
+      background: var(--chip); color: var(--label); font: inherit;
+    }
+    .search:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+    .scroller { overflow-y: auto; overscroll-behavior: contain; }
+    .scroller::-webkit-scrollbar { width: 8px; }
+    .scroller::-webkit-scrollbar-thumb { background: var(--tertiary); border-radius: 4px; }
+
+    mark { background: color-mix(in srgb, #ffd60a 55%, transparent); color: inherit; border-radius: 2px; }
+
+    .banner {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 10px 12px; border-radius: 10px; background: var(--chip);
+    }
+  </style>
+</head>
+<body>
+<script client>
+import { app, contextMenu, menu, notifications, showMessageBox, standardMenus } from '@stacksjs/desktop/browser'
+
+/* ---------- state ---------- */
+const view = state('inbox')
+const inbox = state([])
+const archived = state([])
+const selectedKey = state('')
+const detail = state(null)
+const messages = state([])
+const hasEarlier = state(false)
+const loadingMessages = state(false)
+const access = state('granted')
+const fixture = state(false)
+const resurface = state('inbox')
+const query = state('')
+const results = state([])
+const searching = state(false)
+const busy = state('')
+const flash = state('')
+
+const list = derived(() => (view() === 'archived' ? archived() : inbox()))
+const inboxCount = derived(() => inbox().length)
+const archivedCount = derived(() => archived().length)
+const selected = derived(() => list().find(c => c.key === selectedKey()) ?? null)
+const needsAccess = derived(() => access() === 'needs-full-disk-access')
+const noMessages = derived(() => access() === 'no-messages')
+const showingResults = derived(() => query().trim().length > 0)
+
+/* ---------- formatting ---------- */
+const timeOnly = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'long' })
+const shortDate = new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' })
+const longDate = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+
+function startOfDay(ms) {
+  const d = new Date(ms)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/** The list's timestamp, the way Messages writes it. */
+function when(ms) {
+  if (!ms)
+    return ''
+  const today = startOfDay(Date.now())
+  if (ms >= today)
+    return timeOnly.format(ms)
+  if (ms >= today - 86_400_000)
+    return 'Yesterday'
+  if (ms >= today - 6 * 86_400_000)
+    return weekday.format(ms)
+  return shortDate.format(ms)
+}
+
+function dayLabel(ms) {
+  const today = startOfDay(Date.now())
+  if (ms >= today)
+    return `Today ${timeOnly.format(ms)}`
+  if (ms >= today - 86_400_000)
+    return `Yesterday ${timeOnly.format(ms)}`
+  return `${longDate.format(ms)} at ${timeOnly.format(ms)}`
+}
+
+function bytes(n) {
+  if (!n)
+    return '0 KB'
+  const units = ['bytes', 'KB', 'MB', 'GB']
+  let i = 0
+  let v = n
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`
+}
+
+const REACTIONS = { 2000: '❤️', 2001: '👍', 2002: '👎', 2003: '😂', 2004: '‼️', 2005: '❓', 2006: '😀', 2007: '🔖' }
+function reactionGlyph(type) {
+  return REACTIONS[type] ?? '•'
+}
+
+function preview(c) {
+  if (!c.inMessages)
+    return c.savedMessages > 0 ? `${c.savedMessages.toLocaleString()} messages kept by Attic` : 'Kept by Attic'
+  return c.preview ?? 'Attachment'
+}
+
+function snippetHtml(snippet) {
+  const escaped = snippet.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[ch])
+  return escaped.replace(/\u0001/g, '<mark>').replace(/\u0002/g, '</mark>')
+}
+
+function eventText(m) {
+  return m.groupTitle ? `Named the conversation “${m.groupTitle}”` : (m.text || 'Conversation updated')
+}
+
+function unsentText(m) {
+  return m.isFromMe ? 'You unsent a message' : `${m.senderName ?? 'Someone'} unsent a message`
+}
+
+function bubbleClass(m) {
+  return [m.isFromMe ? 'out' : 'in', m.service === 'SMS' ? 'sms' : '', m.inMessages ? '' : 'attic'].join(' ')
+}
+
+function keptSummary(d) {
+  if (!d || !d.saved)
+    return ''
+  const parts = [`${d.savedMessages.toLocaleString()} messages kept`]
+  if (d.attachments)
+    parts.push(`${d.attachments} attachments (${bytes(d.attachmentBytes)})`)
+  return ` · ${parts.join(' · ')}`
+}
+
+function isImage(a) {
+  return !!a.mimeType && a.mimeType.startsWith('image/') && a.available
+}
+
+/** The transcript, newest first (the scroller is column-reverse), with a day header where the gap is large. */
+const timeline = derived(() => {
+  const rows = []
+  const all = messages()
+  for (let i = all.length - 1; i >= 0; i--) {
+    const m = all[i]
+    const prev = all[i - 1]
+    rows.push({ type: 'message', id: m.guid, m, showSender: detail()?.kind === 'group' && !m.isFromMe && (!prev || prev.sender !== m.sender || prev.isFromMe) })
+    // Pushed bottom-up: the day header sits directly above its message, and
+    // the "kept by Attic" divider above that.
+    const gap = !prev || m.sentAt - prev.sentAt > 60 * 60_000
+    if (gap)
+      rows.push({ type: 'day', id: `day-${m.guid}`, label: dayLabel(m.sentAt) })
+    if (prev && !prev.inMessages && m.inMessages)
+      rows.push({ type: 'kept', id: `kept-${m.guid}` })
+  }
+  return rows
+})
+
+/* ---------- data ---------- */
+async function api(path, init) {
+  const response = await fetch(path, { credentials: 'same-origin', ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok)
+    throw new Error(data.error || `Request failed (${response.status})`)
+  return data
+}
+
+async function post(path, payload) {
+  return api(path, { method: 'POST', body: JSON.stringify(payload) })
+}
+
+async function loadStatus() {
+  const status = await api('/api/status')
+  access.set(status.access)
+  fixture.set(status.fixture)
+  resurface.set(status.settings.resurface)
+}
+
+async function loadLists() {
+  const [a, b] = await Promise.all([api('/api/conversations?view=inbox'), api('/api/conversations?view=archived')])
+  inbox.set(a)
+  archived.set(b)
+}
+
+async function loadConversation(key) {
+  if (!key) {
+    detail.set(null)
+    messages.set([])
+    return
+  }
+  loadingMessages.set(true)
+  try {
+    const [info, transcript] = await Promise.all([
+      api(`/api/conversation?key=${encodeURIComponent(key)}`),
+      api(`/api/messages?key=${encodeURIComponent(key)}`),
+    ])
+    if (selectedKey() !== key)
+      return
+    detail.set(info)
+    // A refresh that changed nothing leaves the rendered transcript alone.
+    if (fingerprint(transcript.messages) !== fingerprint(messages()))
+      messages.set(transcript.messages)
+    hasEarlier.set(transcript.hasEarlier)
+  }
+  catch (error) {
+    say(error.message)
+  }
+  finally {
+    loadingMessages.set(false)
+  }
+}
+
+/** Identity of a transcript as rendered: every message, edit, unsend and reaction. */
+function fingerprint(list) {
+  return list.map(m => `${m.guid}:${m.editedAt ?? ''}:${m.unsent ? 1 : 0}:${m.reactions.length}:${m.inMessages ? 1 : 0}`).join('|')
+}
+
+async function loadEarlier() {
+  const first = messages()[0]
+  if (!first)
+    return
+  const key = selectedKey()
+  const transcript = await api(`/api/messages?key=${encodeURIComponent(key)}&before=${first.sentAt}`)
+  if (selectedKey() !== key)
+    return
+  messages.set([...transcript.messages, ...messages()])
+  hasEarlier.set(transcript.hasEarlier)
+}
+
+async function refresh() {
+  await loadStatus().catch(() => {})
+  await loadLists().catch(() => {})
+  if (selectedKey()) {
+    const stillThere = list().some(c => c.key === selectedKey())
+    if (stillThere)
+      await loadConversation(selectedKey())
+  }
+}
+
+function say(text) {
+  flash.set(text)
+  setTimeout(() => {
+    if (flash() === text)
+      flash.set('')
+  }, 4000)
+}
+
+/* ---------- actions ---------- */
+function select(key) {
+  if (selectedKey() === key)
+    return
+  selectedKey.set(key)
+  try {
+    localStorage.setItem('attic:selected', key)
+  }
+  catch {}
+  loadConversation(key)
+}
+
+function show(next) {
+  view.set(next)
+  query.set('')
+  const first = list()[0]
+  select(first ? first.key : '')
+}
+
+function move(delta) {
+  const rows = list()
+  if (rows.length === 0)
+    return
+  const at = rows.findIndex(c => c.key === selectedKey())
+  const next = rows[Math.max(0, Math.min(rows.length - 1, at + delta))]
+  if (next)
+    select(next.key)
+}
+
+/** Select whatever follows the conversation leaving the current list. */
+function selectNeighbour(key) {
+  const rows = list()
+  const at = rows.findIndex(c => c.key === key)
+  const next = rows[at + 1] ?? rows[at - 1]
+  selectedKey.set(next ? next.key : '')
+  loadConversation(next ? next.key : '')
+}
+
+async function archive(key = selectedKey()) {
+  const target = list().find(c => c.key === key)
+  if (!target || target.state === 'archived')
+    return
+  busy.set(key)
+  try {
+    const result = await post('/api/archive', { key })
+    if (!result.verified) {
+      say('Attic could not copy every message yet, so it stays in the Inbox. Try again in a moment.')
+      return
+    }
+    selectNeighbour(key)
+    await loadLists()
+    say(`Archived ${target.title}: ${result.messages.toLocaleString()} messages${result.attachmentsCopied ? `, ${result.attachmentsCopied} attachments` : ''} kept.`)
+  }
+  catch (error) {
+    say(error.message)
+  }
+  finally {
+    busy.set('')
+  }
+}
+
+async function unarchive(key = selectedKey()) {
+  const target = list().find(c => c.key === key)
+  if (!target || target.state !== 'archived')
+    return
+  await post('/api/unarchive', { key })
+  selectNeighbour(key)
+  await loadLists()
+  say(`${target.title} is back in the Inbox.`)
+}
+
+async function openInMessages(key = selectedKey()) {
+  try {
+    await post('/api/open', { key })
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+/**
+ * Messages is the only thing that can delete from Messages without fighting
+ * iCloud. So: make sure Attic's copy is complete, then open the conversation
+ * there for the person to delete. Attic notices when it has gone.
+ */
+async function removeFromMessages(key = selectedKey()) {
+  const target = list().find(c => c.key === key)
+  if (!target || !target.inMessages)
+    return
+  busy.set(key)
+  try {
+    const result = await post('/api/archive', { key })
+    if (!result.verified) {
+      say('Attic could not copy every message yet, so nothing was removed.')
+      return
+    }
+    const answer = await showMessageBox({
+      type: 'info',
+      title: `Remove ${target.title} from Messages?`,
+      message: `Attic has a complete copy: ${result.messages.toLocaleString()} messages${result.attachmentsCopied ? ` and ${result.attachmentsCopied} attachments` : ''}. Messages will open on this conversation. Choose Conversation > Delete Conversation there. Messages keeps it in Recently Deleted for 30 days, and Attic keeps it for good.`,
+      buttons: ['Open in Messages', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+    })
+    if (answer.response !== 0)
+      return
+    await post('/api/open', { key })
+    if (target.state !== 'archived')
+      selectNeighbour(key)
+    await loadLists()
+  }
+  catch (error) {
+    say(error.message)
+  }
+  finally {
+    busy.set('')
+  }
+}
+
+async function forget(key = selectedKey()) {
+  const target = list().find(c => c.key === key)
+  if (!target || !target.saved)
+    return
+  const answer = await showMessageBox({
+    type: 'warning',
+    title: `Delete Attic's copy of ${target.title}?`,
+    message: target.inMessages
+      ? 'The conversation stays in Messages. Attic forgets its archived copy and attachments.'
+      : 'This conversation is no longer in Messages, so Attic\'s copy is the only one. It cannot be recovered.',
+    buttons: ['Delete Copy', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+  })
+  if (answer.response !== 0)
+    return
+  await post('/api/forget', { key })
+  selectNeighbour(key)
+  await loadLists()
+}
+
+async function setResurface(mode) {
+  const saved = await post('/api/settings', { resurface: mode })
+  resurface.set(saved.resurface)
+}
+
+async function grantAccess() {
+  await post('/api/privacy', {})
+}
+
+/* ---------- native menus ---------- */
+async function rowMenu(event, c) {
+  event.preventDefault()
+  select(c.key)
+  const items = c.state === 'archived'
+    ? [{ id: 'unarchive', title: 'Move to Inbox', icon: 'tray.and.arrow.up', shortcut: 'cmd+shift+u' }]
+    : [{ id: 'archive', title: 'Archive', icon: 'archivebox', shortcut: 'ctrl+cmd+a' }]
+  items.push({ separator: true })
+  items.push({ id: 'open', title: 'Show in Messages', icon: 'message', shortcut: 'cmd+o', disabled: !c.openable })
+  if (c.inMessages)
+    items.push({ id: 'remove', title: 'Remove from Messages…', icon: 'trash', shortcut: 'cmd+delete' })
+  if (c.saved) {
+    items.push({ separator: true })
+    items.push({ id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'xmark.bin' })
+  }
+  const choice = await contextMenu.pick({ x: event.clientX, y: event.clientY, targetId: c.key, items })
+  if (choice === 'archive')
+    archive(c.key)
+  else if (choice === 'unarchive')
+    unarchive(c.key)
+  else if (choice === 'open')
+    openInMessages(c.key)
+  else if (choice === 'remove')
+    removeFromMessages(c.key)
+  else if (choice === 'forget')
+    forget(c.key)
+}
+
+const searchField = useFocus('#search')
+function focusSearch() {
+  searchField.focus()
+}
+
+async function installMenus() {
+  await menu.set({
+    menus: [
+      ...standardMenus.leading('Attic'),
+      {
+        label: 'Conversation',
+        items: [
+          { label: 'Archive', shortcut: 'ctrl+cmd+a', onClick: () => archive() },
+          { label: 'Move to Inbox', shortcut: 'cmd+shift+u', onClick: () => unarchive() },
+          { separator: true },
+          { label: 'Show in Messages', shortcut: 'cmd+o', onClick: () => openInMessages() },
+          { label: 'Remove from Messages…', shortcut: 'cmd+delete', onClick: () => removeFromMessages() },
+          { separator: true },
+          { label: 'Delete Attic\'s Copy…', onClick: () => forget() },
+        ],
+      },
+      {
+        label: 'View',
+        items: [
+          { label: 'Inbox', shortcut: 'cmd+1', onClick: () => show('inbox') },
+          { label: 'Archived', shortcut: 'cmd+2', onClick: () => show('archived') },
+          { separator: true },
+          { label: 'Find', shortcut: 'cmd+f', onClick: () => focusSearch() },
+          { label: 'Next Conversation', shortcut: 'cmd+down', onClick: () => move(1) },
+          { label: 'Previous Conversation', shortcut: 'cmd+up', onClick: () => move(-1) },
+        ],
+      },
+      standardMenus.window(),
+    ],
+  })
+}
+
+/* ---------- search ---------- */
+let searchTimer = 0
+effect(() => {
+  const q = query().trim()
+  clearTimeout(searchTimer)
+  if (!q) {
+    results.set([])
+    return
+  }
+  searching.set(true)
+  searchTimer = setTimeout(async () => {
+    try {
+      results.set(await api(`/api/search?q=${encodeURIComponent(q)}`))
+    }
+    finally {
+      searching.set(false)
+    }
+  }, 160)
+})
+
+function openResult(hit) {
+  const inArchive = archived().some(c => c.key === hit.conversationKey)
+  view.set(inArchive ? 'archived' : 'inbox')
+  query.set('')
+  select(hit.conversationKey)
+}
+
+function onListKey(event) {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    move(1)
+  }
+  else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    move(-1)
+  }
+}
+
+/* ---------- live updates ---------- */
+function listen() {
+  const events = new EventSource('/api/events')
+  events.onmessage = async (message) => {
+    const event = JSON.parse(message.data)
+    if (event.type === 'access') {
+      access.set(event.state)
+      await refresh()
+    }
+    if (event.type === 'changed') {
+      await loadLists()
+      if (selectedKey())
+        loadConversation(selectedKey())
+      for (const back of event.resurfaced ?? [])
+        notifications.show({ title: back.title, body: 'Wrote again, so the conversation is back in your Inbox with its history.' })
+    }
+  }
+}
+
+onMount(async () => {
+  await refresh()
+  let remembered = ''
+  try {
+    remembered = localStorage.getItem('attic:selected') ?? ''
+  }
+  catch {}
+  const start = list().find(c => c.key === remembered) ?? list()[0]
+  if (start)
+    select(start.key)
+  listen()
+  installMenus()
+  app.setBadge(0)
+})
+</script>
+
+<div data-stx-content class="flex h-screen">
+  <!-- Sidebar, on the window material. -->
+  <nav class="w-[212px] shrink-0 flex flex-col" aria-label="Mailboxes">
+    <div class="h-[52px] shrink-0" style="height: calc(var(--window-controls-height) + 24px)"></div>
+    <div class="px-[19px] pb-1 text-[11px] font-semibold muted">Messages</div>
+    <button class="sidebar-item" :aria-current="view() === 'inbox' ? 'true' : 'false'" @click="show('inbox')">
+      <span class="i-hugeicons-message-multiple-01 text-[15px] text-[var(--accent)]"></span>
+      <span>Inbox</span>
+      <span class="count">{{ inboxCount() }}</span>
+    </button>
+    <button class="sidebar-item" :aria-current="view() === 'archived' ? 'true' : 'false'" @click="show('archived')">
+      <span class="i-hugeicons-archive-02 text-[15px] text-[var(--accent)]"></span>
+      <span>Archived</span>
+      <span class="count">{{ archivedCount() }}</span>
+    </button>
+
+    <div class="mt-auto px-4 pb-4 text-[11.5px] muted leading-snug">
+      <div class="font-semibold mb-1.5" style="color: var(--label)">When someone writes again</div>
+      <label class="flex items-center gap-2 py-0.5">
+        <input type="radio" name="resurface" :checked="resurface() === 'inbox'" @change="setResurface('inbox')">
+        <span>Move it back to the Inbox</span>
+      </label>
+      <label class="flex items-center gap-2 py-0.5">
+        <input type="radio" name="resurface" :checked="resurface() === 'stay'" @change="setResurface('stay')">
+        <span>Keep it archived</span>
+      </label>
+      <div :if="fixture()" class="mt-3 tag">Sample data</div>
+    </div>
+  </nav>
+
+  <!-- Full Disk Access, before anything else can work. -->
+  <main :if="needsAccess()" class="flex-1 grid place-items-center" style="background: var(--pane-bg)">
+    <div class="max-w-[440px] text-center px-6">
+      <div class="i-hugeicons-lock-key text-[44px] mx-auto mb-4 muted"></div>
+      <h1 class="text-[20px] font-semibold mb-2">Attic needs Full Disk Access</h1>
+      <p class="muted mb-5">macOS keeps your messages behind a privacy wall. Attic reads them on this Mac only, and never changes them. Switch Attic on in Privacy &amp; Security, and this window carries on by itself.</p>
+      <button class="toolbar-button" style="background: var(--accent); color: #fff; height: 32px; padding: 0 16px" @click="grantAccess()">Open Privacy &amp; Security</button>
+    </div>
+  </main>
+
+  <main :if="noMessages()" class="flex-1 grid place-items-center" style="background: var(--pane-bg)">
+    <div class="max-w-[420px] text-center px-6">
+      <div class="i-hugeicons-message-cancel-01 text-[44px] mx-auto mb-4 muted"></div>
+      <h1 class="text-[20px] font-semibold mb-2">Messages is not set up on this Mac</h1>
+      <p class="muted">Sign in to Messages with your Apple Account, then come back. Anything Attic has already archived is still here.</p>
+    </div>
+  </main>
+
+  <!-- Conversation list. -->
+  <section :if="!needsAccess() && !noMessages()" class="w-[340px] shrink-0 flex flex-col border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
+    <div class="shrink-0 px-3 pb-2" style="padding-top: calc(var(--window-controls-height) + 14px)">
+      <div class="flex items-baseline justify-between px-1 mb-2">
+        <h2 class="text-[17px] font-bold m-0">{{ view() === 'archived' ? 'Archived' : 'Inbox' }}</h2>
+        <span class="muted text-[11.5px]">{{ list().length }} conversations</span>
+      </div>
+      <div class="relative">
+        <span class="i-hugeicons-search-01 absolute left-2 top-[7px] text-[14px] muted"></span>
+        <input id="search" class="search selectable" type="search" placeholder="Search archived messages" x-model="query" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="scroller flex-1 pb-3" tabindex="0" @keydown="onListKey($event)">
+      <!-- Search results. -->
+      <div :if="showingResults()">
+        <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">No archived messages match.</div>
+        <button :for="hit in results()" :key="hit.guid" class="row w-[calc(100%-16px)] text-left border-0 bg-transparent" @click="openResult(hit)">
+          <div class="avatar large mt-0.5"><span class="i-hugeicons-search-01"></span></div>
+          <div class="min-w-0">
+            <div class="flex justify-between gap-2">
+              <span class="font-semibold truncate">{{ hit.title }}</span>
+              <span class="muted text-[11.5px] shrink-0">{{ when(hit.sentAt) }}</span>
+            </div>
+            <div class="muted text-[12px] line-clamp-2"><span class="font-medium mr-1">{{ hit.senderName }}:</span><span :html="snippetHtml(hit.snippet)"></span></div>
+          </div>
+        </button>
+      </div>
+
+      <!-- The list itself. -->
+      <div :if="!showingResults()">
+        <div :if="list().length === 0" class="px-8 py-16 text-center muted">
+          <div :if="view() === 'archived'">
+            <div class="i-hugeicons-archive-02 text-[34px] mx-auto mb-3"></div>
+            <div class="font-semibold mb-1" style="color: var(--label)">Nothing archived yet</div>
+            <div class="text-[12px]">Archive a conversation to keep it out of the way without deleting a thing.</div>
+          </div>
+          <div :if="view() === 'inbox'">All caught up.</div>
+        </div>
+        <div :for="c in list()" :key="c.key" class="row" role="option" :aria-selected="c.key === selectedKey() ? 'true' : 'false'" @click="select(c.key)" @contextmenu="rowMenu($event, c)">
+          <span :if="c.unread > 0" class="unread"></span>
+          <div class="avatar">
+            <span :if="c.kind === 'group'" class="i-hugeicons-user-group text-[19px]"></span>
+            <span :if="c.kind !== 'group' && c.initials !== '#'">{{ c.initials }}</span>
+            <span :if="c.kind !== 'group' && c.initials === '#'" class="i-hugeicons-user text-[19px]"></span>
+          </div>
+          <div class="min-w-0">
+            <div class="flex justify-between gap-2">
+              <span class="font-semibold truncate">{{ c.title }}</span>
+              <span class="muted text-[11.5px] shrink-0">{{ when(c.lastMessageAt) }}</span>
+            </div>
+            <div class="muted text-[12px] leading-[1.3] line-clamp-2 min-h-[31px]">{{ preview(c) }}</div>
+            <div :if="c.resurfacedAt || !c.inMessages || busy() === c.key" class="flex gap-1 mt-1">
+              <span :if="busy() === c.key" class="tag">Copying…</span>
+              <span :if="c.resurfacedAt && c.state === 'inbox'" class="tag"><span class="i-hugeicons-arrow-turn-backward text-[11px]"></span>Wrote again</span>
+              <span :if="!c.inMessages" class="tag"><span class="i-hugeicons-archive-02 text-[11px]"></span>Only in Attic</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Transcript. -->
+  <section :if="!needsAccess() && !noMessages()" class="flex-1 min-w-0 flex flex-col" style="background: var(--pane-bg)" aria-label="Transcript">
+    <div :if="!detail()" class="flex-1 grid place-items-center muted">
+      <div class="text-center">
+        <div class="i-hugeicons-message-02 text-[40px] mx-auto mb-3"></div>
+        <div>{{ list().length > 0 ? 'Select a conversation' : 'No conversations' }}</div>
+      </div>
+    </div>
+
+    <header :if="detail()" class="shrink-0 flex items-center gap-3 px-4 border-b" style="height: calc(var(--window-controls-height) + 24px); border-color: var(--separator)">
+      <div class="min-w-0 flex-1">
+        <div class="font-semibold text-[14px] truncate">{{ detail()?.title }}</div>
+        <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}</div>
+      </div>
+      <button :if="detail()?.state !== 'archived'" class="toolbar-button" title="Archive (⌃⌘A)" :disabled="busy() !== ''" @click="archive()">
+        <span class="i-hugeicons-archive-02 text-[16px]"></span>Archive
+      </button>
+      <button :if="detail()?.state === 'archived'" class="toolbar-button" title="Move to Inbox (⇧⌘U)" @click="unarchive()">
+        <span class="i-hugeicons-inbox-upload text-[16px]"></span>Move to Inbox
+      </button>
+      <button class="toolbar-button" title="Show in Messages (⌘O)" :disabled="!detail()?.openable" @click="openInMessages()">
+        <span class="i-hugeicons-message-02 text-[16px]"></span>
+      </button>
+      <button :if="detail()?.inMessages" class="toolbar-button" title="Remove from Messages… (⌘⌫)" :disabled="busy() !== ''" @click="removeFromMessages()">
+        <span class="i-hugeicons-delete-02 text-[16px]"></span>
+      </button>
+    </header>
+
+    <div :if="detail() && !detail()?.inMessages" class="shrink-0 px-4 pt-3">
+      <div class="banner">
+        <span class="i-hugeicons-archive-02 text-[18px] mt-[1px]" style="color: var(--amber)"></span>
+        <div class="text-[12px]">
+          <div class="font-semibold">Only in Attic</div>
+          <div class="muted">This conversation is gone from Messages. Attic kept every message and attachment it copied, outlined below.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- column-reverse keeps the newest message in view without scripting the scroll. -->
+    <div :if="detail()" class="scroller selectable flex-1 flex flex-col-reverse px-5 py-4 gap-[3px]">
+      <div :for="row in timeline()" :key="row.id" class="contents">
+        <div :if="row.type === 'day'" class="text-center text-[11px] muted font-medium pt-4 pb-1">{{ row.label }}</div>
+        <div :if="row.type === 'kept'" class="flex items-center gap-2 py-3 text-[11px] muted">
+          <span class="flex-1 h-px" style="background: var(--separator)"></span>
+          <span>Above: kept by Attic after Messages removed it</span>
+          <span class="flex-1 h-px" style="background: var(--separator)"></span>
+        </div>
+        <div :if="row.type === 'message' && row.m.kind === 'event'" class="text-center text-[11px] muted py-1">{{ eventText(row.m) }}</div>
+        <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex flex-col" :class="row.m.isFromMe ? 'items-end' : 'items-start'" :style="row.m.reactions.length ? 'margin-top: 12px' : ''">
+          <div :if="row.showSender" class="text-[11px] muted px-3 pt-1">{{ row.m.senderName }}</div>
+          <div :for="a in row.m.attachments" class="mb-[3px]">
+            <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[16px]" :style="row.m.inMessages ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
+            <div :if="!isImage(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
+              <span class="i-hugeicons-attachment-01 text-[15px]"></span>
+              <span>{{ a.name }}</span>
+              <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
+            </div>
+          </div>
+          <div :if="row.m.text && !row.m.unsent" class="bubble" :class="bubbleClass(row.m)">
+            <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ reactionGlyph(r.type) }}</span></div>{{ row.m.text }}</div>
+          <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
+          <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
+        </div>
+      </div>
+      <div :if="hasEarlier()" class="text-center py-3">
+        <button class="toolbar-button muted" @click="loadEarlier()">Show earlier messages</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- A quiet status line for confirmations, bottom centre like a Mail toast. -->
+  <div :if="flash()" class="fixed left-1/2 bottom-5 -translate-x-1/2 px-4 py-2 rounded-[10px] text-[12px] text-white shadow-lg max-w-[520px] text-center" style="background: rgba(40, 40, 40, .92)">{{ flash() }}</div>
+</div>
+</body>
 </html>

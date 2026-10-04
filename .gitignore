@@ -181,3 +181,6 @@ database/migrations/*.sql.ungated
 # generated artifacts each carry a CI freshness check to avoid. An application
 # that wants it in review can un-ignore it and add its own check.
 docs/erd.md
+
+# Attic: the built UI and the invented sample data (scripts/sample.ts)
+/storage/attic

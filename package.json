@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.0",
   "private": true,
-  "description": "Attic",
+  "description": "Archive iMessage conversations on your Mac, natively.",
   "license": "MIT",
   "engines": {
     "bun": "1.4.2"
@@ -20,6 +20,9 @@
     "development": "./buddy dev",
     "build": "./buddy build",
     "prod": "./buddy build",
+    "build:ui": "bun x --bun stx build --pages resources/views --out storage/attic/web --no-sitemap",
+    "app": "bun run build:ui && bun app/Desktop/launcher.ts",
+    "app:sample": "bun run build:ui && bun scripts/app-sample.ts",
     "deploy": "./buddy deploy",
     "lint": "./buddy lint",
     "lint:fix": "./buddy lint:fix",
@@ -86,11 +89,13 @@
     "docs:agent-counts:check": "./buddy docs:agent-counts:check"
   },
   "dependencies": {
-    "stacks": "^0.75.41",
-    "pickier": "^0.1.65",
+    "@stacksjs/actions": "^0.75.41",
+    "@stacksjs/desktop": "^0.2.354",
     "@stacksjs/env": "^0.75.41",
     "@stacksjs/path": "^0.75.41",
-    "@stacksjs/actions": "^0.75.41"
+    "@stacksjs/stx": "^0.2.354",
+    "pickier": "^0.1.65",
+    "stacks": "^0.75.41"
   },
   "workspaces": [
     "storage/framework",
