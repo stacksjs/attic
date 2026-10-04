@@ -3,15 +3,15 @@ import { dirname, join } from 'node:path'
 import process from 'node:process'
 
 /**
- * Messages' own Delete and Recover, driven through `attic-messages`
- * (app/Desktop/messages-control.swift), which acts on the conversation row
- * found by name in Messages' accessibility tree. It runs as a child of Attic,
- * so macOS charges it to Attic's Accessibility permission.
+ * Messages' own Delete and Recover, and WhatsApp's own Archive and Unarchive,
+ * driven through `attic-messages` (app/Desktop/messages-control.swift), which
+ * acts on the row found by name in the app's accessibility tree. It runs as a
+ * child of Attic, so macOS charges it to Attic's Accessibility permission.
  */
 
 export interface ControlOutcome {
   ok: boolean
-  /** 0 ok, 2 not permitted, 3 not found, 4 Messages did not respond, -1 no helper. */
+  /** 0 ok, 2 not permitted, 3 not found, 4 the app did not respond, -1 no helper. */
   code: number
   detail: string
 }
@@ -45,4 +45,12 @@ export function removeFromMessages(names: string[], url: string | null, confirm:
 
 export function recoverInMessages(names: string[]): Promise<ControlOutcome> {
   return run(['recover', ...names.flatMap(name => ['--name', name])])
+}
+
+export function archiveInWhatsApp(names: string[]): Promise<ControlOutcome> {
+  return run(['whatsapp-archive', ...names.flatMap(name => ['--name', name])])
+}
+
+export function unarchiveInWhatsApp(names: string[]): Promise<ControlOutcome> {
+  return run(['whatsapp-unarchive', ...names.flatMap(name => ['--name', name])])
 }

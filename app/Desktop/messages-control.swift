@@ -11,6 +11,14 @@
 //   attic-messages delete  --name "Jane Appleseed" [--url sms:+1555…] [--confirm]
 //   attic-messages recover --name "Jane Appleseed"
 //
+// And the same for WhatsApp, whose chat rows carry their own "Archive" (and,
+// in the Archived list, "Unarchive") action. `whatsapp-find` only reports
+// whether the row is there, touching nothing.
+//
+//   attic-messages whatsapp-archive   --name "Jane Appleseed"
+//   attic-messages whatsapp-unarchive --name "Jane Appleseed"
+//   attic-messages whatsapp-find      --name "Jane Appleseed" [--archived]
+//
 // Exit 0 on success. On failure, one line on stderr saying why, and exit 2
 // (not permitted), 3 (conversation not found) or 4 (Messages did not respond).
 // Compiled by scripts/build-app.ts into Attic.app/Contents/MacOS, so the
@@ -130,13 +138,91 @@ func nothingSelected(_ app: AXUIElement) -> Bool {
   find(app) { text($0, kAXRoleAttribute) == "AXStaticText" && text($0, kAXDescriptionAttribute) == "No Conversation Selected" } != nil
 }
 
+// MARK: WhatsApp
+
+func whatsappApp() -> NSRunningApplication? {
+  NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == "net.whatsapp.WhatsApp" }
+}
+
+func whatsappWindow(_ app: AXUIElement) -> AXUIElement? {
+  (value(app, kAXWindowsAttribute) as? [AXUIElement])?.first { text($0, kAXIdentifierAttribute) == "SceneWindow" || text($0, kAXRoleAttribute) == "AXWindow" }
+}
+
+/// WhatsApp's window, launching or reopening it if need be. It is driven
+/// where it is, in the background: its rows' actions do not need focus.
+func whatsappElement() -> (AXUIElement, AXUIElement) {
+  let bundle = URL(fileURLWithPath: "/Applications/WhatsApp.app")
+  if whatsappApp() == nil { NSWorkspace.shared.open(bundle) }
+  guard let running = poll(seconds: 15, { whatsappApp() }) else { fail(4, "WhatsApp did not start") }
+  let app = AXUIElementCreateApplication(running.processIdentifier)
+  if let window = poll(seconds: 3, { whatsappWindow(app) }) { return (app, window) }
+  // Running with its window closed: opening the app again brings it back.
+  NSWorkspace.shared.open(bundle)
+  guard let window = poll(seconds: 10, { whatsappWindow(app) }) else { fail(4, "WhatsApp has no window") }
+  return (app, window)
+}
+
+func element(_ root: AXUIElement, identified id: String) -> AXUIElement? {
+  find(root) { text($0, kAXIdentifierAttribute) == id }
+}
+
+func chatRows(_ table: AXUIElement) -> [AXUIElement] {
+  children(table).filter { text($0, kAXRoleAttribute) == "AXButton" && text($0, kAXIdentifierAttribute) != "ChatListView_archiveCell" }
+}
+
+/// A row is labelled "<name>, <detail>"; match the name, never a substring.
+func rowMatches(_ row: AXUIElement, _ names: [String]) -> Bool {
+  guard let label = text(row, kAXDescriptionAttribute) else { return false }
+  return names.contains { label == $0 || label.hasPrefix("\($0),") }
+}
+
+/// The chat list only holds the rows on screen, so walk it a page at a time,
+/// from the top, until the row appears or the list stops moving.
+func whatsappRow(_ table: AXUIElement, _ names: [String]) -> AXUIElement? {
+  func signature() -> String { chatRows(table).compactMap { text($0, kAXDescriptionAttribute) }.joined(separator: "\n") }
+  func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+  for _ in 0..<100 {
+    let before = signature()
+    AXUIElementPerformAction(table, "AXScrollUpByPage" as CFString)
+    settle()
+    if signature() == before { break }
+  }
+  for _ in 0..<200 {
+    if let row = chatRows(table).first(where: { rowMatches($0, names) }) { return row }
+    let before = signature()
+    AXUIElementPerformAction(table, "AXScrollDownByPage" as CFString)
+    settle()
+    if signature() == before { return chatRows(table).first { rowMatches($0, names) } }
+  }
+  return nil
+}
+
+/// The row's own custom action, "Name:Archive" or "Name:Unarchive" once the
+/// direction marks WhatsApp prefixes are gone.
+func rowAction(_ row: AXUIElement, _ verb: String) -> String? {
+  actions(row).first { action in
+    let first = action.components(separatedBy: "\n").first ?? ""
+    return first.replacingOccurrences(of: "\u{200E}", with: "").replacingOccurrences(of: "\u{200F}", with: "") == "Name:\(verb)"
+  }
+}
+
+/// Shows the Chats or Archived list and returns the element holding its rows:
+/// the chat list's table, or the Archived view's own container.
+func whatsappList(_ window: AXUIElement, archived: Bool) -> AXUIElement? {
+  if let button = element(window, identified: archived ? "SidebarButton_Archived" : "SidebarButton_Chats") {
+    AXUIElementPerformAction(button, kAXPressAction as CFString)
+    RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+  }
+  return poll { element(window, identified: archived ? "WAArchivedChatsViewController" : "ChatListView_TableView") }
+}
+
 let args = CommandLine.arguments.dropFirst()
 func option(_ flag: String) -> String? {
   guard let at = args.firstIndex(of: flag), args.index(after: at) < args.endIndex else { return nil }
   return args[args.index(after: at)]
 }
 
-guard let command = args.first else { fail(1, "usage: attic-messages trusted|delete|recover") }
+guard let command = args.first else { fail(1, "usage: attic-messages trusted|delete|recover|whatsapp-archive|whatsapp-unarchive|whatsapp-find") }
 
 if command == "trusted" {
   let prompt = args.contains("--prompt")
@@ -145,7 +231,7 @@ if command == "trusted" {
   exit(trusted ? 0 : 2)
 }
 
-guard AXIsProcessTrusted() else { fail(2, "Attic needs Accessibility access to drive Messages") }
+guard AXIsProcessTrusted() else { fail(2, "Attic needs Accessibility access to drive \(command.hasPrefix("whatsapp") ? "WhatsApp" : "Messages")") }
 
 /// Every --name given, in order: Messages labels a row with the contact's
 /// name when it has one and a formatted number when not, so the caller passes
@@ -207,6 +293,26 @@ case "recover":
   RunLoop.current.run(until: Date().addingTimeInterval(0.8))
   _ = clickMenu(app, "View", "Messages")
   print("recovered")
+
+case "whatsapp-find":
+  let (_, window) = whatsappElement()
+  let archived = args.contains("--archived")
+  guard let table = whatsappList(window, archived: archived) else { fail(4, "WhatsApp showed no chat list") }
+  defer { if archived { _ = whatsappList(window, archived: false) } }
+  guard let row = whatsappRow(table, names) else { fail(3, "No chat named \(name) in WhatsApp") }
+  print("found: \(rowAction(row, archived ? "Unarchive" : "Archive") != nil ? "actionable" : "no action")")
+
+case "whatsapp-archive", "whatsapp-unarchive":
+  let unarchive = command == "whatsapp-unarchive"
+  let (_, window) = whatsappElement()
+  guard let table = whatsappList(window, archived: unarchive) else { fail(4, "WhatsApp showed no chat list") }
+  defer { if unarchive { _ = whatsappList(window, archived: false) } }
+  guard let row = whatsappRow(table, names) else { fail(3, "No chat named \(name) in WhatsApp\(unarchive ? "'s Archived" : "")") }
+  let verb = unarchive ? "Unarchive" : "Archive"
+  guard let action = rowAction(row, verb) else { fail(4, "WhatsApp offers no \(verb) for \(name)") }
+  guard AXUIElementPerformAction(row, action as CFString) == .success else { fail(4, "WhatsApp did not \(verb.lowercased()) \(name)") }
+  RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+  print(unarchive ? "unarchived" : "archived")
 
 default:
   fail(1, "unknown command \(command)")
