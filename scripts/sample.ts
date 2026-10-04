@@ -10,6 +10,7 @@
 import { Database } from 'bun:sqlite'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createImageData, encode } from 'ts-images'
 import { FakeChatDb } from '../app/Attic/sample-db'
 
 const ROOT = join(import.meta.dir, '..', 'storage', 'attic', 'sample')
@@ -34,19 +35,52 @@ function picture(label: string, from: string, to: string): string {
 </svg>`
 }
 
-function addressBook(dir: string): void {
+/**
+ * An invented contact photo: a two-tone gradient behind a head-and-shoulders
+ * silhouette, as a PNG. Stored the way Contacts stores an inline photo (a
+ * 0x01 tag, then the image), so sample mode exercises the real photo path.
+ */
+async function portrait(hue: number): Promise<Uint8Array> {
+  const size = 128
+  const image = createImageData(size, size)
+  const rgb = (h: number, s: number, l: number): [number, number, number] => {
+    const k = (n: number) => (n + h / 30) % 12
+    const a = s * Math.min(l, 1 - l)
+    const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+    return [f(0) * 255, f(8) * 255, f(4) * 255]
+  }
+  const [from, to, figure] = [rgb(hue, 0.55, 0.62), rgb((hue + 40) % 360, 0.6, 0.42), rgb(hue, 0.35, 0.9)]
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const t = (x + y) / (2 * size)
+      const head = (x - 64) ** 2 + (y - 52) ** 2 < 22 ** 2
+      const shoulders = ((x - 64) / 44) ** 2 + ((y - 128) / 40) ** 2 < 1
+      const color = head || shoulders ? figure : [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, from[2] + (to[2] - from[2]) * t]
+      const i = (y * size + x) * 4
+      image.data[i] = color[0]!
+      image.data[i + 1] = color[1]!
+      image.data[i + 2] = color[2]!
+      image.data[i + 3] = 255
+    }
+  }
+  return encode(image, 'png')
+}
+
+async function addressBook(dir: string): Promise<void> {
   const folder = join(dir, 'Sources', 'SAMPLE')
   mkdirSync(folder, { recursive: true })
   const db = new Database(join(folder, 'AddressBook-v22.abcddb'), { create: true })
   db.exec(`
-    CREATE TABLE ZABCDRECORD (Z_PK INTEGER PRIMARY KEY, ZFIRSTNAME TEXT, ZLASTNAME TEXT, ZNICKNAME TEXT, ZORGANIZATION TEXT);
+    CREATE TABLE ZABCDRECORD (Z_PK INTEGER PRIMARY KEY, ZFIRSTNAME TEXT, ZLASTNAME TEXT, ZNICKNAME TEXT, ZORGANIZATION TEXT, ZTHUMBNAILIMAGEDATA BLOB, ZIMAGEDATA BLOB);
     CREATE TABLE ZABCDPHONENUMBER (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZFULLNUMBER TEXT);
     CREATE TABLE ZABCDEMAILADDRESS (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZADDRESS TEXT);
   `)
   let id = 0
   for (const person of Object.values(people)) {
     id++
-    db.query('INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (?, ?, ?)').run(id, person.name[0], person.name[1] || null)
+    // Most sample contacts have a photo; one keeps its initials, as real ones do.
+    const photo = id === 3 ? null : new Uint8Array([1, ...await portrait((id * 67) % 360)])
+    db.query('INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME, ZTHUMBNAILIMAGEDATA) VALUES (?, ?, ?, ?)').run(id, person.name[0], person.name[1] || null, photo)
     if (person.handle.includes('@'))
       db.query('INSERT INTO ZABCDEMAILADDRESS (ZOWNER, ZADDRESS) VALUES (?, ?)').run(id, person.handle)
     else
@@ -55,7 +89,7 @@ function addressBook(dir: string): void {
   db.close()
 }
 
-export function buildSample(root = ROOT): { chatDb: string, addressBook: string, data: string } {
+export async function buildSample(root = ROOT): Promise<{ chatDb: string, addressBook: string, data: string }> {
   rmSync(root, { recursive: true, force: true })
   const chat = new FakeChatDb(join(root, 'Messages'))
   const now = Date.now()
@@ -104,7 +138,7 @@ export function buildSample(root = ROOT): { chatDb: string, addressBook: string,
 
   chat.close()
   const book = join(root, 'AddressBook')
-  addressBook(book)
+  await addressBook(book)
   const data = join(root, 'Attic')
   mkdirSync(data, { recursive: true })
   writeFileSync(join(root, 'README.txt'), 'Invented conversations for running Attic in development. Nothing here is real.\n')

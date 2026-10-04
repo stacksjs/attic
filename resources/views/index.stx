@@ -147,11 +147,11 @@ const year = new Date().getFullYear()
       box-shadow: 0 30px 60px -20px rgba(80, 30, 15, .28), 0 0 0 1px var(--line);
     }
     .tile { border-radius: 20px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
-    .source-imessage { background: linear-gradient(160deg, color-mix(in srgb, #34c759 16%, var(--surface)), var(--surface) 70%); }
+    .source-imessage { background: linear-gradient(160deg, color-mix(in srgb, #0a84ff 14%, var(--surface)), var(--surface) 70%); }
     .source-whatsapp { background: linear-gradient(160deg, color-mix(in srgb, #25d366 16%, var(--surface)), var(--surface) 70%); }
     .source-slack { background: linear-gradient(160deg, color-mix(in srgb, #e01e5a 14%, var(--surface)), var(--surface) 70%); }
     .source-discord { background: linear-gradient(160deg, color-mix(in srgb, #5865f2 16%, var(--surface)), var(--surface) 70%); }
-    .source-imessage .glyph { color: #34c759; }
+    .source-imessage .glyph { color: #0a84ff; }
     .source-whatsapp .glyph { color: #1da851; }
     .source-slack .glyph { color: #e01e5a; }
     .source-discord .glyph { color: #5865f2; }
@@ -195,7 +195,7 @@ const year = new Date().getFullYear()
       </div>
       <picture>
         <source srcset="/images/screens/attic-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="/images/screens/attic-light.png" alt="Attic on a Mac: the inbox with iMessage conversations, and a conversation kept after Messages deleted it" width="1440" height="900" class="shot w-full h-auto block">
+        <img src="/images/screens/attic-light.png" alt="Attic on a Mac: one inbox of WhatsApp, iMessage, Slack and Discord conversations, with contact photos" width="1440" height="900" class="shot w-full h-auto block">
       </picture>
     </section>
 

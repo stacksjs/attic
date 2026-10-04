@@ -5,7 +5,7 @@
 import process from 'node:process'
 import { buildSample } from './sample'
 
-const sample = buildSample()
+const sample = await buildSample()
 const child = Bun.spawn(['bun', 'app/Desktop/launcher.ts'], {
   stdio: ['inherit', 'inherit', 'inherit'],
   env: {
