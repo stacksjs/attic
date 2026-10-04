@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inbox } from '@stacksjs/chat'
-import { Archiver } from '../../../app/Attic/archiver'
+import { Archiver, RULE_QUIET_MS } from '../../../app/Attic/archiver'
 import { ALICE, BOB, FakeChatDb } from '../../../app/Attic/sample-db'
 import { Sources } from '../../../app/Attic/sources'
 import { ArchiveStore, ftsQuery, splitKey } from '../../../app/Attic/store'
@@ -248,6 +248,28 @@ describe('always archive', () => {
     expect(store.conversation(key)!.state).toBe('archived')
     expect(store.conversation(`imessage:direct:${ALICE}`)).toBeNull()
     // Archived means out of the app: Messages is asked to delete it.
+    expect(controllerCalls).toHaveLength(1)
+    expect(controllerCalls[0]).toStartWith('remove ')
+  })
+
+  it('waits for the conversation to go quiet before taking it out of Messages', async () => {
+    const now = Date.now()
+    chat.add(chat.direct(BOB), { text: 'are you there?', at: now - 60_000 })
+    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
+    const key = `imessage:direct:${BOB}`
+
+    // Mid-conversation: kept in the archive at once, left in Messages.
+    expect((await archiver.sync('inbox', now)).ruled).toEqual([key])
+    expect(store.conversation(key)!.state).toBe('archived')
+    expect(controllerCalls).toEqual([])
+    chat.add(chat.direct(BOB), { text: 'yes!', fromMe: true, at: now })
+    await archiver.sync('inbox', now + 60_000)
+    expect(controllerCalls).toEqual([])
+    expect(store.messageCount(key)).toBe(2)
+
+    // Twenty quiet minutes later it leaves Messages, once.
+    await archiver.sync('inbox', now + RULE_QUIET_MS + 60_000)
+    await archiver.sync('inbox', now + RULE_QUIET_MS + 120_000)
     expect(controllerCalls).toHaveLength(1)
     expect(controllerCalls[0]).toStartWith('remove ')
   })

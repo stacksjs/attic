@@ -29,6 +29,13 @@ export interface ArchiveResult {
   verified: boolean
 }
 
+/**
+ * How long an always-archived conversation must be quiet (no message either
+ * way) before it is taken out of the app again: long enough not to snatch a
+ * thread away mid-conversation, short enough that it does not linger.
+ */
+export const RULE_QUIET_MS = 20 * 60_000
+
 export interface SyncReport {
   /** Archived conversations someone wrote in again, now back in the Inbox. */
   resurfaced: string[]
@@ -314,6 +321,9 @@ export class Archiver {
 
       const rule = current ? ruleFor(rules, conversation.key, current.conversation.kind, current.conversation.participants) : null
       if (rule && current && conversation.state === 'archived' && visible && removeFromApps) {
+        // Never pull a thread out from under a conversation in progress:
+        // what is said is kept right away, the thread leaves once it is quiet.
+        const quiet = now - (current.conversation.lastMessageAt ?? 0) >= RULE_QUIET_MS
         // Archived means out of the app. Something new from them brought the
         // thread back: copy it, then take it out again. Tried once per new
         // message, so a removal that fails does not repeat on every sync.
@@ -324,7 +334,7 @@ export class Archiver {
           }
           catch {}
         }
-        if (this.removalTried.get(conversation.key) !== current.conversation.cursor) {
+        if (quiet && this.removalTried.get(conversation.key) !== current.conversation.cursor) {
           this.removalTried.set(conversation.key, current.conversation.cursor)
           await this.removeFromApp(conversation.key).catch(() => undefined)
         }
@@ -364,7 +374,8 @@ export class Archiver {
           if (!result.verified)
             continue
           report.ruled.push(entry.key)
-          if (removeFromApps && entry.conversation.visible) {
+          // Out of the app once quiet; the archived branch above handles the rest.
+          if (removeFromApps && entry.conversation.visible && now - (entry.conversation.lastMessageAt ?? 0) >= RULE_QUIET_MS) {
             this.removalTried.set(entry.key, entry.conversation.cursor)
             await this.removeFromApp(entry.key).catch(() => undefined)
           }
