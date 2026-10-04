@@ -24,6 +24,16 @@ export interface Person {
   avatar?: string | null
 }
 
+/** A phone paired with this Mac: it keeps its own copy of the archive, sealed with `key`. */
+export interface PairedDevice {
+  id: string
+  name: string
+  /** AES-256-GCM key shared at pairing; never leaves the two devices. */
+  key: Uint8Array
+  createdAt: number
+  lastSeenAt: number | null
+}
+
 /**
  * "Always archive" for one person (every direct conversation with that
  * handle, phone number, email, WhatsApp JID or Slack/Discord user id) or one
@@ -187,6 +197,14 @@ const SCHEMA = `
   END;
 
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    key BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0
+  );
   CREATE TABLE IF NOT EXISTS rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL,
@@ -524,27 +542,47 @@ export class ArchiveStore {
       list.push(toAttachment(row))
       attachments.set(row.message_guid, list)
     }
-    return rows.map((row): StoredMessage => {
-      const legacyRemoved = row.reaction_type >= 3000
-      return {
-        guid: row.guid,
-        conversationKey: row.conversation_key,
-        kind: (row.kind === 'reaction' || row.kind === 'event') ? row.kind : 'message',
-        text: row.kind === 'event' && !row.text && row.group_title ? `Named the conversation “${row.group_title}”` : row.text,
-        isFromMe: row.is_from_me === 1,
-        sentAt: row.sent_at,
-        sender: row.sender,
-        senderName: row.sender_name,
-        targetGuid: row.target_guid,
-        reaction: row.reaction ?? (row.reaction_type ? REACTION_EMOJI[legacyRemoved ? row.reaction_type - 1000 : row.reaction_type] ?? '•' : null),
-        reactionRemoved: row.reaction_removed === 1 || legacyRemoved,
-        replyToGuid: row.reply_to_guid,
-        editedAt: row.edited_at,
-        unsent: row.unsent === 1,
-        cursor: row.cursor ?? (row.source_rowid ? String(row.source_rowid) : null),
-        attachments: attachments.get(row.guid) ?? [],
-      }
-    })
+    return rows.map(row => toStoredMessage(row, attachments.get(row.guid) ?? []))
+  }
+
+  /**
+   * Messages kept after a cursor (SQLite's rowid, which an upsert keeps), in
+   * the order they were kept: how a paired phone catches up.
+   */
+  messagesAfter(after: number, limit = 2000): Array<{ rowid: number, message: StoredMessage }> {
+    const rows = this.db.query('SELECT rowid AS _rowid, * FROM messages WHERE rowid > ? ORDER BY rowid ASC LIMIT ?').all(after, limit) as Array<MessageDbRow & { _rowid: number }>
+    if (rows.length === 0)
+      return []
+    const guids = rows.map(r => r.guid)
+    const attachments = new Map<string, StoredAttachment[]>()
+    for (const row of this.db.query(`SELECT * FROM attachments WHERE message_guid IN (${guids.map(() => '?').join(',')})`).all(...guids) as AttachmentDbRow[]) {
+      const list = attachments.get(row.message_guid) ?? []
+      list.push(toAttachment(row))
+      attachments.set(row.message_guid, list)
+    }
+    return rows.map(row => ({ rowid: row._rowid, message: toStoredMessage(row, attachments.get(row.guid) ?? []) }))
+  }
+
+  devices(): PairedDevice[] {
+    return (this.db.query('SELECT * FROM devices WHERE revoked = 0 ORDER BY created_at').all() as Array<{ id: string, name: string, key: Uint8Array, created_at: number, last_seen_at: number | null }>)
+      .map(d => ({ id: d.id, name: d.name, key: new Uint8Array(d.key), createdAt: d.created_at, lastSeenAt: d.last_seen_at }))
+  }
+
+  device(id: string): PairedDevice | null {
+    return this.devices().find(d => d.id === id) ?? null
+  }
+
+  addDevice(device: { id: string, name: string, key: Uint8Array }, at = Date.now()): void {
+    this.db.query('INSERT INTO devices (id, name, key, created_at) VALUES (?, ?, ?, ?)').run(device.id, device.name, device.key, at)
+  }
+
+  touchDevice(id: string, at = Date.now(), name?: string): void {
+    this.db.query('UPDATE devices SET last_seen_at = ?, name = COALESCE(?, name) WHERE id = ?').run(at, name ?? null, id)
+  }
+
+  /** Forget a device: its key no longer opens anything. */
+  revokeDevice(id: string): void {
+    this.db.query('UPDATE devices SET revoked = 1 WHERE id = ?').run(id)
   }
 
   search(input: string, limit = 50): SearchHit[] {
@@ -596,5 +634,27 @@ export class ArchiveStore {
 
   setSetting(key: string, value: string): void {
     this.db.query('INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value)
+  }
+}
+
+function toStoredMessage(row: MessageDbRow, attachments: StoredAttachment[]): StoredMessage {
+  const legacyRemoved = row.reaction_type >= 3000
+  return {
+    guid: row.guid,
+    conversationKey: row.conversation_key,
+    kind: (row.kind === 'reaction' || row.kind === 'event') ? row.kind : 'message',
+    text: row.kind === 'event' && !row.text && row.group_title ? `Named the conversation “${row.group_title}”` : row.text,
+    isFromMe: row.is_from_me === 1,
+    sentAt: row.sent_at,
+    sender: row.sender,
+    senderName: row.sender_name,
+    targetGuid: row.target_guid,
+    reaction: row.reaction ?? (row.reaction_type ? REACTION_EMOJI[legacyRemoved ? row.reaction_type - 1000 : row.reaction_type] ?? '•' : null),
+    reactionRemoved: row.reaction_removed === 1 || legacyRemoved,
+    replyToGuid: row.reply_to_guid,
+    editedAt: row.edited_at,
+    unsent: row.unsent === 1,
+    cursor: row.cursor ?? (row.source_rowid ? String(row.source_rowid) : null),
+    attachments,
   }
 }
