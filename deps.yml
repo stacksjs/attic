@@ -5,3 +5,6 @@ dependencies:
   curl: ^8.22.0
   git: ^2.53.0
   sqlite: ^3.53.4
+  # The native window runtime; 0.0.109 is the first with context menus that
+  # answer the page and named-key menu shortcuts.
+  craft-native.org: ^0.0.109
