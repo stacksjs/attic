@@ -8,10 +8,11 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import process from 'node:process'
+import { decode, encode, resize } from 'ts-images'
 import { Archiver } from './archiver'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
-import { ATTACHMENTS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE } from './paths'
+import { ATTACHMENTS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR } from './paths'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
 
@@ -119,6 +120,39 @@ function initialsOf(title: string): string {
   if (words.length === 0 || /^\d/.test(words[0]!))
     return '#'
   return (words[0]![0]! + (words.length > 1 ? words[words.length - 1]![0]! : '')).toUpperCase()
+}
+
+/** Longest edge of a display preview: sharp in a full-window view, a fraction of the original's weight. */
+const PREVIEW_EDGE = 2048
+
+/** Photos ts-images could not decode this run, so a failure is not retried on every view. */
+const undecodable = new Set<string>()
+
+/**
+ * A cached JPEG rendering of a HEIC photo, decoded and encoded by ts-images.
+ * Made once per attachment; null when the photo cannot be decoded, and the
+ * caller then serves the original as it is.
+ */
+async function heicPreview(guid: string, original: Response): Promise<string | null> {
+  const out = join(PREVIEWS_DIR, `${guid.replace(/[^\w-]/g, '_')}.jpg`)
+  if (existsSync(out))
+    return out
+  if (undecodable.has(guid))
+    return null
+  try {
+    const decoded = await decode(new Uint8Array(await original.arrayBuffer()))
+    const fitted = decoded.width > PREVIEW_EDGE || decoded.height > PREVIEW_EDGE
+      ? resize(decoded, { width: PREVIEW_EDGE, height: PREVIEW_EDGE, fit: 'inside' })
+      : decoded
+    mkdirSync(PREVIEWS_DIR, { recursive: true })
+    await Bun.write(out, await encode(fitted, 'jpeg', { quality: 85 }))
+    return out
+  }
+  catch (error) {
+    undecodable.add(guid)
+    console.warn(`[attic] no preview for ${guid}: ${error instanceof Error ? error.message : error}`)
+    return null
+  }
 }
 
 async function waitUntil(check: () => Promise<boolean>, ms = 12_000): Promise<boolean> {
@@ -502,6 +536,15 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const response = guid ? await archiver.attachmentResponse(guid) : null
           if (!response || !response.ok)
             return new Response('Not found', { status: 404 })
+          // iPhones send HEIC, which WebKit decodes and most other viewers do
+          // not. Serve a cached JPEG rendering instead; the archived original
+          // is never touched.
+          const type = response.headers.get('content-type') ?? ''
+          if (guid && /^image\/hei[cf]/.test(type)) {
+            const preview = await heicPreview(guid, response)
+            if (preview)
+              return new Response(Bun.file(preview), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400' } })
+          }
           return new Response(response.body, {
             headers: { 'content-type': response.headers.get('content-type') ?? 'application/octet-stream', 'cache-control': 'private, max-age=3600' },
           })
