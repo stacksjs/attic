@@ -142,7 +142,12 @@ async function avatarResponse(provider: Provider, ref: string, driver: inbox.Inb
   if (!fresh && driver?.avatar) {
     try {
       const response = await driver.avatar(ref)
-      const bytes = response.ok ? new Uint8Array(await response.arrayBuffer()) : null
+      let bytes: Uint8Array | null = response.ok ? new Uint8Array(await response.arrayBuffer()) : null
+      // Group photos arrive as iPhone HEIC: kept as a small JPEG any viewer reads.
+      if (bytes && String.fromCharCode(...bytes.subarray(4, 8)) === 'ftyp') {
+        const decoded = await decode(bytes)
+        bytes = await encode(resize(decoded, { width: 256, height: 256, fit: 'cover' }), 'jpeg', { quality: 85 })
+      }
       if (bytes && bytes.length > 0 && bytes.length < 5_000_000) {
         mkdirSync(AVATARS_DIR, { recursive: true })
         await Bun.write(file, bytes)
@@ -470,7 +475,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   }
 
   /** After a verified copy: out of the real app, as far as it allows. */
-  async function takeOutOfApp(key: string): Promise<AppOutcome> {
+  async function takeOutOfApp(key: string, options: { sync?: boolean } = {}): Promise<AppOutcome> {
     const mode = removalMode()
     if (mode === 'off')
       return { attempted: false, removed: false, detail: 'Kept in the app, as set.' }
@@ -484,8 +489,72 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     // A delete Attic confirmed lands in chat.db a moment later.
     if (!removed && provider === 'imessage' && mode === 'auto' && !usingSample)
       removed = await waitUntil(async () => !(await visibleInApp(key)))
-    await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+    if (options.sync !== false)
+      await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
     return { attempted: true, removed, detail: removed ? `Removed from ${LABELS[provider]}.` : outcome.detail }
+  }
+
+  /*
+   * Bulk archive: everything in the Inbox quiet for longer than a cutoff, one
+   * conversation at a time through the same copy-verify-archive path as a
+   * single archive. A real history has thousands of these, so it runs as a
+   * job the page follows over the event stream and can cancel. Taking them
+   * out of the apps is opt-in: for iMessage that is one Delete per thread
+   * through Messages, and Messages purges Recently Deleted after 30 days.
+   */
+  interface BulkJob {
+    total: number
+    done: number
+    archived: number
+    removed: number
+    failed: number
+    removeFromApps: boolean
+    cancelled: boolean
+    finished: boolean
+    startedAt: number
+  }
+  let bulk: BulkJob | null = null
+
+  async function bulkCandidates(olderThanDays: number, source: Provider | 'all'): Promise<ConversationSummary[]> {
+    const cutoff = Date.now() - olderThanDays * 24 * 60 * 60_000
+    return (await conversations('inbox', source)).filter(c => c.state !== 'archived' && (c.lastMessageAt ?? 0) < cutoff)
+  }
+
+  function bulkState(): Record<string, unknown> | null {
+    return bulk ? { ...bulk } : null
+  }
+
+  async function runBulk(job: BulkJob, keys: string[]): Promise<void> {
+    let lastBroadcast = 0
+    for (const key of keys) {
+      if (job.cancelled)
+        break
+      try {
+        const result = await archiver.archive(key)
+        if (result.verified) {
+          job.archived++
+          if (job.removeFromApps && (await takeOutOfApp(key, { sync: false })).removed)
+            job.removed++
+        }
+        else {
+          job.failed++
+        }
+      }
+      catch (error) {
+        job.failed++
+        console.error(`[attic] bulk archive ${key}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      job.done++
+      // Progress at most a few times a second, and the list once in a while.
+      if (Date.now() - lastBroadcast > 400) {
+        lastBroadcast = Date.now()
+        broadcast({ type: 'bulk', job: bulkState() })
+      }
+    }
+    job.finished = true
+    await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+    broadcast({ type: 'bulk', job: bulkState() })
+    broadcast({ type: 'changed', resurfaced: [], removed: [] })
   }
 
   let port = 0
@@ -553,6 +622,36 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const app = result.verified ? await takeOutOfApp(key) : { attempted: false, removed: false, detail: 'The copy is not complete yet, so the app was not touched.' }
           broadcast({ type: 'changed', resurfaced: [], removed: [] })
           return json({ ...result, app })
+        }
+        case 'POST /api/bulk/preview': {
+          const data = await body(req)
+          const days = Number(data.olderThanDays) || 365
+          const source = data.source === 'imessage' || data.source === 'whatsapp' || data.source === 'slack' || data.source === 'discord' ? data.source : 'all'
+          const candidates = await bulkCandidates(days, source)
+          const byProvider: Record<string, number> = {}
+          for (const c of candidates)
+            byProvider[c.provider] = (byProvider[c.provider] ?? 0) + 1
+          return json({ total: candidates.length, byProvider, running: bulkState() })
+        }
+        case 'POST /api/bulk/archive': {
+          if (bulk && !bulk.finished)
+            return problem('A bulk archive is already running', 409)
+          const data = await body(req)
+          const days = Number(data.olderThanDays) || 365
+          const source = data.source === 'imessage' || data.source === 'whatsapp' || data.source === 'slack' || data.source === 'discord' ? data.source : 'all'
+          const keys = (await bulkCandidates(days, source)).map(c => c.key)
+          const job: BulkJob = { total: keys.length, done: 0, archived: 0, removed: 0, failed: 0, removeFromApps: data.removeFromApps === true && !usingSample, cancelled: false, finished: false, startedAt: Date.now() }
+          bulk = job
+          void runBulk(job, keys)
+          return json({ job: bulkState() })
+        }
+        case 'POST /api/bulk/cancel': {
+          if (bulk && !bulk.finished)
+            bulk.cancelled = true
+          return json({ job: bulkState() })
+        }
+        case 'GET /api/bulk': {
+          return json({ job: bulkState() })
         }
         case 'POST /api/unarchive': {
           const key = keyFrom(await body(req))
