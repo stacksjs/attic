@@ -1,6 +1,6 @@
-import type { inbox } from '@stacksjs/chat'
+import { inbox } from '@stacksjs/chat'
 import type { LiveEntry, Sources } from './sources'
-import type { ArchiveStore, Provider, StoredAttachment, StoredConversation, StoredMessage } from './store'
+import type { ArchiveRule, ArchiveStore, Provider, StoredAttachment, StoredConversation, StoredMessage } from './store'
 import { createHash } from 'node:crypto'
 import { constants, copyFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -36,7 +36,25 @@ export interface SyncReport {
   removed: string[]
   /** Conversations that came back to the real app. */
   returned: string[]
+  /** Conversations an "always archive" rule archived during this sync. */
+  ruled: string[]
   copiedMessages: number
+}
+
+/** A person's id as rules store it: Messages handles normalized, others as the app gives them. */
+export function ruleValue(provider: Provider, id: string): string {
+  return provider === 'imessage' ? inbox.normalizeHandle(id) : id
+}
+
+/**
+ * The rule covering a conversation: one made for the conversation itself,
+ * or, for a one-to-one conversation, one made for the person in it.
+ */
+export function ruleFor(rules: ArchiveRule[], key: string, kind: string, participants: Array<{ id: string }>): ArchiveRule | null {
+  const { provider } = splitKey(key)
+  return rules.find(r => r.provider === provider && r.kind === 'conversation' && r.value === key)
+    ?? (kind === 'direct' ? rules.find(r => r.provider === provider && r.kind === 'person' && participants.some(p => ruleValue(provider, p.id) === r.value)) : undefined)
+    ?? null
 }
 
 export type ResurfaceMode = 'inbox' | 'stay'
@@ -262,9 +280,10 @@ export class Archiver {
    * leaving and returning to their apps.
    */
   async sync(mode: ResurfaceMode = 'inbox', now = Date.now(), force = false): Promise<SyncReport> {
-    const report: SyncReport = { resurfaced: [], removed: [], returned: [], copiedMessages: 0 }
+    const report: SyncReport = { resurfaced: [], removed: [], returned: [], ruled: [], copiedMessages: 0 }
     const stored = this.store.conversations()
-    if (stored.length === 0)
+    const rules = this.store.rules()
+    if (stored.length === 0 && rules.length === 0)
       return report
 
     const live = new Map((await this.sources.live(force, true)).map(e => [e.key, e]))
@@ -291,13 +310,42 @@ export class Archiver {
         const { messages } = await this.copy(current, conversation.key)
         report.copiedMessages += messages.length
         const fresh = messages.some(m => m.kind === 'message')
-        if (fresh && conversation.state === 'archived' && mode === 'inbox') {
+        const rule = ruleFor(rules, conversation.key, current.conversation.kind, current.conversation.participants)
+        // An "always archive" conversation keeps what arrives and stays put;
+        // with removeFromApp it leaves the app again, each time.
+        if (fresh && conversation.state === 'archived' && rule?.removeFromApp && visible)
+          await this.removeFromApp(conversation.key)
+        else if (fresh && conversation.state === 'archived' && mode === 'inbox' && !rule) {
           this.store.unarchive(conversation.key, { resurfaced: true, at: now })
           report.resurfaced.push(conversation.key)
         }
       }
       catch {
         // An API hiccup: the next sync tries again.
+      }
+    }
+
+    // Rules reach conversations not archived yet: a person's first thread, or
+    // one brought back to the Inbox before the rule existed.
+    if (rules.length > 0) {
+      const states = new Map(this.store.conversations().map(c => [c.key, c.state]))
+      for (const entry of live.values()) {
+        if (states.get(entry.key) === 'archived')
+          continue
+        const rule = ruleFor(rules, entry.key, entry.conversation.kind, entry.conversation.participants)
+        if (!rule)
+          continue
+        try {
+          const result = await this.archive(entry.key)
+          if (!result.verified)
+            continue
+          report.ruled.push(entry.key)
+          if (rule.removeFromApp && entry.conversation.visible)
+            await this.removeFromApp(entry.key)
+        }
+        catch {
+          // Tried again on the next sync.
+        }
       }
     }
     return report

@@ -24,6 +24,25 @@ export interface Person {
   avatar?: string | null
 }
 
+/**
+ * "Always archive" for one person (every direct conversation with that
+ * handle, phone number, email, WhatsApp JID or Slack/Discord user id) or one
+ * conversation (a group). New messages are copied into the archive as they
+ * arrive and the conversation never resurfaces; `removeFromApp` also takes
+ * it out of the real app each time, otherwise it stays there as usual.
+ */
+export interface ArchiveRule {
+  id: number
+  provider: Provider
+  kind: 'person' | 'conversation'
+  /** A normalized handle / JID / user id, or a conversation key. */
+  value: string
+  /** The name shown when the rule was made. */
+  label: string | null
+  removeFromApp: boolean
+  createdAt: number
+}
+
 export interface StoredConversation {
   /** `<provider>:<id>`, e.g. `imessage:direct:+15551234567`, `slack:D012AB`. */
   key: string
@@ -169,6 +188,16 @@ const SCHEMA = `
   END;
 
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    label TEXT,
+    remove_from_app INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE (provider, kind, value)
+  );
 `
 
 /**
@@ -540,6 +569,29 @@ export class ArchiveStore {
       senderName: row.sender_name,
       snippet: row.snippet,
     }))
+  }
+
+  rules(): ArchiveRule[] {
+    return (this.db.query('SELECT * FROM rules ORDER BY created_at').all() as Array<{ id: number, provider: string, kind: string, value: string, label: string | null, remove_from_app: number, created_at: number }>)
+      .filter(r => PROVIDERS.includes(r.provider as Provider) && (r.kind === 'person' || r.kind === 'conversation'))
+      .map(r => ({ id: r.id, provider: r.provider as Provider, kind: r.kind as ArchiveRule['kind'], value: r.value, label: r.label, removeFromApp: !!r.remove_from_app, createdAt: r.created_at }))
+  }
+
+  /** Adds a rule, or updates the one already there for the same person or conversation. */
+  addRule(rule: Omit<ArchiveRule, 'id' | 'createdAt'>, at = Date.now()): ArchiveRule {
+    this.db.query(`
+      INSERT INTO rules (provider, kind, value, label, remove_from_app, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      ON CONFLICT (provider, kind, value) DO UPDATE SET label = COALESCE(excluded.label, rules.label), remove_from_app = excluded.remove_from_app
+    `).run(rule.provider, rule.kind, rule.value, rule.label, rule.removeFromApp ? 1 : 0, at)
+    return this.rules().find(r => r.provider === rule.provider && r.kind === rule.kind && r.value === rule.value)!
+  }
+
+  updateRule(id: number, changes: { removeFromApp: boolean }): void {
+    this.db.query('UPDATE rules SET remove_from_app = ? WHERE id = ?').run(changes.removeFromApp ? 1 : 0, id)
+  }
+
+  deleteRule(id: number): void {
+    this.db.query('DELETE FROM rules WHERE id = ?').run(id)
   }
 
   setting(key: string): string | null {
