@@ -450,7 +450,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           let detail = ''
           if (before?.removedAt && splitKey(key).provider === 'imessage' && !usingSample) {
             const back = await waitUntil(() => visibleInApp(key))
-            detail = back ? 'Recovered in Messages.' : 'It is no longer in Messages\' Recently Deleted, so Attic\'s copy is all there is.'
+            detail = back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'
           }
           await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
           return json({ ok: true, app: { detail } })

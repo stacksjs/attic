@@ -114,12 +114,20 @@ func inDialog(_ element: AXUIElement) -> Bool {
 
 /// A button in an alert or sheet Messages is showing - never one in the
 /// window itself, where Recently Deleted has a "Delete" that is permanent.
+/// Matched by prefix: Messages labels them with the count, as in
+/// "Recover 442 Messages", and `text` has already dropped the direction marks
+/// it puts in front.
 func alertButton(_ app: AXUIElement, titled title: String) -> AXUIElement? {
   find(app) { element in
-    text(element, kAXRoleAttribute) == "AXButton"
-      && (text(element, kAXTitleAttribute) == title || text(element, kAXDescriptionAttribute) == title)
-      && inDialog(element)
+    guard text(element, kAXRoleAttribute) == "AXButton", inDialog(element) else { return false }
+    let label = text(element, kAXTitleAttribute) ?? text(element, kAXDescriptionAttribute) ?? ""
+    return label == title || label.hasPrefix("\(title) ")
   }
+}
+
+/// Recently Deleted shows "No Conversation Selected" until a row is chosen.
+func nothingSelected(_ app: AXUIElement) -> Bool {
+  find(app) { text($0, kAXRoleAttribute) == "AXStaticText" && text($0, kAXDescriptionAttribute) == "No Conversation Selected" } != nil
 }
 
 let args = CommandLine.arguments.dropFirst()
@@ -179,16 +187,24 @@ case "recover":
     fail(3, "\(name) is not in Recently Deleted")
   }
   _ = AXUIElementPerformAction(target, kAXPressAction as CFString)
-  guard let recover = poll({ find(app) { text($0, kAXRoleAttribute) == "AXButton" && text($0, kAXDescriptionAttribute) == "Recover" } }) else {
+  // The Recover button is always there; pressing it before the selection has
+  // landed recovers nothing. Wait for Messages to show the row as chosen.
+  guard poll({ nothingSelected(app) ? nil : true }) != nil else {
+    _ = clickMenu(app, "View", "Messages")
+    fail(4, "Messages did not select \(name) in Recently Deleted")
+  }
+  guard let recover = poll({ find(app) { text($0, kAXRoleAttribute) == "AXButton" && text($0, kAXDescriptionAttribute) == "Recover" && !inDialog($0) } }) else {
     _ = clickMenu(app, "View", "Messages")
     fail(4, "Messages showed no Recover button")
   }
   _ = AXUIElementPerformAction(recover, kAXPressAction as CFString)
-  // Messages may ask again; the second button is its own "Recover".
-  if let again = poll(seconds: 2, { alertButton(app, titled: "Recover") }) {
-    _ = AXUIElementPerformAction(again, kAXPressAction as CFString)
+  // Messages asks again in a sheet: "Recover 442 Messages" / Cancel.
+  guard let confirm = poll({ alertButton(app, titled: "Recover") }) else {
+    _ = clickMenu(app, "View", "Messages")
+    fail(4, "Messages did not ask to confirm the recovery")
   }
-  RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+  _ = AXUIElementPerformAction(confirm, kAXPressAction as CFString)
+  RunLoop.current.run(until: Date().addingTimeInterval(0.8))
   _ = clickMenu(app, "View", "Messages")
   print("recovered")
 
