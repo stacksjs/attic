@@ -195,6 +195,13 @@ const results = state([])
 const searching = state(false)
 const busy = state('')
 const flash = state('')
+/* Clean up: bulk archive of everything quiet for longer than a cutoff. */
+const BULK_AGES = [{ days: 182, label: '6 months' }, { days: 365, label: '1 year' }, { days: 730, label: '2 years' }]
+const bulkOpen = state(false)
+const bulkDays = state(365)
+const bulkPreview = state(null)
+const bulkRemove = state(false)
+const bulkJob = state(null)
 /** Picture URLs that failed to load, so the initials show instead of a broken image. */
 const failedAvatars = state([])
 
@@ -475,6 +482,60 @@ async function pickSource(next) {
   await loadLists()
   const first = list()[0]
   select(first ? first.key : '')
+}
+
+async function previewBulk() {
+  bulkPreview.set(null)
+  try {
+    const result = await post('/api/bulk/preview', { olderThanDays: bulkDays(), source: source() })
+    bulkPreview.set(result)
+    if (result.running)
+      bulkJob.set(result.running)
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+function openBulk() {
+  bulkOpen.set(true)
+  previewBulk()
+}
+
+function pickBulkAge(days) {
+  bulkDays.set(days)
+  previewBulk()
+}
+
+function bulkBreakdown() {
+  const counts = bulkPreview()?.byProvider ?? {}
+  return Object.entries(counts).map(([provider, n]) => `${n.toLocaleString()} ${appName(provider) === 'Messages' ? 'iMessage' : appName(provider)}`).join(', ')
+}
+
+async function startBulk() {
+  try {
+    const result = await post('/api/bulk/archive', { olderThanDays: bulkDays(), source: source(), removeFromApps: bulkRemove() })
+    bulkJob.set(result.job)
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+async function cancelBulk() {
+  const result = await post('/api/bulk/cancel', {})
+  bulkJob.set(result.job)
+}
+
+/** The message a reply quotes, as a one-line preview; null when it is not in what is loaded. */
+function quoted(m) {
+  if (!m.replyToGuid)
+    return null
+  const original = messages().find(o => o.guid === m.replyToGuid)
+  if (!original)
+    return null
+  const what = original.text || (original.attachments?.length ? (isImage(original.attachments[0]) ? 'Photo' : original.attachments[0].name) : 'Message')
+  return `${original.senderName ?? ''}${original.senderName ? ': ' : ''}${what.length > 90 ? `${what.slice(0, 90)}…` : what}`
 }
 
 function showAvatar(url) {
@@ -797,6 +858,13 @@ function listen() {
       access.set(event.state)
       await refresh()
     }
+    if (event.type === 'bulk') {
+      bulkJob.set(event.job)
+      if (event.job?.finished) {
+        say(`Cleaned up: ${event.job.archived.toLocaleString()} conversations archived${event.job.removed ? `, ${event.job.removed.toLocaleString()} taken out of the apps` : ''}.`)
+        previewBulk()
+      }
+    }
     if (event.type === 'changed') {
       await loadLists()
       if (selectedKey())
@@ -908,8 +976,12 @@ onMount(async () => {
     <div class="shrink-0 px-3 pb-2" style="padding-top: calc(var(--window-controls-height) + 14px)">
       <div class="flex items-baseline justify-between px-1 mb-2">
         <h2 class="text-[17px] font-bold m-0">{{ listTitle() }}</h2>
-        <span class="muted text-[11.5px]">{{ list().length }} conversations</span>
+        <span class="muted text-[11.5px]">{{ list().length.toLocaleString() }} conversations</span>
       </div>
+      <button :if="view() === 'inbox' && !showingResults()" class="toolbar-button w-full justify-center mb-2" style="background: var(--chip)" @click="openBulk()" title="Archive everything that has gone quiet">
+        <span class="i-hugeicons-clean text-[15px]"></span>
+        <span>{{ bulkJob() && !bulkJob().finished ? `Archiving ${bulkJob().done.toLocaleString()} of ${bulkJob().total.toLocaleString()}…` : 'Clean up…' }}</span>
+      </button>
       <div class="relative">
         <span class="i-hugeicons-search-01 absolute left-2 top-[7px] text-[14px] muted"></span>
         <input id="search" class="search selectable" type="search" placeholder="Search everything Attic kept" x-model="query" autocomplete="off" spellcheck="false">
@@ -1039,6 +1111,7 @@ onMount(async () => {
               <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
             </div>
           </div>
+          <div :if="quoted(row.m)" class="text-[11.5px] muted px-3 py-1 mb-[2px] max-w-[70%] truncate rounded-[10px]" style="border-left: 2.5px solid var(--separator); background: var(--chip)">{{ quoted(row.m) }}</div>
           <div :if="row.m.text && !row.m.unsent" class="bubble" :class="bubbleClass(row.m)" :style="bubbleStyle(row.m)">
             <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
           <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
@@ -1050,6 +1123,45 @@ onMount(async () => {
       </div>
     </div>
   </section>
+
+  <!-- Clean up: archive everything quiet for longer than a cutoff. -->
+  <div :if="bulkOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="bulkOpen.set(false)">
+    <div class="w-[460px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="i-hugeicons-clean text-[24px]" style="color: var(--accent)"></span>
+        <h2 class="text-[16px] font-semibold m-0">Clean up the Inbox</h2>
+      </div>
+      <div :if="!bulkJob() || bulkJob().finished">
+        <p class="muted text-[12px] leading-relaxed mb-3">Archive every conversation with no messages in the last:</p>
+        <div class="flex gap-2 mb-3">
+          <button :for="o in BULK_AGES" class="toolbar-button flex-1 justify-center" :style="bulkDays() === o.days ? 'background: var(--accent); color: #fff' : 'background: var(--chip)'" @click="pickBulkAge(o.days)">{{ o.label }}</button>
+        </div>
+        <div class="text-[13px] mb-1">
+          <span :if="bulkPreview()" class="font-semibold">{{ bulkPreview().total.toLocaleString() }} conversations</span>
+          <span :if="!bulkPreview()" class="muted">Counting…</span>
+        </div>
+        <div :if="bulkPreview()" class="muted text-[11.5px] mb-3">{{ bulkBreakdown() }}</div>
+        <label class="flex items-start gap-2 text-[12px] mb-1">
+          <input type="checkbox" class="mt-[2px]" :checked="bulkRemove()" @change="bulkRemove.set($event.target.checked)">
+          <span>Also take them out of the apps<span class="block muted text-[11px] leading-snug mt-0.5">Off keeps them in Messages and WhatsApp and archives them in Attic only. On, Messages deletes each thread (it keeps them 30 days in Recently Deleted) and WhatsApp archives them; with thousands of threads this takes a long while.</span></span>
+        </label>
+        <div :if="bulkJob() && bulkJob().finished" class="text-[12px] mt-3 muted">Last run: {{ bulkJob().archived.toLocaleString() }} archived{{ bulkJob().removed ? `, ${bulkJob().removed.toLocaleString()} taken out of the apps` : '' }}{{ bulkJob().failed ? `, ${bulkJob().failed} not copied completely and left in the Inbox` : '' }}{{ bulkJob().cancelled ? ' (stopped)' : '' }}.</div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Cancel</button>
+          <button class="toolbar-button" style="background: var(--accent); color: #fff" :disabled="!bulkPreview() || bulkPreview().total === 0" @click="startBulk()">{{ bulkPreview() && bulkPreview().total === 0 ? 'Nothing to archive' : `Archive ${bulkPreview() ? bulkPreview().total.toLocaleString() : ''}` }}</button>
+        </div>
+      </div>
+      <div :if="bulkJob() && !bulkJob().finished">
+        <p class="text-[13px] mb-2">Archiving {{ bulkJob().done.toLocaleString() }} of {{ bulkJob().total.toLocaleString() }}…</p>
+        <div class="h-[6px] rounded-full overflow-hidden mb-2" style="background: var(--chip)"><div class="h-full rounded-full" :style="`width: ${Math.round(100 * bulkJob().done / Math.max(1, bulkJob().total))}%; background: var(--accent); transition: width .3s`"></div></div>
+        <p class="muted text-[11.5px] mb-4">Each one is copied and checked before anything leaves an app. You can close this; it keeps going.</p>
+        <div class="flex justify-end gap-2">
+          <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Hide</button>
+          <button class="toolbar-button" style="color: #ff453a" @click="cancelBulk()">Stop</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Connecting a source: a token for Slack or Discord, what is missing for iMessage or WhatsApp. -->
   <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="connecting.set('')">
