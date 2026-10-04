@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Attic</title>
+  <!--
+    Attic on the phone. It keeps its own copy of the archive (Craft's native
+    SQLite, see resources/functions/phone-archive.ts) so it reads anywhere,
+    and syncs with the paired Mac on the same Wi-Fi: every request sealed with
+    the key from the pairing QR code. Built into the iOS and Android apps by
+    `bun run build:mobile`; on the Mac it is also served at /mobile.
+  -->
+  <style>
+    :root {
+      --bg: #f2f2f7; --surface: #ffffff; --label: #000000; --secondary: #6e6e73; --separator: rgba(60, 60, 67, .18);
+      --accent: #0a84ff; --bubble-in: #e9e9eb; --bubble-out: #0a84ff; --chip: rgba(118, 118, 128, .12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #000000; --surface: #1c1c1e; --label: #ffffff; --secondary: #8e8e93; --separator: rgba(84, 84, 88, .55); --bubble-in: #262628; --chip: rgba(118, 118, 128, .24); }
+    }
+    body { margin: 0; background: var(--bg); color: var(--label); font: 17px/1.35 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .muted { color: var(--secondary); }
+    .cell { display: flex; gap: 12px; align-items: center; padding: 10px 16px; background: var(--surface); border: 0; width: 100%; text-align: left; color: inherit; font: inherit; }
+    .cell + .cell { box-shadow: inset 72px 0 0 var(--surface), inset 0 .5px 0 var(--separator); }
+    .avatar { width: 46px; height: 46px; border-radius: 50%; flex: none; display: grid; place-items: center; overflow: hidden; color: #fff; font-weight: 600; font-size: 17px; background: linear-gradient(180deg, #a5abb8, #858994); }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .bubble { max-width: 78%; padding: 8px 13px; border-radius: 19px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
+    .bubble.in { background: var(--bubble-in); }
+    .bubble.out { background: var(--bubble-out); color: #fff; }
+    .reactions { position: absolute; top: -14px; right: -6px; display: flex; gap: 1px; background: var(--surface); border-radius: 12px; padding: 1px 5px; font-size: 13px; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+    .search { width: 100%; box-sizing: border-box; border: 0; border-radius: 10px; padding: 8px 12px; background: var(--chip); color: inherit; font: inherit; font-size: 16px; }
+    .button { border: 0; border-radius: 12px; padding: 13px 18px; font: inherit; font-weight: 600; background: var(--accent); color: #fff; width: 100%; }
+    .button.plain { background: var(--chip); color: var(--accent); }
+    textarea { width: 100%; box-sizing: border-box; border: 0; border-radius: 12px; padding: 12px; background: var(--surface); color: inherit; font: 13px ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+<script client>
+import { askMac, avatarFor, forgetPairing, lastSynced, loadPairing, localConversations, localMessages, savePairing, scanPairingCode, syncArchive } from '../functions/phone-archive'
+
+const screen = state('loading')
+const pairing = state(null)
+const view = state('archived')
+const query = state('')
+const archive = state([])
+const inbox = state([])
+const reachable = state(false)
+const syncing = state(false)
+const syncedAt = state(null)
+const note = state('')
+const pasted = state('')
+const settingsOpen = state(false)
+const openKey = state('')
+const transcript = state([])
+const avatars = state({})
+const busy = state(false)
+
+const conversations = derived(() => {
+  const list = view() === 'inbox' ? inbox() : archive()
+  const q = query().trim().toLowerCase()
+  return q ? list.filter(c => (c.title ?? '').toLowerCase().includes(q) || (c.preview ?? '').toLowerCase().includes(q)) : list
+})
+const open = derived(() => [...archive(), ...inbox()].find(c => c.key === openKey()) ?? null)
+const bubbles = derived(() => {
+  const all = transcript()
+  const reactions = new Map()
+  for (const m of all) {
+    if (m.kind === 'reaction' && !m.reactionRemoved && m.targetGuid)
+      reactions.set(m.targetGuid, [...(reactions.get(m.targetGuid) ?? []), m.reaction])
+  }
+  const byGuid = new Map(all.map(m => [m.guid, m]))
+  return all.filter(m => m.kind !== 'reaction' && (m.kind !== 'event' || m.text)).map(m => ({
+    ...m,
+    reactions: reactions.get(m.guid) ?? [],
+    quoted: m.replyToGuid && byGuid.get(m.replyToGuid) ? (byGuid.get(m.replyToGuid).text ?? 'Attachment') : null,
+  }))
+})
+
+function when(ms) {
+  if (!ms)
+    return ''
+  const date = new Date(ms)
+  const days = (Date.now() - ms) / 86_400_000
+  if (days < 1 && date.getDate() === new Date().getDate())
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (days < 7)
+    return date.toLocaleDateString([], { weekday: 'long' })
+  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: '2-digit' })
+}
+
+function say(text) {
+  note.set(text)
+  setTimeout(() => note() === text && note.set(''), 4000)
+}
+
+async function loadLocal() {
+  archive.set(await localConversations())
+  syncedAt.set(await lastSynced())
+  loadAvatars(archive())
+}
+
+async function loadAvatars(list) {
+  for (const c of list.slice(0, 60)) {
+    if (!c.avatar || avatars()[c.avatar] !== undefined)
+      continue
+    const data = await avatarFor(reachable() ? pairing() : null, c.avatar)
+    avatars.set({ ...avatars(), [c.avatar]: data })
+  }
+}
+
+async function sync() {
+  if (!pairing() || syncing())
+    return
+  syncing.set(true)
+  try {
+    const result = await syncArchive(pairing())
+    reachable.set(true)
+    await loadLocal()
+    inbox.set(await askMac(pairing(), 'inbox'))
+    loadAvatars(inbox())
+    if (result.messages)
+      say(`${result.messages.toLocaleString()} new messages kept`)
+  }
+  catch (error) {
+    reachable.set(false)
+    say(error.message?.includes('abort') || error.message?.includes('Load failed') || error.message?.includes('fetch')
+      ? `Not on the same network as ${pairing().name}. The archive here still reads.`
+      : error.message)
+  }
+  finally {
+    syncing.set(false)
+  }
+}
+
+async function finishPairing(code) {
+  const saved = await savePairing(code ?? '')
+  if (!saved) {
+    say('That is not an Attic pairing code.')
+    return
+  }
+  pairing.set(saved)
+  screen.set('list')
+  await sync()
+}
+
+async function scan() {
+  try {
+    const code = await scanPairingCode()
+    if (code)
+      await finishPairing(code)
+    else
+      say('No camera here: paste the code from the Mac instead.')
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+async function openConversation(c) {
+  openKey.set(c.key)
+  transcript.set(await localMessages(c.key))
+  screen.set('chat')
+}
+
+function back() {
+  screen.set('list')
+  openKey.set('')
+}
+
+async function toggleArchive() {
+  const c = open()
+  if (!c || busy())
+    return
+  busy.set(true)
+  try {
+    await askMac(pairing(), c.state === 'archived' ? 'unarchive' : 'archive', { key: c.key })
+    say(c.state === 'archived' ? `${c.title} is back in the Inbox` : `${c.title} archived`)
+    await sync()
+    back()
+  }
+  catch (error) {
+    say(`The Mac has to be reachable for that: ${error.message}`)
+  }
+  finally {
+    busy.set(false)
+  }
+}
+
+async function unpair() {
+  await forgetPairing()
+  settingsOpen.set(false)
+  pairing.set(null)
+  archive.set([])
+  inbox.set([])
+  screen.set('pair')
+}
+
+async function refreshed(event) {
+  await sync()
+  event.detail?.done?.()
+}
+
+onMount(async () => {
+  const saved = await loadPairing()
+  pairing.set(saved)
+  screen.set(saved ? 'list' : 'pair')
+  if (saved) {
+    await loadLocal()
+    sync()
+  }
+})
+</script>
+
+<NativeAppShell>
+  <!-- Pairing: scan the code the Mac shows under Phone > Pair a phone. -->
+  <main :if="screen() === 'pair'" class="min-h-screen flex flex-col justify-center gap-5 px-6" style="padding-top: env(safe-area-inset-top)">
+    <div class="text-center">
+      <div class="i-hugeicons-archive-02 text-[56px] mx-auto mb-3" style="color: var(--accent)"></div>
+      <h1 class="text-[30px] font-bold m-0">Attic</h1>
+      <p class="muted mt-2 mb-0 leading-snug">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Attic and choose Pair a phone.</p>
+    </div>
+    <button class="button" @click="scan()">Scan the code on your Mac</button>
+    <textarea :if="true" rows="3" placeholder="Or paste the pairing code" x-model="pasted"></textarea>
+    <button class="button plain" :disabled="!pasted().trim()" @click="finishPairing(pasted())">Pair with this code</button>
+  </main>
+
+  <!-- The archive (kept here) and the Mac's inbox (when reachable). -->
+  <main :if="screen() === 'list'">
+    <NativeNavBar title="Attic">
+      <template #actions>
+        <button class="border-0 bg-transparent p-2" style="color: var(--accent)" aria-label="Settings" @click="settingsOpen.set(true)"><span class="i-hugeicons-settings-02 text-[22px]"></span></button>
+      </template>
+    </NativeNavBar>
+    <NativePullToRefresh @refresh="refreshed($event)">
+      <div class="px-4 pb-2 flex flex-col gap-2">
+        <input class="search" type="search" placeholder="Search" x-model="query">
+        <NativeSegmentedControl :options="[{ label: 'Archived', value: 'archived' }, { label: 'Inbox', value: 'inbox' }]" v-model:value="view" label="Show" />
+        <div class="muted text-[12px] px-1">{{ syncing() ? 'Syncing…' : reachable() ? `Synced with ${pairing()?.name ?? 'your Mac'}` : syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }}</div>
+      </div>
+      <div :if="view() === 'inbox' && !reachable()" class="muted text-center px-8 py-12 text-[15px]">The Inbox lives on your Mac. Join the same Wi-Fi to see it; the archive below works anywhere.</div>
+      <div :if="conversations().length === 0 && (view() === 'archived' || reachable())" class="muted text-center px-8 py-12 text-[15px]">{{ query() ? 'Nothing matches.' : view() === 'archived' ? 'Nothing archived yet.' : 'All caught up.' }}</div>
+      <div class="rounded-[12px] overflow-hidden mx-4 mb-8">
+        <button :for="c in conversations().slice(0, 300)" :key="c.key" class="cell" @click="openConversation(c)">
+          <span class="avatar">
+            <img :if="avatars()[c.avatar]" :src="avatars()[c.avatar]" alt="">
+            <span :if="!avatars()[c.avatar]">{{ c.initials || '#' }}</span>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="flex justify-between gap-2">
+              <span class="font-semibold truncate">{{ c.title }}</span>
+              <span class="muted text-[14px] shrink-0">{{ when(c.lastMessageAt) }}</span>
+            </span>
+            <span class="block muted text-[15px] truncate">{{ c.preview || c.subtitle || `${c.savedMessages} messages kept` }}</span>
+          </span>
+        </button>
+      </div>
+    </NativePullToRefresh>
+  </main>
+
+  <!-- One conversation, read from the phone's own copy. -->
+  <main :if="screen() === 'chat' && open()">
+    <NativeNavBar :title="open()?.title ?? ''" :large="false">
+      <template #leading>
+        <button class="border-0 bg-transparent p-2 flex items-center gap-1" style="color: var(--accent); font: inherit" @click="back()"><span class="i-hugeicons-arrow-left-01 text-[22px]"></span>Attic</button>
+      </template>
+      <template #actions>
+        <button class="border-0 bg-transparent p-2" style="color: var(--accent)" :disabled="busy()" :aria-label="open()?.state === 'archived' ? 'Move to Inbox' : 'Archive'" @click="toggleArchive()">
+          <span class="text-[22px]" :class="open()?.state === 'archived' ? 'i-hugeicons-inbox-upload' : 'i-hugeicons-archive-02'"></span>
+        </button>
+      </template>
+    </NativeNavBar>
+    <div class="flex flex-col gap-[3px] px-3 pt-2 pb-10">
+      <div :if="bubbles().length === 0" class="muted text-center py-12 text-[15px]">Only the Mac has this conversation's messages. Sync on the same Wi-Fi to keep a copy here.</div>
+      <div :for="m in bubbles()" :key="m.guid" class="flex flex-col" :class="m.isFromMe ? 'items-end' : 'items-start'" :style="m.reactions.length ? 'margin-top: 14px' : ''">
+        <div :if="m.kind === 'event'" class="self-center muted text-[12px] py-1">{{ m.text }}</div>
+        <div :if="m.quoted" class="muted text-[13px] px-3 py-1 mb-[2px] max-w-[70%] truncate rounded-[12px]" style="background: var(--chip); border-left: 3px solid var(--separator)">{{ m.quoted }}</div>
+        <div :for="a in m.attachments" class="bubble mb-[2px]" :class="m.isFromMe ? 'out' : 'in'"><span class="i-hugeicons-attachment-01"></span> {{ a.name }}</div>
+        <div :if="m.kind === 'message' && m.text" class="bubble" :class="m.isFromMe ? 'out' : 'in'">
+          <span :if="m.reactions.length" class="reactions"><span :for="r in m.reactions">{{ r }}</span></span>{{ m.text }}
+        </div>
+        <div :if="m.unsent" class="muted text-[12px] italic px-3">{{ m.isFromMe ? 'You unsent a message' : 'Unsent' }}</div>
+      </div>
+    </div>
+  </main>
+
+  <NativeSheet v-model:open="settingsOpen" title="Attic">
+    <div class="flex flex-col gap-3 px-4 pb-6">
+      <div class="text-[15px]">Paired with <b>{{ pairing()?.name }}</b></div>
+      <div class="muted text-[14px]">{{ syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }} · {{ archive().length.toLocaleString() }} conversations kept here</div>
+      <button class="button plain" @click="sync()">Sync now</button>
+      <button class="button plain" style="color: #ff453a" @click="unpair()">Unpair and remove the archive from this phone</button>
+    </div>
+  </NativeSheet>
+
+  <div :if="note()" class="fixed left-4 right-4 text-center text-[14px] text-white rounded-[12px] px-4 py-3" style="bottom: calc(env(safe-area-inset-bottom) + 16px); background: rgba(40, 40, 40, .92)">{{ note() }}</div>
+</NativeAppShell>
+</body>
+</html>

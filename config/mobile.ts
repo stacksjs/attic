@@ -1,27 +1,44 @@
 import type { MobileConfig } from '@stacksjs/types'
-import { env } from '@stacksjs/env'
+
+/**
+ * Attic on the phone: the `mobile` page (resources/views/mobile.stx) bundled
+ * into a native app. It keeps its own copy of the archive in Craft's SQLite
+ * and syncs with the paired Mac on the local network, so it needs secure
+ * storage for the pairing key, the local database, the QR scanner to pair,
+ * and local network access. Build with `bun run build:ios` / `build:android`.
+ */
+const capabilities = {
+  haptics: true,
+  share: true,
+  secureStorage: true,
+  localDatabase: true,
+  qrScanner: true,
+  localNetwork: true,
+  clipboard: true,
+}
 
 export default {
   ios: {
-    appName: env.APP_NAME ?? 'Attic',
-    // A placeholder the App Store rejects on purpose: replace it with your own
-    // reverse-DNS id before the first build you mean to ship.
-    bundleId: 'com.example.attic',
-    version: '1.0.0',
+    appName: 'Attic',
+    bundleId: 'com.stacksjs.attic.mobile',
+    version: '0.2.0',
     buildNumber: '1',
     deploymentTarget: '16.0',
-    url: env.APP_URL,
-    darkMode: true,
-    backgroundColor: '#0a0a0a',
+    webAssets: 'storage/attic/mobile',
+    appearance: 'system',
+    backgroundColor: '#f2f2f7',
+    backgroundColorDark: '#000000',
     orientations: ['portrait'],
-    capabilities: {
-      haptics: true,
-      share: true,
-      secureStorage: true,
-      clipboard: true,
-      localDatabase: true,
-      screenCapture: true,
-      pdfViewer: true,
-    },
+    capabilities,
+  },
+  android: {
+    appName: 'Attic',
+    packageName: 'com.stacksjs.attic',
+    version: '0.2.0',
+    versionCode: 1,
+    webAssets: 'storage/attic/mobile',
+    darkMode: true,
+    backgroundColor: '#f2f2f7',
+    capabilities,
   },
 } satisfies MobileConfig
