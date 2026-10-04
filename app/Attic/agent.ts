@@ -743,7 +743,9 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         }
         case 'POST /api/phone/pair': {
           const data = await body(req)
-          return json(phone.pair(typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Phone'))
+          const paired = phone.pair(typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Phone')
+          broadcast({ type: 'phones' })
+          return json(paired)
         }
         case 'GET /api/phone/devices': {
           return json({ listening: phone.listening, devices: store.devices().map(d => ({ id: d.id, name: d.name, createdAt: d.createdAt, lastSeenAt: d.lastSeenAt })) })
@@ -751,6 +753,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         case 'POST /api/phone/forget': {
           const data = await body(req)
           phone.forget(String(data.id ?? ''))
+          broadcast({ type: 'phones' })
           return json({ ok: true })
         }
         case 'GET /api/rules': {
@@ -851,6 +854,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
             store.setSetting('removal', data.removal)
             await sources.load()
           }
+          // The Settings window and the main window both follow these.
+          broadcast({ type: 'settings' })
           return json({ resurface: resurfaceMode(), removal: removalMode() })
         }
         case 'POST /api/sources/connect': {

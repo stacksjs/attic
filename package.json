@@ -97,10 +97,10 @@
   "dependencies": {
     "@stacksjs/actions": "^0.75.56",
     "@stacksjs/chat": "^0.75.55",
-    "@stacksjs/desktop": "^0.2.360",
+    "@stacksjs/desktop": "^0.2.363",
     "@stacksjs/env": "^0.75.41",
     "@stacksjs/path": "^0.75.41",
-    "@stacksjs/stx": "^0.2.360",
+    "@stacksjs/stx": "^0.2.363",
     "@stacksjs/ts-css": "^0.3.8",
     "pickier": "^0.1.65",
     "stacks": "^0.75.41",

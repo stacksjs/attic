@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Settings</title>
+  <!--
+    Attic > Settings… (Cmd+,): a window of its own, opened by name so a second
+    Cmd+, brings it forward. Served by the agent like the main window and kept
+    in step with it over the same event stream.
+  -->
+  <style>
+    :root {
+      --bg: #ececec; --group: #ffffff; --label: #1d1d1f; --secondary: #6e6e73; --separator: rgba(0, 0, 0, .1);
+      --accent: #0a84ff; --chip: rgba(0, 0, 0, .06); --danger: #ff3b30;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #1e1e1e; --group: #2a2a2a; --label: #f5f5f7; --secondary: #98989d; --separator: rgba(255, 255, 255, .1); --chip: rgba(255, 255, 255, .08); --danger: #ff453a; }
+    }
+    body { margin: 0; background: var(--bg); color: var(--label); font: 13px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; }
+    .muted { color: var(--secondary); }
+    .group { background: var(--group); border-radius: 10px; box-shadow: 0 0 0 .5px var(--separator); }
+    .row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; min-height: 22px; }
+    .row + .row { border-top: .5px solid var(--separator); }
+    .heading { font-size: 13px; font-weight: 600; margin: 18px 4px 6px; }
+    .button { border: 0; border-radius: 6px; padding: 4px 11px; font: inherit; background: var(--chip); color: var(--label); }
+    .button.primary { background: var(--accent); color: #fff; }
+    .button.danger { color: var(--danger); background: transparent; }
+    .qr svg { width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+<script client>
+const resurface = state('inbox')
+const removal = state('auto')
+const accessible = state(true)
+const rules = state([])
+const phones = state([])
+const pairing = state(null)
+const note = state('')
+
+async function api(path, init) {
+  const response = await fetch(path, { credentials: 'same-origin', ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok)
+    throw new Error(data.error || `Request failed (${response.status})`)
+  return data
+}
+
+function post(path, payload) {
+  return api(path, { method: 'POST', body: JSON.stringify(payload ?? {}) })
+}
+
+function say(text) {
+  note.set(text)
+  setTimeout(() => note() === text && note.set(''), 4000)
+}
+
+async function load() {
+  const status = await api('/api/status')
+  resurface.set(status.settings?.resurface ?? 'inbox')
+  removal.set(status.settings?.removal ?? 'auto')
+  accessible.set(status.accessibility !== false)
+  rules.set(await api('/api/rules'))
+  phones.set((await api('/api/phone/devices')).devices)
+}
+
+async function setResurface(mode) {
+  resurface.set((await post('/api/settings', { resurface: mode })).resurface)
+}
+
+async function setRemoval(mode) {
+  removal.set((await post('/api/settings', { removal: mode })).removal)
+}
+
+async function allowAccessibility() {
+  accessible.set((await post('/api/accessibility')).trusted)
+}
+
+async function stopRule(rule) {
+  rules.set((await post('/api/rules/delete', { id: rule.id })).rules)
+  say(`Stopped always archiving ${rule.label}. What Attic kept stays.`)
+}
+
+async function pairPhone() {
+  const result = await post('/api/phone/pair')
+  if (result.error)
+    say(result.error)
+  else
+    pairing.set(result)
+  phones.set((await api('/api/phone/devices')).devices)
+}
+
+/** The phone just paired, once it has reached this Mac. */
+function pairedPhone() {
+  const id = pairing()?.pairing?.device
+  return id ? phones().find(p => p.id === id && p.lastSeenAt) ?? null : null
+}
+
+async function forgetPhone(phone) {
+  await post('/api/phone/forget', { id: phone.id })
+  phones.set((await api('/api/phone/devices')).devices)
+  say(`${phone.name} can no longer reach this Mac.`)
+}
+
+function appLabel(provider) {
+  return { imessage: 'iMessage', whatsapp: 'WhatsApp', slack: 'Slack', discord: 'Discord' }[provider] ?? provider
+}
+
+function since(ms) {
+  if (!ms)
+    return 'Not synced yet'
+  const minutes = Math.round((Date.now() - ms) / 60_000)
+  return minutes < 1 ? 'Synced just now' : minutes < 60 ? `Synced ${minutes} min ago` : `Synced ${new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+}
+
+onMount(async () => {
+  await load()
+  // Kept in step with the main window: a change in either shows in both.
+  const events = new EventSource('/api/events')
+  events.onmessage = async (message) => {
+    const event = JSON.parse(message.data)
+    if (event.type === 'changed' || event.type === 'settings' || event.type === 'phones')
+      await load()
+  }
+  // While a phone is pairing, watch for it to check in.
+  setInterval(async () => {
+    if (pairing() && !pairedPhone())
+      phones.set((await api('/api/phone/devices')).devices)
+  }, 2000)
+})
+</script>
+
+<main class="px-5 pt-3 pb-6">
+  <div class="heading">Archiving</div>
+  <div class="group">
+    <div class="row">
+      <span class="flex-1">When someone writes again</span>
+      <select class="button" :value="resurface()" @change="setResurface($event.target.value)">
+        <option value="inbox">Move it back to the Inbox</option>
+        <option value="stay">Keep it archived</option>
+      </select>
+    </div>
+    <div class="row">
+      <span class="flex-1">When you archive</span>
+      <select class="button" :value="removal()" @change="setRemoval($event.target.value)">
+        <option value="auto">Take it out of the app</option>
+        <option value="confirm">Take it out, Messages asks first</option>
+        <option value="off">Archive in Attic only</option>
+      </select>
+    </div>
+    <div :if="removal() !== 'off' && !accessible()" class="row">
+      <span class="flex-1 muted">Attic needs Accessibility to take conversations out of Messages and WhatsApp.</span>
+      <button class="button primary" @click="allowAccessibility()">Allow</button>
+    </div>
+  </div>
+
+  <div class="heading">Always archive</div>
+  <div class="group">
+    <div :if="rules().length === 0" class="row muted">Right-click a conversation and choose Always Archive. New messages from that person still reach you, then go into their archive and leave the app once the conversation is quiet.</div>
+    <div :for="r in rules()" :key="r.id" class="row">
+      <span class="flex-1 min-w-0">
+        <span class="block truncate">{{ r.label || r.value }}</span>
+        <span class="block muted text-[11.5px]">{{ r.kind === 'person' ? 'Person' : 'Group' }} on {{ appLabel(r.provider) }}</span>
+      </span>
+      <button class="button danger" @click="stopRule(r)">Stop</button>
+    </div>
+  </div>
+
+  <div class="heading">Phone</div>
+  <div class="group">
+    <div class="row">
+      <span class="flex-1 muted">The phone keeps its own copy of the archive and syncs with this Mac on the same Wi-Fi, encrypted with a key only the two hold.</span>
+      <button :if="!pairing() || pairedPhone()" class="button primary" @click="pairPhone()">Pair a phone</button>
+    </div>
+    <div :if="pairing() && !pairedPhone()" class="row flex-col">
+      <div class="qr w-[200px] h-[200px] rounded-[10px] p-2 bg-white" :html="pairing().svg"></div>
+      <div class="muted text-center">Point the phone's camera at this code to open Attic there and pair. Waiting for it…</div>
+    </div>
+    <div :if="pairedPhone()" class="row">Paired. The phone is copying the archive.</div>
+    <div :for="p in phones()" :key="p.id" class="row">
+      <span class="flex-1 min-w-0">
+        <span class="block truncate">{{ p.name }}</span>
+        <span class="block muted text-[11.5px]">{{ since(p.lastSeenAt) }}</span>
+      </span>
+      <button class="button danger" @click="forgetPhone(p)">Forget</button>
+    </div>
+  </div>
+
+  <div :if="note()" class="fixed left-5 right-5 bottom-4 text-center text-white rounded-[8px] px-3 py-2" style="background: rgba(40, 40, 40, .92)">{{ note() }}</div>
+</main>
+</body>
+</html>

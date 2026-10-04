@@ -168,7 +168,7 @@
 </head>
 <body>
 <script client>
-import { app, contextMenu, menu, notifications, showMessageBox, standardMenus } from '@stacksjs/desktop/browser'
+import { app, contextMenu, menu, nativeWindow, notifications, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
 
 /* ---------- state ---------- */
 const view = state('inbox')
@@ -195,15 +195,8 @@ const results = state([])
 const searching = state(false)
 const busy = state('')
 const flash = state('')
-/* The phone app: pairing a phone that keeps its own copy of the archive. */
-const phoneOpen = state(false)
-const pairing = state(null)
-const phones = state([])
-let phonePoll = null
-
 /* Always archive: rules for a person or a group. */
 const rules = state([])
-const rulesOpen = state(false)
 
 /* Clean up: bulk archive of everything quiet for longer than a cutoff. */
 const BULK_AGES = [{ days: 182, label: '6 months' }, { days: 365, label: '1 year' }, { days: 730, label: '2 years' }]
@@ -493,53 +486,75 @@ async function pickSource(next) {
   select(first ? first.key : '')
 }
 
-async function loadPhones() {
-  try {
-    phones.set((await api('/api/phone/devices')).devices)
-  }
-  catch {}
+/** Attic > Settings… (Cmd+,): its own window, brought forward if already open. */
+function openSettings() {
+  nativeWindow.open({ name: 'settings', url: '/settings', title: 'Settings', width: 560, height: 620, minWidth: 480, minHeight: 420, minimizable: false })
 }
 
-async function openPhone() {
-  phoneOpen.set(true)
-  pairing.set(null)
-  await loadPhones()
-  clearInterval(phonePoll)
-  // Until the new phone checks in, watch for it.
-  phonePoll = setInterval(async () => {
-    if (!phoneOpen()) {
-      clearInterval(phonePoll)
-      return
+/*
+ * The native sidebar: a real macOS source list beside the page when the Craft
+ * runtime has one (stx `sidebar`), built from the same state as the HTML
+ * sidebar, which stays for everywhere else.
+ */
+const nativeNav = state(null)
+const SOURCE_SYMBOLS = { imessage: 'message', whatsapp: 'phone.bubble', slack: 'number', discord: 'gamecontroller' }
+
+function navSections() {
+  const mailboxes = [
+    { id: 'all', label: 'All Inboxes', icon: 'tray.2', badge: source() === 'all' ? inboxCount() : null },
+    { id: 'archived', label: 'Archived', icon: 'archivebox', badge: archivedCount() },
+  ]
+  if (deletedCount() > 0)
+    mailboxes.push({ id: 'deleted', label: 'Recently Deleted', icon: 'trash', badge: deletedCount() })
+  return [
+    { id: 'mailboxes', items: mailboxes },
+    {
+      id: 'sources',
+      header: 'Sources',
+      items: sources().map(s => ({
+        id: `source:${s.provider}`,
+        label: s.label,
+        icon: SOURCE_SYMBOLS[s.provider] ?? 'bubble.left',
+        badge: s.status.connected ? (source() === s.provider ? inboxCount() : null) : (isLocal(s.provider) ? 'Set up' : 'Connect'),
+      })),
+    },
+  ]
+}
+
+function navSelected() {
+  if (view() === 'archived' || view() === 'deleted')
+    return view()
+  return source() === 'all' ? 'all' : `source:${source()}`
+}
+
+function onNavPick(id) {
+  if (id === 'all')
+    pickSource('all')
+  else if (id === 'archived' || id === 'deleted')
+    show(id)
+  else if (id.startsWith('source:')) {
+    const provider = id.slice('source:'.length)
+    const state_ = sources().find(s => s.provider === provider)
+    if (state_?.status.connected)
+      pickSource(provider)
+    else {
+      openConnect(provider)
+      nativeNav()?.select(navSelected())
     }
-    await loadPhones()
-  }, 2000)
+  }
 }
 
-async function pairPhone() {
-  const result = await post('/api/phone/pair', {})
-  if (result.error)
-    say(result.error)
-  else
-    pairing.set(result)
-  await loadPhones()
-}
-
-/** The phone just paired, once it has reached this Mac. */
-function pairedPhone() {
-  const id = pairing()?.pairing?.device
-  return id ? phones().find(p => p.id === id && p.lastSeenAt) ?? null : null
-}
-
-async function forgetPhone(p) {
-  await post('/api/phone/forget', { id: p.id })
-  await loadPhones()
-  say(`${p.name} is forgotten: it can no longer reach this Mac.`)
-}
-
-function closePhone() {
-  phoneOpen.set(false)
-  pairing.set(null)
-  clearInterval(phonePoll)
+function installNativeSidebar() {
+  if (nativeNav() || !sidebar.available())
+    return
+  const nav = sidebar.create({ sections: navSections(), selected: navSelected() })
+  if (!nav)
+    return
+  nav.onSelect(onNavPick)
+  nativeNav.set(nav)
+  // Counts, sources and the current view flow into the native list.
+  effect(() => nav.update(navSections()))
+  effect(() => nav.select(navSelected()))
 }
 
 async function loadRules() {
@@ -821,21 +836,6 @@ async function forget(key = selectedKey()) {
   await loadLists()
 }
 
-async function setRemoval(mode) {
-  const saved = await post('/api/settings', { removal: mode })
-  removal.set(saved.removal)
-}
-
-async function allowAccessibility() {
-  const result = await post('/api/accessibility', {})
-  accessible.set(result.trusted)
-}
-
-async function setResurface(mode) {
-  const saved = await post('/api/settings', { resurface: mode })
-  resurface.set(saved.resurface)
-}
-
 async function grantAccess() {
   await post('/api/privacy', {})
 }
@@ -882,7 +882,7 @@ function focusSearch() {
 async function installMenus() {
   await menu.set({
     menus: [
-      ...standardMenus.leading('Attic'),
+      ...standardMenus.leading('Attic', { settings: () => openSettings() }),
       {
         label: 'Conversation',
         items: [
@@ -953,6 +953,8 @@ function listen() {
   const events = new EventSource('/api/events')
   events.onmessage = async (message) => {
     const event = JSON.parse(message.data)
+    if (event.type === 'settings')
+      await refresh()
     if (event.type === 'access') {
       access.set(event.state)
       await refresh()
@@ -981,7 +983,7 @@ const presenting = params.get('presentation') !== null
 onMount(async () => {
   await refresh()
   loadRules()
-  loadPhones()
+  installNativeSidebar()
   // ?q= opens with a search filled in.
   const initialQuery = params.get('q')
   if (initialQuery)
@@ -1002,7 +1004,7 @@ onMount(async () => {
 
 <div data-stx-content class="flex h-screen">
   <!-- Sidebar, on the window material. -->
-  <nav class="w-[212px] shrink-0 flex flex-col" aria-label="Mailboxes">
+  <nav :if="!nativeNav()" class="w-[212px] shrink-0 flex flex-col" aria-label="Mailboxes">
     <div class="shrink-0" style="height: calc(var(--window-controls-height) + 24px)"></div>
     <button class="sidebar-item" :aria-current="view() === 'inbox' && source() === 'all' ? 'true' : 'false'" @click="pickSource('all')">
       <span class="i-hugeicons-inbox text-[15px] text-[var(--accent)]"></span>
@@ -1031,35 +1033,9 @@ onMount(async () => {
       </button>
     </div>
 
-    <div class="mt-auto px-4 pb-4 text-[11.5px] muted leading-snug">
-      <div class="font-semibold mb-1.5" style="color: var(--label)">When someone writes again</div>
-      <label class="flex items-center gap-2 py-0.5">
-        <input type="radio" name="resurface" :checked="resurface() === 'inbox'" @change="setResurface('inbox')">
-        <span>Move it back to the Inbox</span>
-      </label>
-      <label class="flex items-center gap-2 py-0.5">
-        <input type="radio" name="resurface" :checked="resurface() === 'stay'" @change="setResurface('stay')">
-        <span>Keep it archived</span>
-      </label>
-      <div class="font-semibold mt-4 mb-1.5" style="color: var(--label)">When you archive</div>
-      <label class="flex items-center gap-2 py-0.5">
-        <input type="radio" name="removal" :checked="removal() === 'auto'" @change="setRemoval('auto')">
-        <span>Take it out of the app</span>
-      </label>
-      <label class="flex items-center gap-2 py-0.5">
-        <input type="radio" name="removal" :checked="removal() === 'confirm'" @change="setRemoval('confirm')">
-        <span>Take it out, Messages asks first</span>
-      </label>
-      <label class="flex items-center gap-2 py-0.5">
-        <input type="radio" name="removal" :checked="removal() === 'off'" @change="setRemoval('off')">
-        <span>Archive in Attic only</span>
-      </label>
-      <div class="font-semibold mt-4 mb-1" style="color: var(--label)">Phone</div>
-      <button class="text-left text-[11.5px] border-0 bg-transparent p-0 mb-1" style="color: var(--accent)" @click="openPhone()">{{ phones().length ? `${phones().length} paired…` : 'Pair a phone…' }}</button>
-      <div class="font-semibold mt-3 mb-1" style="color: var(--label)">Always archive</div>
-      <button class="text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="rulesOpen.set(true)">{{ rules().length === 0 ? 'Choose people and groups…' : `${rules().length} ${rules().length === 1 ? 'person or group' : 'people and groups'}…` }}</button>
-      <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages and WhatsApp</button>
-      <div :if="fixture() && !presenting" class="mt-3 tag">Sample data</div>
+    <div class="mt-auto px-4 pb-4">
+      <div :if="fixture() && !presenting" class="mb-2 tag">Sample data</div>
+      <button class="sidebar-item w-full" @click="openSettings()"><span class="i-hugeicons-settings-02 text-[15px] muted"></span><span>Settings…</span></button>
     </div>
   </nav>
 
@@ -1228,61 +1204,6 @@ onMount(async () => {
       </div>
     </div>
   </section>
-
-  <!-- The phone app: pair a phone, see and forget paired ones. -->
-  <div :if="phoneOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="closePhone()">
-    <div class="w-[460px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
-      <div class="flex items-center gap-3 mb-2">
-        <span class="i-hugeicons-smart-phone-01 text-[22px]" style="color: var(--accent)"></span>
-        <h2 class="text-[16px] font-semibold m-0">Attic on your phone</h2>
-      </div>
-      <p class="muted text-[12px] leading-relaxed mb-3">The phone keeps its own copy of the archive to read anywhere, and syncs with this Mac on the same Wi-Fi. Everything between them is encrypted with a key only the two hold.</p>
-      <div :if="pairing() && !pairedPhone()" class="flex flex-col items-center gap-2 py-2">
-        <div class="w-[220px] h-[220px] rounded-[12px] p-2 bg-white [&>svg]:w-full [&>svg]:h-full" :html="pairing().svg"></div>
-        <div class="text-[12px] muted text-center">Point the phone's camera at this code to open Attic there and pair. Waiting for it…</div>
-      </div>
-      <div :if="pairedPhone()" class="flex items-center gap-2 py-3 text-[13px]">
-        <span class="i-hugeicons-checkmark-circle-02 text-[18px]" style="color: #30d158"></span>
-        <span>Paired. The phone is copying the archive.</span>
-      </div>
-      <div :for="p in phones()" :key="p.id" class="flex items-center gap-3 py-2 border-t" style="border-color: var(--separator)">
-        <span class="i-hugeicons-smart-phone-01 text-[16px] muted"></span>
-        <div class="min-w-0 flex-1">
-          <div class="text-[13px] font-medium truncate">{{ p.name }}</div>
-          <div class="muted text-[11px]">{{ p.lastSeenAt ? `Last synced ${when(p.lastSeenAt)}` : 'Not synced yet' }}</div>
-        </div>
-        <button class="toolbar-button" style="color: #ff453a" @click="forgetPhone(p)">Forget</button>
-      </div>
-      <div class="flex justify-between mt-4">
-        <button :if="!pairing() || pairedPhone()" class="toolbar-button" style="background: var(--chip)" @click="pairPhone()">Pair a phone</button>
-        <span :if="pairing() && !pairedPhone()"></span>
-        <button class="toolbar-button" style="background: var(--accent); color: #fff" @click="closePhone()">Done</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Always archive: every rule, each one easy to change or end. -->
-  <div :if="rulesOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="rulesOpen.set(false)">
-    <div class="w-[480px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
-      <div class="flex items-center gap-3 mb-2">
-        <span class="i-hugeicons-archive-02 text-[22px]" style="color: var(--accent)"></span>
-        <h2 class="text-[16px] font-semibold m-0">Always archive</h2>
-      </div>
-      <p class="muted text-[12px] leading-relaxed mb-3">New messages from these people and groups still reach you, then go into the archive Attic already keeps for them and leave the app, as any archive does. Moving one back to the Inbox ends its rule. Add one by right-clicking a conversation and choosing Always Archive.</p>
-      <div :if="rules().length === 0" class="muted text-[12px] py-6 text-center">No one yet.</div>
-      <div :for="r in rules()" :key="r.id" class="flex items-center gap-3 py-2 border-t" style="border-color: var(--separator)">
-        <span class="text-[16px]" :class="sourceIcon(r.provider)" :style="colorStyle(r.provider)"></span>
-        <div class="min-w-0 flex-1">
-          <div class="text-[13px] font-medium truncate">{{ r.label || r.value }}</div>
-          <div class="muted text-[11px]">{{ r.kind === 'person' ? 'Person' : 'Group' }} on {{ ruleAppName(r.provider) === 'Messages' ? 'iMessage' : ruleAppName(r.provider) }}</div>
-        </div>
-        <button class="toolbar-button" title="Stop always archiving" @click="deleteRule(r)"><span class="i-hugeicons-cancel-01 text-[14px]"></span></button>
-      </div>
-      <div class="flex justify-end mt-4">
-        <button class="toolbar-button" style="background: var(--accent); color: #fff" @click="rulesOpen.set(false)">Done</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Clean up: archive everything quiet for longer than a cutoff. -->
   <div :if="bulkOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="bulkOpen.set(false)">
