@@ -21,6 +21,10 @@
     "build": "./buddy build",
     "prod": "./buddy build",
     "build:ui": "bun x --bun stx build --pages resources/views --out storage/attic/web --no-sitemap",
+    "build:mobile-web": "bun run build:ui && bun scripts/build-mobile-web.ts",
+    "build:ios": "bun run build:mobile-web && ./buddy build:ios",
+    "build:android": "bun run build:mobile-web && ./buddy build:android",
+    "build:mobile": "bun run build:mobile-web && ./buddy build:mobile",
     "app": "bun run build:ui && bun app/Desktop/launcher.ts",
     "app:sample": "bun run build:ui && bun scripts/app-sample.ts",
     "build:helper": "mkdir -p storage/attic/bin && swiftc -O app/Desktop/messages-control.swift -o storage/attic/bin/attic-messages",
@@ -93,14 +97,15 @@
   "dependencies": {
     "@stacksjs/actions": "^0.75.55",
     "@stacksjs/chat": "^0.75.55",
-    "@stacksjs/desktop": "^0.2.354",
+    "@stacksjs/desktop": "^0.2.360",
     "@stacksjs/env": "^0.75.41",
     "@stacksjs/path": "^0.75.41",
-    "@stacksjs/stx": "^0.2.354",
+    "@stacksjs/stx": "^0.2.360",
     "@stacksjs/ts-css": "^0.3.8",
     "pickier": "^0.1.65",
     "stacks": "^0.75.41",
-    "ts-images": "^0.2.25"
+    "ts-images": "^0.2.25",
+    "ts-qr-codes": "^0.1.8"
   },
   "workspaces": [
     "storage/framework",

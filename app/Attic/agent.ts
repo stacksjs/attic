@@ -7,11 +7,13 @@ import { inbox } from '@stacksjs/chat'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
+import { hostname } from 'node:os'
 import process from 'node:process'
 import { decode, encode, resize } from 'ts-images'
 import { Archiver, ruleFor, ruleValue } from './archiver'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
+import { PhoneLink } from './phone-link'
 import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
@@ -571,6 +573,82 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     broadcast({ type: 'changed', resurfaced: [], removed: [] })
   }
 
+  /** Archive one conversation: copy, verify, then out of the app. The window and the phone both come here. */
+  async function archiveConversation(key: string): Promise<Record<string, unknown>> {
+    const result = await archiver.archive(key)
+    // Only a complete, verified copy may leave the real app.
+    const app = result.verified ? await takeOutOfApp(key) : { attempted: false, removed: false, detail: 'The copy is not complete yet, so the app was not touched.' }
+    broadcast({ type: 'changed', resurfaced: [], removed: [] })
+    return { ...result, app }
+  }
+
+  async function unarchiveConversation(key: string): Promise<Record<string, unknown>> {
+    const before = store.conversation(key)
+    // Moving a conversation back to the Inbox ends the rule that would
+    // archive it again on the next sync.
+    const covering = (await summaryFor(key))?.rule ?? null
+    if (covering) {
+      store.deleteRule(covering.id)
+      currentRules = store.rules()
+    }
+    await archiver.unarchive(key)
+    let detail = covering ? 'It is no longer archived automatically.' : ''
+    const { provider } = splitKey(key)
+    if (before?.removedAt && provider === 'imessage' && !usingSample) {
+      const back = await waitUntil(() => visibleInApp(key))
+      detail = `${back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'} ${detail}`.trim()
+    }
+    else if (before?.removedAt && !usingSample) {
+      detail = `${await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`} ${detail}`.trim()
+    }
+    await announce(await syncArchive(true))
+    return { ok: true, app: { detail } }
+  }
+
+  /*
+   * The phone app: a paired phone keeps its own copy of the archive and
+   * reaches this Mac over the local network through PhoneLink, every request
+   * sealed with the key it got at pairing.
+   */
+  function phoneSummary(c: ConversationSummary): Record<string, unknown> {
+    const { archiveDetail: _, ...rest } = c
+    return rest
+  }
+
+  const phone = new PhoneLink(store, {
+    hello: async () => ({ name: hostname().replace(/\.local$/, ''), version: options.version }),
+    pull: async (since) => {
+      const live = new Map((await sources.live()).map(e => [e.key, e]))
+      const stored = store.conversations()
+      const page = store.messagesAfter(since, 1500)
+      return {
+        conversations: stored.map(c => phoneSummary(summarize(live.get(c.key), c))),
+        messages: page.map(({ rowid, message }) => ({
+          ...message,
+          rowid,
+          attachments: message.attachments.map(a => ({ guid: a.guid, name: a.name, mimeType: a.mimeType, bytes: a.bytes, available: a.status === 'copied' })),
+        })),
+        cursor: page.at(-1)?.rowid ?? since,
+        more: page.length === 1500,
+      }
+    },
+    inbox: async () => (await conversations('inbox', 'all')).slice(0, 300).map(phoneSummary),
+    archive: key => archiveConversation(key),
+    unarchive: key => unarchiveConversation(key),
+    avatar: async (url) => {
+      const query = new URL(url, 'http://attic.local').searchParams
+      const provider = query.get('provider') as Provider | null
+      const ref = query.get('ref')
+      if (!provider || !ref || !LABELS[provider])
+        return null
+      const response = await avatarResponse(provider, ref, sources.driver(provider))
+      if (!response.ok)
+        return null
+      return { type: response.headers.get('content-type') ?? 'image/jpeg', data: Buffer.from(await response.arrayBuffer()).toString('base64') }
+    },
+  })
+  phone.start()
+
   let port = 0
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
@@ -631,11 +709,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const key = keyFrom(await body(req))
           if (!key)
             return problem('key is required')
-          const result = await archiver.archive(key)
-          // Only a complete, verified copy may leave the real app.
-          const app = result.verified ? await takeOutOfApp(key) : { attempted: false, removed: false, detail: 'The copy is not complete yet, so the app was not touched.' }
-          broadcast({ type: 'changed', resurfaced: [], removed: [] })
-          return json({ ...result, app })
+          return json(await archiveConversation(key))
         }
         case 'POST /api/bulk/preview': {
           const data = await body(req)
@@ -666,6 +740,18 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         }
         case 'GET /api/bulk': {
           return json({ job: bulkState() })
+        }
+        case 'POST /api/phone/pair': {
+          const data = await body(req)
+          return json(phone.pair(typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Phone'))
+        }
+        case 'GET /api/phone/devices': {
+          return json({ listening: phone.listening, devices: store.devices().map(d => ({ id: d.id, name: d.name, createdAt: d.createdAt, lastSeenAt: d.lastSeenAt })) })
+        }
+        case 'POST /api/phone/forget': {
+          const data = await body(req)
+          phone.forget(String(data.id ?? ''))
+          return json({ ok: true })
         }
         case 'GET /api/rules': {
           return json(currentRules)
@@ -702,26 +788,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const key = keyFrom(await body(req))
           if (!key)
             return problem('key is required')
-          const before = store.conversation(key)
-          // Moving a conversation back to the Inbox ends the rule that would
-          // archive it again on the next sync.
-          const covering = (await summaryFor(key))?.rule ?? null
-          if (covering) {
-            store.deleteRule(covering.id)
-            currentRules = store.rules()
-          }
-          await archiver.unarchive(key)
-          let detail = covering ? 'It is no longer archived automatically.' : ''
-          const { provider } = splitKey(key)
-          if (before?.removedAt && provider === 'imessage' && !usingSample) {
-            const back = await waitUntil(() => visibleInApp(key))
-            detail = `${back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'} ${detail}`.trim()
-          }
-          else if (before?.removedAt && !usingSample) {
-            detail = `${await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`} ${detail}`.trim()
-          }
-          await announce(await syncArchive(true))
-          return json({ ok: true, app: { detail } })
+          return json(await unarchiveConversation(key))
         }
         case 'POST /api/forget': {
           const key = keyFrom(await body(req))

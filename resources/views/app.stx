@@ -195,6 +195,12 @@ const results = state([])
 const searching = state(false)
 const busy = state('')
 const flash = state('')
+/* The phone app: pairing a phone that keeps its own copy of the archive. */
+const phoneOpen = state(false)
+const pairing = state(null)
+const phones = state([])
+let phonePoll = null
+
 /* Always archive: rules for a person or a group. */
 const rules = state([])
 const rulesOpen = state(false)
@@ -485,6 +491,55 @@ async function pickSource(next) {
   await loadLists()
   const first = list()[0]
   select(first ? first.key : '')
+}
+
+async function loadPhones() {
+  try {
+    phones.set((await api('/api/phone/devices')).devices)
+  }
+  catch {}
+}
+
+async function openPhone() {
+  phoneOpen.set(true)
+  pairing.set(null)
+  await loadPhones()
+  clearInterval(phonePoll)
+  // Until the new phone checks in, watch for it.
+  phonePoll = setInterval(async () => {
+    if (!phoneOpen()) {
+      clearInterval(phonePoll)
+      return
+    }
+    await loadPhones()
+  }, 2000)
+}
+
+async function pairPhone() {
+  const result = await post('/api/phone/pair', {})
+  if (result.error)
+    say(result.error)
+  else
+    pairing.set(result)
+  await loadPhones()
+}
+
+/** The phone just paired, once it has reached this Mac. */
+function pairedPhone() {
+  const id = pairing()?.pairing?.device
+  return id ? phones().find(p => p.id === id && p.lastSeenAt) ?? null : null
+}
+
+async function forgetPhone(p) {
+  await post('/api/phone/forget', { id: p.id })
+  await loadPhones()
+  say(`${p.name} is forgotten: it can no longer reach this Mac.`)
+}
+
+function closePhone() {
+  phoneOpen.set(false)
+  pairing.set(null)
+  clearInterval(phonePoll)
 }
 
 async function loadRules() {
@@ -926,6 +981,7 @@ const presenting = params.get('presentation') !== null
 onMount(async () => {
   await refresh()
   loadRules()
+  loadPhones()
   // ?q= opens with a search filled in.
   const initialQuery = params.get('q')
   if (initialQuery)
@@ -998,7 +1054,9 @@ onMount(async () => {
         <input type="radio" name="removal" :checked="removal() === 'off'" @change="setRemoval('off')">
         <span>Archive in Attic only</span>
       </label>
-      <div class="font-semibold mt-4 mb-1" style="color: var(--label)">Always archive</div>
+      <div class="font-semibold mt-4 mb-1" style="color: var(--label)">Phone</div>
+      <button class="text-left text-[11.5px] border-0 bg-transparent p-0 mb-1" style="color: var(--accent)" @click="openPhone()">{{ phones().length ? `${phones().length} paired…` : 'Pair a phone…' }}</button>
+      <div class="font-semibold mt-3 mb-1" style="color: var(--label)">Always archive</div>
       <button class="text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="rulesOpen.set(true)">{{ rules().length === 0 ? 'Choose people and groups…' : `${rules().length} ${rules().length === 1 ? 'person or group' : 'people and groups'}…` }}</button>
       <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages and WhatsApp</button>
       <div :if="fixture() && !presenting" class="mt-3 tag">Sample data</div>
@@ -1170,6 +1228,38 @@ onMount(async () => {
       </div>
     </div>
   </section>
+
+  <!-- The phone app: pair a phone, see and forget paired ones. -->
+  <div :if="phoneOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="closePhone()">
+    <div class="w-[460px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+      <div class="flex items-center gap-3 mb-2">
+        <span class="i-hugeicons-smart-phone-01 text-[22px]" style="color: var(--accent)"></span>
+        <h2 class="text-[16px] font-semibold m-0">Attic on your phone</h2>
+      </div>
+      <p class="muted text-[12px] leading-relaxed mb-3">The phone keeps its own copy of the archive to read anywhere, and syncs with this Mac on the same Wi-Fi. Everything between them is encrypted with a key only the two hold.</p>
+      <div :if="pairing() && !pairedPhone()" class="flex flex-col items-center gap-2 py-2">
+        <div class="w-[220px] h-[220px] rounded-[12px] p-2 bg-white [&>svg]:w-full [&>svg]:h-full" :html="pairing().svg"></div>
+        <div class="text-[12px] muted text-center">Open Attic on the phone and scan this. Waiting for it…</div>
+      </div>
+      <div :if="pairedPhone()" class="flex items-center gap-2 py-3 text-[13px]">
+        <span class="i-hugeicons-checkmark-circle-02 text-[18px]" style="color: #30d158"></span>
+        <span>Paired. The phone is copying the archive.</span>
+      </div>
+      <div :for="p in phones()" :key="p.id" class="flex items-center gap-3 py-2 border-t" style="border-color: var(--separator)">
+        <span class="i-hugeicons-smart-phone-01 text-[16px] muted"></span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[13px] font-medium truncate">{{ p.name }}</div>
+          <div class="muted text-[11px]">{{ p.lastSeenAt ? `Last synced ${when(p.lastSeenAt)}` : 'Not synced yet' }}</div>
+        </div>
+        <button class="toolbar-button" style="color: #ff453a" @click="forgetPhone(p)">Forget</button>
+      </div>
+      <div class="flex justify-between mt-4">
+        <button :if="!pairing() || pairedPhone()" class="toolbar-button" style="background: var(--chip)" @click="pairPhone()">Pair a phone</button>
+        <span :if="pairing() && !pairedPhone()"></span>
+        <button class="toolbar-button" style="background: var(--accent); color: #fff" @click="closePhone()">Done</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Always archive: every rule, each one easy to change or end. -->
   <div :if="rulesOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="rulesOpen.set(false)">
