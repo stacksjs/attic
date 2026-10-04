@@ -95,7 +95,7 @@
     "docs:agent-counts:check": "./buddy docs:agent-counts:check"
   },
   "dependencies": {
-    "@stacksjs/actions": "^0.75.55",
+    "@stacksjs/actions": "^0.75.56",
     "@stacksjs/chat": "^0.75.55",
     "@stacksjs/desktop": "^0.2.360",
     "@stacksjs/env": "^0.75.41",
