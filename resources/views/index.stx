@@ -35,6 +35,12 @@ const sources = [
     body: 'Read straight from Messages on your Mac. Archiving removes the thread through Messages itself, so iCloud and your iPhone stay in step, and unarchiving recovers it.',
   },
   {
+    name: 'WhatsApp',
+    icon: 'i-hugeicons-whatsapp',
+    tint: 'source-whatsapp',
+    body: 'Read from WhatsApp on your Mac. Archiving presses WhatsApp\'s own Archive, so your phone sees it too, and Attic checks WhatsApp recorded it before calling it done.',
+  },
+  {
     name: 'Slack',
     icon: 'i-hugeicons-slack',
     tint: 'source-slack',
@@ -59,11 +65,11 @@ const faqs = [
   },
   {
     q: 'Can I unarchive?',
-    a: 'Yes. Slack reopens the DM or rejoins the channel, Discord unarchives the thread, and Messages recovers the conversation from Recently Deleted while it is still there.',
+    a: 'Yes. WhatsApp unarchives the chat, Slack reopens the DM or rejoins the channel, Discord unarchives the thread, and Messages recovers the conversation from Recently Deleted while it is still there.',
   },
   {
     q: 'What does Attic need from my Mac?',
-    a: 'Full Disk Access to read Messages, and Accessibility to press Delete and Recover in Messages for you. Slack and Discord use tokens kept in your keychain.',
+    a: 'Full Disk Access to read Messages and WhatsApp, and Accessibility to press Delete and Recover in Messages and Archive in WhatsApp for you. Slack and Discord use tokens kept in your keychain.',
   },
   {
     q: 'Where do my messages go?',
@@ -81,8 +87,8 @@ const year = new Date().getFullYear()
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Attic: one calm inbox for iMessage, Slack and Discord</title>
-  <meta name="description" content="Attic gathers iMessage, Slack and Discord in one Mac app. Archive a conversation and it leaves the real app too, with a complete copy kept.">
+  <title>Attic: one calm inbox for iMessage, WhatsApp, Slack and Discord</title>
+  <meta name="description" content="Attic gathers iMessage, WhatsApp, Slack and Discord in one Mac app. Archive a conversation and it leaves the real app too, with a complete copy kept.">
   <meta property="og:title" content="Attic: one calm inbox for every chat">
   <meta property="og:description" content="Archive a conversation and it leaves the real app too. Every message kept, on your Mac.">
   <meta property="og:image" content="/images/screens/attic-light.png">
@@ -142,9 +148,11 @@ const year = new Date().getFullYear()
     }
     .tile { border-radius: 20px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
     .source-imessage { background: linear-gradient(160deg, color-mix(in srgb, #34c759 16%, var(--surface)), var(--surface) 70%); }
+    .source-whatsapp { background: linear-gradient(160deg, color-mix(in srgb, #25d366 16%, var(--surface)), var(--surface) 70%); }
     .source-slack { background: linear-gradient(160deg, color-mix(in srgb, #e01e5a 14%, var(--surface)), var(--surface) 70%); }
     .source-discord { background: linear-gradient(160deg, color-mix(in srgb, #5865f2 16%, var(--surface)), var(--surface) 70%); }
     .source-imessage .glyph { color: #34c759; }
+    .source-whatsapp .glyph { color: #1da851; }
     .source-slack .glyph { color: #e01e5a; }
     .source-discord .glyph { color: #5865f2; }
     details summary { list-style: none; cursor: pointer; }
@@ -179,7 +187,7 @@ const year = new Date().getFullYear()
     <section class="max-w-6xl mx-auto px-5 md:px-8 pt-10 md:pt-16 pb-16 grid md:grid-cols-[1fr_1.35fr] gap-10 md:gap-12 items-center">
       <div>
         <h1 class="text-4xl md:text-5xl lg:text-[56px] font-bold tracking-tight leading-[1.05] m-0">One calm inbox for every chat.</h1>
-        <p class="soft text-[17px] md:text-lg leading-relaxed mt-5 mb-8 max-w-[34ch]">Attic gathers iMessage, Slack and Discord on your Mac. Archive a conversation and it leaves the real app too.</p>
+        <p class="soft text-[17px] md:text-lg leading-relaxed mt-5 mb-8 max-w-[34ch]">Attic gathers iMessage, WhatsApp, Slack and Discord on your Mac. Archive a conversation and it leaves the real app too.</p>
         <div class="flex flex-wrap gap-3">
           <a href="{{ download }}" class="btn btn-primary"><span class="i-hugeicons-apple text-[18px]"></span>Get Attic</a>
           <a href="#how" class="btn btn-ghost">How it works</a>
@@ -210,22 +218,22 @@ const year = new Date().getFullYear()
       </ol>
     </section>
 
-    <!-- Sources: a bento of the three apps and the search across them. -->
+    <!-- Sources: a bento of the four apps and the search across them. -->
     <section class="max-w-6xl mx-auto px-5 md:px-8 py-16 md:py-20">
-      <h2 class="text-3xl md:text-4xl font-bold tracking-tight m-0 mb-10 max-w-[22ch]">Three apps, one list, honest about each.</h2>
-      <div class="grid md:grid-cols-6 gap-4">
+      <h2 class="text-3xl md:text-4xl font-bold tracking-tight m-0 mb-10 max-w-[22ch]">Four apps, one list, honest about each.</h2>
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
         @foreach (sources as source)
-          <article class="tile {{ source.tint }} p-6 md:p-7 md:col-span-2 flex flex-col gap-3">
+          <article class="tile {{ source.tint }} p-6 md:p-7 flex flex-col gap-3">
             <span class="glyph {{ source.icon }} text-[30px]"></span>
             <h3 class="text-[19px] font-semibold m-0">{{ source.name }}</h3>
             <p class="soft m-0 leading-relaxed text-[15px]">{{ source.body }}</p>
           </article>
         @endforeach
-        <article class="tile md:col-span-6 p-6 md:p-8 grid md:grid-cols-[1fr_1.2fr] gap-8 items-center overflow-hidden">
+        <article class="tile md:col-span-2 lg:col-span-4 p-6 md:p-8 grid md:grid-cols-[1fr_1.2fr] gap-8 items-center overflow-hidden">
           <div>
             <span class="i-hugeicons-search-01 text-[28px]" style="color: var(--accent)"></span>
             <h3 class="text-[22px] font-semibold mt-3 mb-2">Search everything you kept</h3>
-            <p class="soft m-0 leading-relaxed max-w-[44ch]">Every archived message across all three apps is indexed on your Mac. Find the address from last spring without scrolling a single thread.</p>
+            <p class="soft m-0 leading-relaxed max-w-[44ch]">Every archived message across all four apps is indexed on your Mac. Find the address from last spring without scrolling a single thread.</p>
           </div>
           <picture>
             <source srcset="/images/screens/attic-search-dark.png" media="(prefers-color-scheme: dark)">
@@ -271,7 +279,7 @@ const year = new Date().getFullYear()
 
   <footer class="max-w-6xl mx-auto px-5 md:px-8 py-10 flex flex-col sm:flex-row gap-3 justify-between text-[13px] faint" style="border-top: 1px solid var(--line)">
     <span>© {{ year }} Attic. Built with Stacks.</span>
-    <span>iMessage, Slack and Discord are trademarks of their owners.</span>
+    <span>iMessage, WhatsApp, Slack and Discord are trademarks of their owners.</span>
   </footer>
 </body>
 </html>

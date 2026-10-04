@@ -201,8 +201,8 @@ const selected = derived(() => list().find(c => c.key === selectedKey()) ?? null
 const needsAccess = derived(() => access() === 'needs-full-disk-access')
 const noMessages = derived(() => access() === 'no-messages')
 const anyConnected = derived(() => sources().some(s => s.status.connected))
-const SOURCE_ICONS = { imessage: 'i-hugeicons-message-01', slack: 'i-hugeicons-slack', discord: 'i-hugeicons-discord' }
-const SOURCE_COLORS = { imessage: '#34c759', slack: '#e01e5a', discord: '#5865f2' }
+const SOURCE_ICONS = { imessage: 'i-hugeicons-message-01', whatsapp: 'i-hugeicons-whatsapp', slack: 'i-hugeicons-slack', discord: 'i-hugeicons-discord' }
+const SOURCE_COLORS = { imessage: '#34c759', whatsapp: '#25d366', slack: '#e01e5a', discord: '#5865f2' }
 const showingResults = derived(() => query().trim().length > 0)
 
 /* ---------- formatting ---------- */
@@ -283,12 +283,12 @@ function bubbleClass(m) {
   return [m.isFromMe ? 'out' : 'in', m.inApp ? '' : 'attic'].join(' ')
 }
 
-/** Your own bubbles take the app's colour: iMessage blue, Slack berry, Discord blurple. */
+/** Your own bubbles take the app's colour: iMessage blue, WhatsApp teal, Slack berry, Discord blurple. */
 function bubbleStyle(m) {
   if (!m.isFromMe)
     return ''
   const provider = detail()?.provider
-  return provider === 'slack' ? 'background: #611f69' : provider === 'discord' ? 'background: #5865f2' : ''
+  return provider === 'whatsapp' ? 'background: #128c7e' : provider === 'slack' ? 'background: #611f69' : provider === 'discord' ? 'background: #5865f2' : ''
 }
 
 function keptSummary(d) {
@@ -319,7 +319,9 @@ function isFile(a) {
 /** The transcript, newest first (the scroller is column-reverse), with a day header where the gap is large. */
 const timeline = derived(() => {
   const rows = []
-  const all = messages()
+  // WhatsApp notices with nothing to say (polls, pins and the like the driver
+  // cannot read) would only repeat "Conversation updated"; leave them out.
+  const all = detail()?.provider === 'whatsapp' ? messages().filter(m => m.kind !== 'event' || m.text) : messages()
   for (let i = all.length - 1; i >= 0; i--) {
     const m = all[i]
     const prev = all[i - 1]
@@ -461,7 +463,16 @@ async function pickSource(next) {
 }
 
 function appName(provider) {
-  return provider === 'slack' ? 'Slack' : provider === 'discord' ? 'Discord' : 'Messages'
+  return provider === 'whatsapp' ? 'WhatsApp' : provider === 'slack' ? 'Slack' : provider === 'discord' ? 'Discord' : 'Messages'
+}
+
+/** Read from this Mac rather than through a token: set up in System Settings, not a sheet. */
+function isLocal(provider) {
+  return provider === 'imessage' || provider === 'whatsapp'
+}
+
+function sourceDetail(provider) {
+  return sources().find(s => s.provider === provider)?.status.detail ?? ''
 }
 
 function connectedTo(provider) {
@@ -653,7 +664,7 @@ async function rowMenu(event, c) {
     ? [{ id: 'unarchive', title: 'Move to Inbox', icon: 'tray.and.arrow.up', shortcut: 'cmd+shift+u' }]
     : [{ id: 'archive', title: 'Archive', icon: 'archivebox', shortcut: 'ctrl+cmd+a' }]
   items.push({ separator: true })
-  items.push({ id: 'open', title: `Show in ${c.provider === 'imessage' ? 'Messages' : c.provider === 'slack' ? 'Slack' : 'Discord'}`, icon: 'arrow.up.forward.app', shortcut: 'cmd+o', disabled: !c.url })
+  items.push({ id: 'open', title: `Show in ${appName(c.provider)}`, icon: 'arrow.up.forward.app', shortcut: 'cmd+o', disabled: !c.url })
   if (c.saved) {
     items.push({ separator: true })
     items.push({ id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'xmark.bin' })
@@ -812,8 +823,8 @@ onMount(async () => {
         <span class="text-[15px]" :class="sourceIcon(s.provider)" :style="colorStyle(s.provider)"></span>
         <span>{{ s.label }}</span>
         <span :if="s.status.connected" class="count">{{ source() === s.provider ? inboxCount() : '' }}</span>
-        <span :if="!s.status.connected && s.provider !== 'imessage'" class="count" style="color: var(--accent)">Connect</span>
-        <span :if="!s.status.connected && s.provider === 'imessage'" class="count" style="color: var(--amber)">Set up</span>
+        <span :if="!s.status.connected && !isLocal(s.provider)" class="count" style="color: var(--accent)">Connect</span>
+        <span :if="!s.status.connected && isLocal(s.provider)" class="count" style="color: var(--amber)">Set up</span>
       </button>
     </div>
 
@@ -840,7 +851,7 @@ onMount(async () => {
         <input type="radio" name="removal" :checked="removal() === 'off'" @change="setRemoval('off')">
         <span>Archive in Attic only</span>
       </label>
-      <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages</button>
+      <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages and WhatsApp</button>
       <div :if="fixture() && !presenting" class="mt-3 tag">Sample data</div>
     </div>
   </nav>
@@ -969,7 +980,7 @@ onMount(async () => {
         <div :if="row.type === 'day'" class="text-center text-[11px] muted font-medium pt-4 pb-1">{{ row.label }}</div>
         <div :if="row.type === 'kept'" class="flex items-center gap-2 py-3 text-[11px] muted">
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
-          <span>Above: kept by Attic after Messages removed it</span>
+          <span>Above: kept by Attic after {{ appName(detail()?.provider) }} removed it</span>
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
         </div>
         <div :if="row.type === 'message' && row.m.kind === 'event'" class="text-center text-[11px] muted py-1">{{ eventText(row.m) }}</div>
@@ -997,7 +1008,7 @@ onMount(async () => {
     </div>
   </section>
 
-  <!-- Connecting Slack or Discord: a sheet over the window. -->
+  <!-- Connecting a source: a token for Slack or Discord, what is missing for iMessage or WhatsApp. -->
   <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="connecting.set('')">
     <div class="w-[440px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
       <div class="flex items-center gap-3 mb-3">
@@ -1006,12 +1017,16 @@ onMount(async () => {
       </div>
       <p :if="connecting() === 'slack'" class="muted text-[12px] leading-relaxed mb-3">Paste a Slack <b>user</b> token (it starts with xoxp-), from a Slack app you create with the read scopes for channels, groups, DMs and users, plus im:write, mpim:write and channels:write so archiving can close and leave conversations. It stays in your keychain.</p>
       <p :if="connecting() === 'discord'" class="muted text-[12px] leading-relaxed mb-3">Paste a Discord <b>bot</b> token and add the bot to your servers with Read Message History (and Manage Threads to archive threads). Discord does not let apps read personal DMs, so those stay in Discord. Your user id marks your own messages.</p>
-      <input class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="Token" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
+      <p :if="isLocal(connecting())" class="muted text-[12px] leading-relaxed mb-3">Attic reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
+      <input :if="!isLocal(connecting())" class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="Token" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
       <input :if="connecting() === 'discord'" class="search selectable mb-2" style="padding-left: 10px" type="text" placeholder="Your Discord user id (optional)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
       <div class="flex justify-between items-center mt-3">
-        <button :if="connectedTo(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">Disconnect</button>
-        <span :if="!connectedTo(connecting())"></span>
-        <div class="flex gap-2">
+        <button :if="connectedTo(connecting()) && !isLocal(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">Disconnect</button>
+        <span :if="!connectedTo(connecting()) || isLocal(connecting())"></span>
+        <div :if="isLocal(connecting())" class="flex gap-2">
+          <button class="toolbar-button" style="background: var(--accent); color: #fff" @click="connecting.set('')">Done</button>
+        </div>
+        <div :if="!isLocal(connecting())" class="flex gap-2">
           <button class="toolbar-button" style="background: var(--chip)" @click="connecting.set('')">Cancel</button>
           <button class="toolbar-button" style="background: var(--accent); color: #fff" :disabled="!tokenDraft()" @click="saveConnect()">Connect</button>
         </div>
