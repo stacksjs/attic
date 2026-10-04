@@ -107,6 +107,9 @@
       color: #fff; font-weight: 600; font-size: 15px; letter-spacing: .02em;
     }
     .avatar.large { width: 30px; height: 30px; font-size: 12px; }
+    .avatar.small { width: 18px; height: 18px; font-size: 8px; }
+    /* A profile picture covers the initials; the source badge stays on top. */
+    .avatar .photo { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
     .source-badge {
       position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; border-radius: 50%;
       display: grid; place-items: center; box-shadow: 0 0 0 2px var(--list-bg);
@@ -192,8 +195,18 @@ const results = state([])
 const searching = state(false)
 const busy = state('')
 const flash = state('')
+/** Picture URLs that failed to load, so the initials show instead of a broken image. */
+const failedAvatars = state([])
 
 const list = derived(() => (view() === 'archived' ? archived() : view() === 'deleted' ? deletedList() : inbox()))
+/**
+ * Rows actually rendered. A real Messages history runs to thousands of
+ * conversations; drawing them all made the window take seconds to appear and
+ * to respond, so the list grows a page at a time as it is scrolled.
+ */
+const LIST_PAGE = 120
+const listLimit = state(LIST_PAGE)
+const shownList = derived(() => list().slice(0, listLimit()))
 const deletedCount = derived(() => deletedList().length)
 const inboxCount = derived(() => inbox().length)
 const archivedCount = derived(() => archived().length)
@@ -202,7 +215,7 @@ const needsAccess = derived(() => access() === 'needs-full-disk-access')
 const noMessages = derived(() => access() === 'no-messages')
 const anyConnected = derived(() => sources().some(s => s.status.connected))
 const SOURCE_ICONS = { imessage: 'i-hugeicons-message-01', whatsapp: 'i-hugeicons-whatsapp', slack: 'i-hugeicons-slack', discord: 'i-hugeicons-discord' }
-const SOURCE_COLORS = { imessage: '#34c759', whatsapp: '#25d366', slack: '#e01e5a', discord: '#5865f2' }
+const SOURCE_COLORS = { imessage: '#0a84ff', whatsapp: '#25d366', slack: '#e01e5a', discord: '#5865f2' }
 const showingResults = derived(() => query().trim().length > 0)
 
 /* ---------- formatting ---------- */
@@ -447,6 +460,7 @@ function select(key) {
 }
 
 function show(next) {
+  listLimit.set(LIST_PAGE)
   view.set(next)
   query.set('')
   const first = list()[0]
@@ -454,12 +468,22 @@ function show(next) {
 }
 
 async function pickSource(next) {
+  listLimit.set(LIST_PAGE)
   source.set(next)
   view.set('inbox')
   query.set('')
   await loadLists()
   const first = list()[0]
   select(first ? first.key : '')
+}
+
+function showAvatar(url) {
+  return !!url && !failedAvatars().includes(url)
+}
+
+function avatarFailed(url) {
+  if (url && !failedAvatars().includes(url))
+    failedAvatars.set([...failedAvatars(), url])
 }
 
 function appName(provider) {
@@ -553,9 +577,19 @@ function move(delta) {
   if (rows.length === 0)
     return
   const at = rows.findIndex(c => c.key === selectedKey())
-  const next = rows[Math.max(0, Math.min(rows.length - 1, at + delta))]
+  const index = Math.max(0, Math.min(rows.length - 1, at + delta))
+  const next = rows[index]
+  if (index >= listLimit() - 5)
+    listLimit.set(listLimit() + LIST_PAGE)
   if (next)
     select(next.key)
+}
+
+/** Near the bottom of what is drawn, draw the next page. */
+function onListScroll(event) {
+  const el = event.target
+  if (el.scrollTop + el.clientHeight > el.scrollHeight - 800 && listLimit() < list().length)
+    listLimit.set(listLimit() + LIST_PAGE)
 }
 
 /** Select whatever follows the conversation leaving the current list. */
@@ -886,7 +920,7 @@ onMount(async () => {
       </button>
     </div>
 
-    <div class="scroller flex-1 pb-3" tabindex="0" @keydown="onListKey($event)">
+    <div class="scroller flex-1 pb-3" tabindex="0" @keydown="onListKey($event)" @scroll="onListScroll($event)">
       <!-- Search results. -->
       <div :if="showingResults()">
         <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">Nothing Attic kept matches.</div>
@@ -912,7 +946,7 @@ onMount(async () => {
           </div>
           <div :if="view() === 'inbox'">All caught up.</div>
         </div>
-        <div :for="c in list()" :key="c.key" class="row" role="option" :aria-selected="c.key === selectedKey() ? 'true' : 'false'" @click="select(c.key)" @contextmenu="rowMenu($event, c)">
+        <div :for="c in shownList()" :key="c.key" class="row" role="option" :aria-selected="c.key === selectedKey() ? 'true' : 'false'" @click="select(c.key)" @contextmenu="rowMenu($event, c)">
           <span :if="c.unread > 0" class="unread"></span>
           <div class="avatar relative">
             <span :if="c.kind === 'group'" class="i-hugeicons-user-group text-[19px]"></span>
@@ -920,6 +954,7 @@ onMount(async () => {
             <span :if="c.kind === 'thread'" class="i-hugeicons-message-multiple-02 text-[18px]"></span>
             <span :if="c.kind === 'direct' && c.initials !== '#'">{{ c.initials }}</span>
             <span :if="c.kind === 'direct' && c.initials === '#'" class="i-hugeicons-user text-[19px]"></span>
+            <img :if="showAvatar(c.avatar)" class="photo" :src="c.avatar" alt="" loading="lazy" @error="avatarFailed(c.avatar)">
             <span class="source-badge" :style="badgeStyle(c.provider)"><span class="text-[9px] text-white" :class="sourceIcon(c.provider)"></span></span>
           </div>
           <div class="min-w-0">
@@ -949,6 +984,11 @@ onMount(async () => {
     </div>
 
     <header :if="detail()" class="shrink-0 flex items-center gap-3 px-4 border-b" style="height: calc(var(--window-controls-height) + 24px); border-color: var(--separator)">
+      <div class="avatar large relative shrink-0">
+        <span :if="detail()?.kind === 'direct' && detail()?.initials !== '#'">{{ detail()?.initials }}</span>
+        <span :if="detail()?.kind !== 'direct' || detail()?.initials === '#'" class="text-[15px]" :class="detail()?.kind === 'direct' ? 'i-hugeicons-user' : detail()?.kind === 'group' ? 'i-hugeicons-user-group' : 'i-hugeicons-message-multiple-02'"></span>
+        <img :if="showAvatar(detail()?.avatar)" class="photo" :src="detail()?.avatar" alt="" @error="avatarFailed(detail()?.avatar)">
+      </div>
       <div class="min-w-0 flex-1">
         <div class="font-semibold text-[14px] truncate">{{ detail()?.title }}</div>
         <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}</div>
@@ -985,7 +1025,10 @@ onMount(async () => {
         </div>
         <div :if="row.type === 'message' && row.m.kind === 'event'" class="text-center text-[11px] muted py-1">{{ eventText(row.m) }}</div>
         <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex flex-col" :class="row.m.isFromMe ? 'items-end' : 'items-start'" :style="row.m.reactions.length ? 'margin-top: 12px' : ''">
-          <div :if="row.showSender" class="text-[11px] muted px-3 pt-1">{{ row.m.senderName }}</div>
+          <div :if="row.showSender" class="flex items-center gap-1.5 text-[11px] muted px-3 pt-1">
+            <span :if="showAvatar(row.m.senderAvatar)" class="avatar small relative shrink-0"><img class="photo" :src="row.m.senderAvatar" alt="" loading="lazy" @error="avatarFailed(row.m.senderAvatar)"></span>
+            <span>{{ row.m.senderName }}</span>
+          </div>
           <div :for="a in row.m.attachments" class="mb-[3px]">
             <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[16px]" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
             <video :if="isVideo(a)" :src="a.url" controls preload="metadata" class="block max-w-[320px] max-h-[360px] rounded-[16px] bg-black"></video>
