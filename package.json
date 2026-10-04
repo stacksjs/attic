@@ -100,7 +100,7 @@
     "@stacksjs/ts-css": "^0.3.8",
     "pickier": "^0.1.65",
     "stacks": "^0.75.41",
-    "ts-images": "^0.2.24"
+    "ts-images": "^0.2.25"
   },
   "workspaces": [
     "storage/framework",
