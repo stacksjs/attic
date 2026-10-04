@@ -92,7 +92,7 @@
   },
   "dependencies": {
     "@stacksjs/actions": "^0.75.41",
-    "@stacksjs/chat": "^0.75.52",
+    "@stacksjs/chat": "^0.75.54",
     "@stacksjs/desktop": "^0.2.354",
     "@stacksjs/env": "^0.75.41",
     "@stacksjs/path": "^0.75.41",
