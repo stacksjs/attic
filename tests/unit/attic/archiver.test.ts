@@ -8,6 +8,7 @@ import { Archiver } from '../../../app/Attic/archiver'
 import { ALICE, BOB, FakeChatDb } from '../../../app/Attic/sample-db'
 import { Sources } from '../../../app/Attic/sources'
 import { ArchiveStore, ftsQuery, splitKey } from '../../../app/Attic/store'
+import { DANA, FakeChatStorage } from './whatsapp-fixture'
 
 /** A Slack-shaped driver held in memory: archive closes, a new message reopens. */
 class FakeSlack implements inbox.InboxDriver {
@@ -61,6 +62,8 @@ let archiver: Archiver
 let attachmentsDir: string
 let slack: FakeSlack
 let controllerCalls: string[]
+let whatsapp: FakeChatStorage
+let whatsappCalls: string[]
 
 beforeEach(async () => {
   chat = new FakeChatDb()
@@ -84,7 +87,27 @@ beforeEach(async () => {
       },
     },
   })
-  const sources = new Sources({ confirmDeletes: () => true, sample: true, drivers: { imessage, slack } })
+  whatsapp = new FakeChatStorage()
+  whatsappCalls = []
+  const whatsappDriver = inbox.createInboxDriver('whatsapp', {
+    databasePath: whatsapp.path,
+    platform: 'darwin',
+    settleMs: 500,
+    // What pressing WhatsApp's own Archive and Unarchive does to its database.
+    controller: {
+      archive: async (names) => {
+        whatsappCalls.push(`archive ${names.join('|')}`)
+        whatsapp.setArchived(DANA, true)
+        return { ok: true, detail: '' }
+      },
+      unarchive: async (names) => {
+        whatsappCalls.push(`unarchive ${names.join('|')}`)
+        whatsapp.setArchived(DANA, false)
+        return { ok: true, detail: '' }
+      },
+    },
+  })
+  const sources = new Sources({ confirmDeletes: () => true, sample: true, drivers: { imessage, whatsapp: whatsappDriver, slack } })
   await sources.load()
   archiver = new Archiver({ store, sources, attachmentsDir })
 })
@@ -210,6 +233,32 @@ describe('archiving Slack', () => {
     // Slack's list is cached for a minute; the agent's timer forces the re-read.
     expect((await archiver.sync('inbox', Date.now(), true)).resurfaced).toEqual(['slack:D1'])
     expect(store.messageCount('slack:D1')).toBe(2)
+  })
+})
+
+describe('archiving WhatsApp', () => {
+  it('copies the chat with its photo, archives it in WhatsApp, and unarchives it there', async () => {
+    const dana = whatsapp.chat(DANA, 'Dana Reyes')
+    whatsapp.add(dana, { text: 'see you at 6' })
+    whatsapp.add(dana, { type: 1, fromMe: true, media: { path: `Media/${DANA}/a/b/pier.jpg`, mime: 'image/jpeg', title: 'the pier', bytes: 4, file: 'jpeg' } })
+    const key = `whatsapp:${DANA}`
+
+    const result = await archiver.archive(key)
+    expect(result.verified).toBe(true)
+    expect(store.messageCount(key)).toBe(2)
+    expect(await archiver.removeFromApp(key)).toMatchObject({ mode: 'native', removed: true })
+    expect(whatsappCalls).toEqual(['archive Dana Reyes|+15550004444'])
+    expect((await archiver.sync()).removed).toEqual([key])
+    // WhatsApp's Archive hides the chat; the history stays in WhatsApp too.
+    expect(store.conversation(key)!.goneBefore).toBeNull()
+
+    const photo = (await archiver.transcript(key)).messages.find(m => m.attachments.length > 0)!
+    expect(photo.text).toBe('the pier')
+    expect(await (await archiver.attachmentResponse(photo.attachments[0]!.guid))!.text()).toBe('jpeg')
+
+    await archiver.unarchive(key)
+    expect(whatsappCalls.at(-1)).toBe('unarchive Dana Reyes|+15550004444')
+    expect(store.conversation(key)!.state).toBe('unarchived')
   })
 })
 

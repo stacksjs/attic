@@ -14,7 +14,7 @@ import { dirname } from 'node:path'
  */
 
 export type MessageKind = 'message' | 'reaction' | 'event'
-export type Provider = 'imessage' | 'slack' | 'discord'
+export type Provider = 'imessage' | 'whatsapp' | 'slack' | 'discord'
 export type ConversationState = 'archived' | 'unarchived'
 
 export interface Person {
@@ -183,7 +183,7 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['messages', 'cursor', 'ALTER TABLE messages ADD COLUMN cursor TEXT'],
 ]
 
-const PROVIDERS: readonly Provider[] = ['imessage', 'slack', 'discord']
+const PROVIDERS: readonly Provider[] = ['imessage', 'whatsapp', 'slack', 'discord']
 
 /** Messages' reaction codes, for rows written before reactions were stored as emoji. */
 const REACTION_EMOJI: Record<number, string> = { 2000: '❤️', 2001: '👍', 2002: '👎', 2003: '😂', 2004: '‼️', 2005: '❓', 2006: '😀', 2007: '🔖' }
@@ -356,7 +356,7 @@ export class ArchiveStore {
       UPDATE messages SET text = NULLIF(TRIM(REPLACE(text, char(65532), '')), '')
       WHERE text LIKE '%' || char(65532) || '%'
     `)
-    const unprefixed = `key NOT LIKE 'imessage:%' AND key NOT LIKE 'slack:%' AND key NOT LIKE 'discord:%'`
+    const unprefixed = `key NOT LIKE 'imessage:%' AND key NOT LIKE 'whatsapp:%' AND key NOT LIKE 'slack:%' AND key NOT LIKE 'discord:%'`
     if ((this.db.query(`SELECT COUNT(*) AS n FROM conversations WHERE ${unprefixed}`).get() as { n: number }).n === 0)
       return
     this.transaction(() => {

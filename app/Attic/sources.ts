@@ -1,15 +1,16 @@
 import type { Provider } from './store'
 import { inbox } from '@stacksjs/chat'
 import { readSecret as readKeychain } from './keychain'
-import { recoverInMessages, removeFromMessages } from './messages-app'
-import { addressBookDir, messagesDbPath } from './paths'
-import { sampleDiscord, sampleSlack } from './sample-sources'
+import { archiveInWhatsApp, recoverInMessages, removeFromMessages, unarchiveInWhatsApp } from './messages-app'
+import { addressBookDir, messagesDbPath, whatsappDbPath } from './paths'
+import { sampleDiscord, sampleSlack, sampleWhatsApp } from './sample-sources'
 
 /**
  * The apps Attic reads, through the inbox drivers in `@stacksjs/chat`.
  *
- * iMessage is always present (it needs only Full Disk Access). Slack and
- * Discord join once their tokens are in the keychain. Listing is cached: the
+ * iMessage and WhatsApp are always present (they need only Full Disk Access
+ * and, to archive, Accessibility). Slack and Discord join once their tokens
+ * are in the keychain. Listing is cached: the
  * iMessage list is a local query, but Slack and Discord cost an API call per
  * conversation, so they are re-read at most once a minute unless forced.
  */
@@ -26,7 +27,7 @@ export interface SourceState {
   status: inbox.InboxStatus
 }
 
-const TTL: Record<Provider, number> = { imessage: 0, slack: 60_000, discord: 60_000 }
+const TTL: Record<Provider, number> = { imessage: 0, whatsapp: 0, slack: 60_000, discord: 60_000 }
 
 export interface SourcesOptions {
   /** Whether Attic also confirms Messages' delete alert. Read on load(). */
@@ -69,15 +70,22 @@ export class Sources {
       confirmDeletes: confirmDeletes(),
     }))
 
-    // Sample mode brings invented Slack and Discord conversations too, so the
-    // whole inbox works without anyone's tokens.
+    // Sample mode brings invented WhatsApp, Slack and Discord conversations
+    // too, so the whole inbox works without anyone's tokens - and without
+    // reading the real WhatsApp.
     if (options.sample) {
+      this.drivers.set('whatsapp', sampleWhatsApp())
       this.drivers.set('slack', sampleSlack())
       this.drivers.set('discord', sampleDiscord())
       this.cache.clear()
       await this.refreshStates()
       return
     }
+
+    this.drivers.set('whatsapp', inbox.createInboxDriver('whatsapp', {
+      databasePath: whatsappDbPath(),
+      controller: { archive: names => archiveInWhatsApp(names), unarchive: names => unarchiveInWhatsApp(names) },
+    }))
 
     const slack = await readSecret('slack')
     if (slack)
@@ -100,7 +108,7 @@ export class Sources {
   }
 
   async refreshStates(): Promise<SourceState[]> {
-    const all: Provider[] = ['imessage', 'slack', 'discord']
+    const all: Provider[] = ['imessage', 'whatsapp', 'slack', 'discord']
     for (const provider of all) {
       const driver = this.drivers.get(provider)
       const status = driver

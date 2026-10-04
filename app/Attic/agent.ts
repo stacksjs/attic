@@ -88,7 +88,7 @@ const MIME: Record<string, string> = {
 /** iMessage is checked every tick (a local stat); Slack and Discord every minute. */
 const TICK_MS = 2_000
 const REMOTE_SYNC_MS = 60_000
-const LABELS: Record<Provider, string> = { imessage: 'iMessage', slack: 'Slack', discord: 'Discord' }
+const LABELS: Record<Provider, string> = { imessage: 'iMessage', whatsapp: 'WhatsApp', slack: 'Slack', discord: 'Discord' }
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
@@ -183,8 +183,13 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   await sources.load()
   const archiver = new Archiver({ store, sources, attachmentsDir: ATTACHMENTS_DIR })
 
+  /** A phone number or address as people write it; WhatsApp ids are `<number>@s.whatsapp.net`. */
+  function handleLabel(id: string): string {
+    return inbox.formatHandle(id.includes('@s.whatsapp.net') ? inbox.formatJid(id) : id)
+  }
+
   function personLabel(person: { id: string, name: string | null }): string {
-    return person.name ?? inbox.formatHandle(person.id)
+    return person.name ?? handleLabel(person.id)
   }
 
   function summarize(live: LiveEntry | undefined, stored: StoredConversation | undefined): ConversationSummary {
@@ -199,7 +204,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     const workspace = conversation?.workspace ?? stored?.workspace ?? null
     const subtitle = workspace
       ? `${LABELS[provider]} · ${workspace}`
-      : kind === 'group' ? `${participants.length + 1} people` : (participants[0]?.name ? inbox.formatHandle(participants[0].id) : LABELS[provider])
+      : kind === 'group' ? `${participants.length + 1} people` : (participants[0]?.name ? handleLabel(participants[0].id) : LABELS[provider])
     const archive = conversation?.archive ?? (provider === 'imessage' ? { mode: 'confirm', detail: '' } : { mode: 'unsupported', detail: '' })
     return {
       key: live?.key ?? stored!.key,
@@ -459,7 +464,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const requested = url.searchParams.get('view')
           const view = requested === 'archived' || requested === 'deleted' ? requested : 'inbox'
           const source = url.searchParams.get('source')
-          return json(await conversations(view, source === 'imessage' || source === 'slack' || source === 'discord' ? source : 'all'))
+          return json(await conversations(view, source === 'imessage' || source === 'whatsapp' || source === 'slack' || source === 'discord' ? source : 'all'))
         }
         case 'GET /api/conversation': {
           const key = keyFrom(url.searchParams)
@@ -498,9 +503,13 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const before = store.conversation(key)
           await archiver.unarchive(key)
           let detail = ''
-          if (before?.removedAt && splitKey(key).provider === 'imessage' && !usingSample) {
+          const { provider } = splitKey(key)
+          if (before?.removedAt && provider === 'imessage' && !usingSample) {
             const back = await waitUntil(() => visibleInApp(key))
             detail = back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'
+          }
+          else if (before?.removedAt && !usingSample) {
+            detail = await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`
           }
           await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
           return json({ ok: true, app: { detail } })

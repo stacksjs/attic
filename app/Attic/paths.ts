@@ -8,8 +8,9 @@ import process from 'node:process'
  * replaced wholesale on update, and an archive is the one thing that must
  * survive both.
  *
- * `ATTIC_DATA_DIR` and `ATTIC_MESSAGES_DB` exist for development and tests, so
- * the app can run against a fixture chat.db without touching the real one.
+ * `ATTIC_DATA_DIR`, `ATTIC_MESSAGES_DB` and `ATTIC_WHATSAPP_DB` exist for
+ * development and tests, so the app can run against fixtures without touching
+ * the real databases.
  */
 export const DATA_DIR = process.env.ATTIC_DATA_DIR || join(homedir(), 'Library', 'Application Support', 'Attic')
 export const DATABASE_PATH = join(DATA_DIR, 'attic.sqlite')
@@ -22,6 +23,13 @@ export const LOG_FILE = join(homedir(), 'Library', 'Logs', 'Attic.log')
 
 export function messagesDbPath(): string {
   return process.env.ATTIC_MESSAGES_DB || join(homedir(), 'Library', 'Messages', 'chat.db')
+}
+
+/** WhatsApp for Mac's database; a fixture chat.db implies a fixture (or no) WhatsApp too. */
+export function whatsappDbPath(): string {
+  if (process.env.ATTIC_MESSAGES_DB && !process.env.ATTIC_WHATSAPP_DB)
+    return join(DATA_DIR, 'no-whatsapp', 'ChatStorage.sqlite')
+  return process.env.ATTIC_WHATSAPP_DB || join(homedir(), 'Library', 'Group Containers', 'group.net.whatsapp.WhatsApp.shared', 'ChatStorage.sqlite')
 }
 
 export function addressBookDir(): string | undefined {
