@@ -15,6 +15,8 @@ import process from 'node:process'
 export const DATA_DIR = process.env.ATTIC_DATA_DIR || join(homedir(), 'Library', 'Application Support', 'Attic')
 export const DATABASE_PATH = join(DATA_DIR, 'attic.sqlite')
 export const ATTACHMENTS_DIR = join(DATA_DIR, 'Attachments')
+/** Profile pictures fetched from the apps, kept so archived conversations keep their faces. */
+export const AVATARS_DIR = join(DATA_DIR, 'Avatars')
 /** JPEG renderings of HEIC photos, for viewers that cannot decode HEIC. Disposable. */
 export const PREVIEWS_DIR = join(DATA_DIR, 'Previews')
 export const PORT_FILE = join(DATA_DIR, 'port')

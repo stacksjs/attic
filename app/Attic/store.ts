@@ -20,6 +20,8 @@ export type ConversationState = 'archived' | 'unarchived'
 export interface Person {
   id: string
   name: string | null
+  /** The driver's reference for their profile picture (`driver.avatar`). */
+  avatar?: string | null
 }
 
 export interface StoredConversation {
@@ -33,6 +35,8 @@ export interface StoredConversation {
   participants: Person[]
   /** The Slack workspace or Discord server. */
   workspace: string | null
+  /** A group's or server's picture, as the driver's reference. */
+  avatar: string | null
   /** Opens it in the real app. */
   url: string | null
   state: ConversationState
@@ -177,6 +181,7 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['conversations', 'url', 'ALTER TABLE conversations ADD COLUMN url TEXT'],
   ['conversations', 'synced_cursor', 'ALTER TABLE conversations ADD COLUMN synced_cursor TEXT'],
   ['conversations', 'gone_before', 'ALTER TABLE conversations ADD COLUMN gone_before INTEGER'],
+  ['conversations', 'avatar', 'ALTER TABLE conversations ADD COLUMN avatar TEXT'],
   ['messages', 'sender_name', 'ALTER TABLE messages ADD COLUMN sender_name TEXT'],
   ['messages', 'reaction', 'ALTER TABLE messages ADD COLUMN reaction TEXT'],
   ['messages', 'reaction_removed', 'ALTER TABLE messages ADD COLUMN reaction_removed INTEGER NOT NULL DEFAULT 0'],
@@ -209,6 +214,7 @@ interface ConversationRow {
   participants: string
   group_id: string | null
   workspace: string | null
+  avatar?: string | null
   url: string | null
   state: string
   archived_at: number | null
@@ -287,6 +293,7 @@ function toConversation(row: ConversationRow): StoredConversation {
     title: row.title,
     participants: parsePeople(row.participants),
     workspace: row.workspace,
+    avatar: row.avatar ?? null,
     url: row.url ?? (row.group_id ? `sms://open?groupid=${encodeURIComponent(row.group_id)}` : null),
     state: row.state === 'unarchived' ? 'unarchived' : 'archived',
     archivedAt: row.archived_at,
@@ -374,10 +381,10 @@ export class ArchiveStore {
     return this.db.transaction(fn)()
   }
 
-  upsertConversation(c: Pick<StoredConversation, 'key' | 'provider' | 'kind' | 'title' | 'participants' | 'workspace' | 'url' | 'lastMessageAt'>): void {
+  upsertConversation(c: Pick<StoredConversation, 'key' | 'provider' | 'kind' | 'title' | 'participants' | 'workspace' | 'url' | 'lastMessageAt'> & { avatar?: string | null }): void {
     this.db.query(`
-      INSERT INTO conversations (key, provider, kind, title, participants, workspace, url, last_message_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      INSERT INTO conversations (key, provider, kind, title, participants, workspace, url, last_message_at, avatar)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
       ON CONFLICT (key) DO UPDATE SET
         provider = excluded.provider,
         kind = excluded.kind,
@@ -385,8 +392,9 @@ export class ArchiveStore {
         participants = CASE WHEN excluded.participants = '[]' THEN conversations.participants ELSE excluded.participants END,
         workspace = COALESCE(excluded.workspace, conversations.workspace),
         url = COALESCE(excluded.url, conversations.url),
+        avatar = COALESCE(excluded.avatar, conversations.avatar),
         last_message_at = MAX(COALESCE(excluded.last_message_at, 0), COALESCE(conversations.last_message_at, 0))
-    `).run(c.key, c.provider, c.kind, c.title, JSON.stringify(c.participants), c.workspace, c.url, c.lastMessageAt)
+    `).run(c.key, c.provider, c.kind, c.title, JSON.stringify(c.participants), c.workspace, c.url, c.lastMessageAt, c.avatar ?? null)
   }
 
   /**

@@ -4,7 +4,7 @@ import type { ResurfaceMode, SyncReport, TranscriptMessage } from './archiver'
 import type { LiveEntry } from './sources'
 import type { Provider, StoredConversation } from './store'
 import { inbox } from '@stacksjs/chat'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import process from 'node:process'
@@ -12,7 +12,7 @@ import { decode, encode, resize } from 'ts-images'
 import { Archiver } from './archiver'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
-import { ATTACHMENTS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR } from './paths'
+import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR } from './paths'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
 
@@ -36,6 +36,8 @@ export interface ConversationSummary {
   provider: Provider
   kind: StoredConversation['kind']
   title: string
+  /** The person's or group's picture, served by this agent; null to show initials. */
+  avatar: string | null
   subtitle: string
   initials: string
   preview: string | null
@@ -125,6 +127,36 @@ function initialsOf(title: string): string {
 /** Longest edge of a display preview: sharp in a full-window view, a fraction of the original's weight. */
 const PREVIEW_EDGE = 2048
 
+/** A cached picture is refreshed from the app after a week; people change their photos. */
+const AVATAR_TTL_MS = 7 * 24 * 60 * 60_000
+
+/**
+ * A profile picture through a disk cache. The app is asked first when the
+ * copy is missing or old; if it has nothing now (an archived chat whose
+ * person left, a source disconnected) the cached copy still answers.
+ */
+async function avatarResponse(provider: Provider, ref: string, driver: inbox.InboxDriver | undefined): Promise<Response> {
+  const file = join(AVATARS_DIR, createHash('sha256').update(`${provider}:${ref}`).digest('hex').slice(0, 32))
+  const cached = Bun.file(file)
+  const fresh = existsSync(file) && Date.now() - statSync(file).mtimeMs < AVATAR_TTL_MS
+  if (!fresh && driver?.avatar) {
+    try {
+      const response = await driver.avatar(ref)
+      const bytes = response.ok ? new Uint8Array(await response.arrayBuffer()) : null
+      if (bytes && bytes.length > 0 && bytes.length < 5_000_000) {
+        mkdirSync(AVATARS_DIR, { recursive: true })
+        await Bun.write(file, bytes)
+      }
+    }
+    catch {}
+  }
+  if (!existsSync(file))
+    return new Response('Not found', { status: 404, headers: { 'cache-control': 'private, max-age=300' } })
+  const head = new Uint8Array(await cached.slice(0, 12).arrayBuffer())
+  const type = head[0] === 0x89 ? 'image/png' : head[0] === 0x47 ? 'image/gif' : head[8] === 0x57 ? 'image/webp' : String.fromCharCode(...head.subarray(4, 8)) === 'ftyp' ? 'image/heic' : 'image/jpeg'
+  return new Response(cached, { headers: { 'content-type': type, 'cache-control': 'private, max-age=86400' } })
+}
+
 /** Photos ts-images could not decode this run, so a failure is not retried on every view. */
 const undecodable = new Set<string>()
 
@@ -192,6 +224,11 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return person.name ?? handleLabel(person.id)
   }
 
+  /** Where the page loads a picture from: the agent, which caches it. */
+  function avatarUrl(provider: Provider, ref: string | null | undefined): string | null {
+    return ref ? `/api/avatar?provider=${provider}&ref=${encodeURIComponent(ref)}` : null
+  }
+
   function summarize(live: LiveEntry | undefined, stored: StoredConversation | undefined): ConversationSummary {
     const conversation = live?.conversation
     const provider = live?.provider ?? stored!.provider
@@ -211,6 +248,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       provider,
       kind,
       title,
+      avatar: avatarUrl(provider, kind === 'direct' ? participants[0]?.avatar : (conversation?.avatar ?? stored?.avatar)),
       subtitle,
       initials: kind === 'direct' ? initialsOf(title) : '',
       preview: conversation?.visible ? conversation.preview : null,
@@ -273,12 +311,27 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return !!(await sources.live(true)).find(e => e.key === key)?.conversation.visible
   }
 
-  function presentMessage(message: TranscriptMessage): Record<string, unknown> {
+  /** Pictures of the people in a conversation, by their provider id, for the transcript. */
+  async function avatarsFor(key: string): Promise<Map<string, string>> {
+    const { provider } = splitKey(key)
+    const live = (await sources.live()).find(e => e.key === key)?.conversation.participants ?? []
+    const stored = store.conversation(key)?.participants ?? []
+    const avatars = new Map<string, string>()
+    for (const person of [...stored, ...live]) {
+      const url = avatarUrl(provider, person.avatar)
+      if (url)
+        avatars.set(person.id, url)
+    }
+    return avatars
+  }
+
+  function presentMessage(message: TranscriptMessage, avatars: Map<string, string> = new Map()): Record<string, unknown> {
     // Belt and braces for the attachment placeholder: never an empty bubble.
     const text = message.text?.replace(/\uFFFC/g, '').trim() || null
     return {
       ...message,
       text,
+      senderAvatar: !message.isFromMe && message.sender ? avatars.get(message.sender) ?? null : null,
       senderName: message.isFromMe ? 'You' : (message.senderName ?? (message.sender ? inbox.formatHandle(message.sender) : null)),
       reactions: message.reactions.map(r => ({ ...r, senderName: r.fromMe ? 'You' : r.senderName })),
       attachments: message.attachments.map(a => ({
@@ -464,7 +517,11 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const requested = url.searchParams.get('view')
           const view = requested === 'archived' || requested === 'deleted' ? requested : 'inbox'
           const source = url.searchParams.get('source')
-          return json(await conversations(view, source === 'imessage' || source === 'whatsapp' || source === 'slack' || source === 'discord' ? source : 'all'))
+          const listed = await conversations(view, source === 'imessage' || source === 'whatsapp' || source === 'slack' || source === 'discord' ? source : 'all')
+          // The list shows two lines of preview and no archive hint (the
+          // selected conversation's detail carries that): thousands of rows
+          // otherwise ship megabytes nobody reads.
+          return json(listed.map(({ archiveDetail: _, ...c }) => ({ ...c, preview: c.preview && c.preview.length > 160 ? `${c.preview.slice(0, 160)}…` : c.preview })))
         }
         case 'GET /api/conversation': {
           const key = keyFrom(url.searchParams)
@@ -484,7 +541,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           if (!key)
             return problem('key is required')
           const transcript = await archiver.transcript(key)
-          return json({ ...transcript, messages: transcript.messages.map(presentMessage) })
+          const avatars = await avatarsFor(key)
+          return json({ ...transcript, messages: transcript.messages.map(m => presentMessage(m, avatars)) })
         }
         case 'POST /api/archive': {
           const key = keyFrom(await body(req))
@@ -540,6 +598,15 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           })))
           return json(hits)
         }
+        case 'GET /api/avatar': {
+          const provider = url.searchParams.get('provider') as Provider | null
+          const ref = url.searchParams.get('ref')
+          const driver = provider && ref ? sources.driver(provider) : undefined
+          if (!provider || !ref || !LABELS[provider])
+            return new Response('Not found', { status: 404 })
+          return avatarResponse(provider, ref, driver)
+        }
+
         case 'GET /api/attachment': {
           const guid = url.searchParams.get('guid')
           const response = guid ? await archiver.attachmentResponse(guid) : null

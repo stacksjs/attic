@@ -170,6 +170,7 @@ export class Archiver {
         participants: entry.conversation.participants,
         workspace: entry.conversation.workspace,
         url: entry.conversation.url,
+        avatar: entry.conversation.avatar ?? null,
         lastMessageAt: entry.conversation.lastMessageAt,
       })
     }
@@ -198,7 +199,7 @@ export class Archiver {
   }
 
   private async entry(key: string, force = false): Promise<LiveEntry | undefined> {
-    return (await this.sources.live(force)).find(e => e.key === key)
+    return (await this.sources.live(force, true)).find(e => e.key === key)
   }
 
   /**
@@ -266,7 +267,7 @@ export class Archiver {
     if (stored.length === 0)
       return report
 
-    const live = new Map((await this.sources.live(force)).map(e => [e.key, e]))
+    const live = new Map((await this.sources.live(force, true)).map(e => [e.key, e]))
     for (const conversation of stored) {
       if (!this.sources.connected(conversation.provider))
         continue
