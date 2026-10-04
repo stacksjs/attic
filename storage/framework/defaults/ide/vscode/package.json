@@ -1,0 +1,169 @@
+{
+  "publisher": "Stacks",
+  "name": "vscode-stacks",
+  "displayName": "Stacks",
+  "version": "0.75.41",
+  "description": "Develop Stacks apps without leaving VS Code: preview the dev server in the Simple Browser, start it, and run any buddy command.",
+  "license": "MIT",
+  "funding": "https://github.com/sponsors/chrisbbreuer",
+  "sponsor": {
+    "url": "https://github.com/sponsors/chrisbbreuer"
+  },
+  "homepage": "https://github.com/stacksjs/stacks/tree/main/storage/framework/defaults/ide/vscode",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stacksjs/stacks.git",
+    "directory": "./storage/framework/defaults/ide/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/stacksjs/stacks/issues"
+  },
+  "keywords": [
+    "stacks",
+    "stacksjs",
+    "buddy",
+    "preview",
+    "simple browser",
+    "dev server",
+    "extension pack"
+  ],
+  "categories": [
+    "Extension Packs",
+    "Other"
+  ],
+  "icon": "logo.png",
+  "main": "./dist/extension.js",
+  "files": [
+    ".vscode/extensions.json",
+    ".vscode/settings.json",
+    ".vscode/stacks.code-snippets",
+    "dist/extension.js",
+    "LICENSE.md",
+    "README.md",
+    "logo.png"
+  ],
+  "engines": {
+    "vscode": "^1.109.5"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "workspaceContains:buddy",
+    "workspaceContains:config/app.ts"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The Stacks commands run the workspace's own ./buddy script, so they need a trusted workspace."
+    },
+    "virtualWorkspaces": false
+  },
+  "scripts": {
+    "build": "bun build ./src/extension.ts --outdir dist --target node --format cjs --external vscode",
+    "vscode:prepublish": "bun run build",
+    "test": "bun test ./tests",
+    "typecheck": "bun x --bun tsc --noEmit -p tsconfig.json",
+    "package": "bunx --bun vsce package --no-dependencies",
+    "release": "bunx --bun vsce publish --no-dependencies"
+  },
+  "galleryBanner": {
+    "color": "#d7e4f5",
+    "theme": "light"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "stacks.openPreview",
+        "title": "Open Preview",
+        "category": "Stacks",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "stacks.startDevServer",
+        "title": "Start Dev Server",
+        "category": "Stacks",
+        "icon": "$(play)"
+      },
+      {
+        "command": "stacks.runBuddyCommand",
+        "title": "Run Buddy Command...",
+        "category": "Stacks",
+        "icon": "$(terminal)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "stacks.openPreview",
+          "when": "stacks.isProject"
+        },
+        {
+          "command": "stacks.startDevServer",
+          "when": "stacks.isProject"
+        },
+        {
+          "command": "stacks.runBuddyCommand",
+          "when": "stacks.isProject"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Stacks",
+      "properties": {
+        "stacks.preview.url": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "URL `Stacks: Open Preview` always opens, e.g. `http://localhost:3000/dashboard`. Leave empty to find the running dev server the way `./buddy dev` picks its URL (`APP_URL`, `PORT`, `APP_PATH`)."
+        },
+        "stacks.preview.preferLocalhost": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Preview `http://localhost:<PORT>` even when `APP_URL` gives the app a pretty `https://` domain. Useful when the local certificate is not trusted, which leaves the Simple Browser blank."
+        },
+        "stacks.devServer.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra arguments for `./buddy dev`, e.g. `[\"frontend\"]` or `[\"--site\"]`. They are passed to the shell as written."
+        },
+        "stacks.devServer.openPreview": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Open the preview in the Simple Browser once `Stacks: Start Dev Server` is up, instead of letting `./buddy dev` open the system browser."
+        },
+        "stacks.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Stacks item in the status bar, which opens the preview."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "files.associations": {
+        "buddy": "shellscript",
+        "*.stx": "html"
+      },
+      "npm.packageManager": "bun",
+      "typescript.preferGoToSourceDefinition": true,
+      "typescript.tsdk": "node_modules/typescript/lib"
+    }
+  },
+  "extensionPack": [
+    "dotenv.dotenvx-vscode",
+    "amazonwebservices.aws-toolkit-vscode",
+    "dbaeumer.vscode-eslint",
+    "davidanson.vscode-markdownlint",
+    "foxundermoon.shell-format",
+    "mattpocock.ts-error-translator",
+    "mylesmurphy.prettify-ts",
+    "Orta.vscode-twoslash-queries",
+    "oven.bun-vscode",
+    "streetsidesoftware.code-spell-checker"
+  ],
+  "devDependencies": {
+    "@vscode/vsce": "^4.0.0"
+  }
+}
