@@ -230,6 +230,9 @@ describe('store', () => {
     const conversation = upgraded.conversation(`imessage:direct:${BOB}`)!
     expect(conversation).toMatchObject({ provider: 'imessage', syncedCursor: '7', participants: [{ id: BOB, name: null }] })
     expect(upgraded.messages(`imessage:direct:${BOB}`)[0]).toMatchObject({ reaction: '❤️', reactionRemoved: false })
+    // 0.1's chat_guid is NOT NULL with no default; new writes must still land.
+    upgraded.upsertMessages(`imessage:direct:${BOB}`, [{ guid: 'M2', kind: 'message', text: 'new', isFromMe: false, sentAt: 2, sender: BOB, senderName: null, targetGuid: null, reaction: null, reactionRemoved: false, replyToGuid: null, editedAt: null, unsent: false, cursor: '8' }])
+    expect(upgraded.messageCount(`imessage:direct:${BOB}`)).toBe(2)
     upgraded.close()
   })
 

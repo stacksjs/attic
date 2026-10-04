@@ -385,12 +385,15 @@ export class ArchiveStore {
   /**
    * Copy or refresh messages. A message already stored is updated in place,
    * because apps edit them after the fact: an edit, an Undo Send.
+   *
+   * `chat_guid` is written empty: 0.1 created it NOT NULL with no default, and
+   * an upgraded archive keeps that constraint.
    */
   upsertMessages(conversationKey: string, messages: Omit<StoredMessage, 'conversationKey' | 'attachments'>[]): void {
     const insert = this.db.query(`
       INSERT INTO messages (guid, conversation_key, kind, text, is_from_me, sent_at, sender, sender_name,
-        target_guid, reaction, reaction_removed, reply_to_guid, edited_at, unsent, cursor)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        target_guid, reaction, reaction_removed, reply_to_guid, edited_at, unsent, cursor, chat_guid)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, '')
       ON CONFLICT (guid) DO UPDATE SET
         text = CASE WHEN excluded.unsent = 1 THEN messages.text ELSE COALESCE(excluded.text, messages.text) END,
         sender_name = COALESCE(excluded.sender_name, messages.sender_name),
