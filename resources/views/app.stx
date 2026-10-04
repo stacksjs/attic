@@ -176,6 +176,7 @@ const tokenDraft = state('')
 const userDraft = state('')
 const inbox = state([])
 const archived = state([])
+const deletedList = state([])
 const selectedKey = state('')
 const detail = state(null)
 const messages = state([])
@@ -192,7 +193,8 @@ const searching = state(false)
 const busy = state('')
 const flash = state('')
 
-const list = derived(() => (view() === 'archived' ? archived() : inbox()))
+const list = derived(() => (view() === 'archived' ? archived() : view() === 'deleted' ? deletedList() : inbox()))
+const deletedCount = derived(() => deletedList().length)
 const inboxCount = derived(() => inbox().length)
 const archivedCount = derived(() => archived().length)
 const selected = derived(() => list().find(c => c.key === selectedKey()) ?? null)
@@ -257,6 +259,8 @@ function reactionGlyph(type) {
 }
 
 function preview(c) {
+  if (view() === 'deleted' && !c.saved)
+    return `${c.deleted.toLocaleString()} messages in ${appName(c.provider)}' Recently Deleted`
   if (!c.inApp)
     return c.savedMessages > 0 ? `${c.savedMessages.toLocaleString()} messages kept by Attic` : 'Kept by Attic'
   return c.preview ?? 'Attachment'
@@ -298,6 +302,18 @@ function keptSummary(d) {
 
 function isImage(a) {
   return !!a.mimeType && a.mimeType.startsWith('image/') && a.available
+}
+
+function isVideo(a) {
+  return !!a.mimeType && a.mimeType.startsWith('video/') && a.available
+}
+
+function isAudio(a) {
+  return !!a.mimeType && a.mimeType.startsWith('audio/') && a.available
+}
+
+function isFile(a) {
+  return !isImage(a) && !isVideo(a) && !isAudio(a)
 }
 
 /** The transcript, newest first (the scroller is column-reverse), with a day header where the gap is large. */
@@ -343,9 +359,14 @@ async function loadStatus() {
 }
 
 async function loadLists() {
-  const [a, b] = await Promise.all([api(`/api/conversations?view=inbox&source=${source()}`), api(`/api/conversations?view=archived&source=${source()}`)])
+  const [a, b, d] = await Promise.all([
+    api(`/api/conversations?view=inbox&source=${source()}`),
+    api(`/api/conversations?view=archived&source=${source()}`),
+    api(`/api/conversations?view=deleted&source=${source()}`),
+  ])
   inbox.set(a)
   archived.set(b)
+  deletedList.set(d)
 }
 
 async function loadConversation(key) {
@@ -450,12 +471,20 @@ function connectedTo(provider) {
 const listTitle = derived(() => {
   if (view() === 'archived')
     return 'Archived'
+  if (view() === 'deleted')
+    return 'Recently Deleted'
   return source() === 'all' ? 'All Inboxes' : appName(source()) === 'Messages' ? 'iMessage' : appName(source())
 })
+
+function archiveLabel() {
+  return view() === 'deleted' ? 'Keep in Attic' : 'Archive'
+}
 
 function archiveHint(d) {
   if (!d)
     return 'Archive (⌃⌘A)'
+  if (view() === 'deleted')
+    return 'Copy it into Attic\'s Archived before Messages purges it'
   const what = d.archiveMode === 'unsupported' ? 'Archive in Attic' : 'Archive'
   return `${what} (⌃⌘A). ${d.archiveDetail ?? ''}`.trim()
 }
@@ -771,6 +800,11 @@ onMount(async () => {
       <span>Archived</span>
       <span class="count">{{ archivedCount() }}</span>
     </button>
+    <button :if="deletedCount() > 0" class="sidebar-item" :aria-current="view() === 'deleted' ? 'true' : 'false'" @click="show('deleted')" title="Deleted in Messages, still recoverable there for now">
+      <span class="i-hugeicons-delete-02 text-[15px]" style="color: var(--amber)"></span>
+      <span>Recently Deleted</span>
+      <span class="count">{{ deletedCount() }}</span>
+    </button>
 
     <div class="px-[19px] pt-4 pb-1 text-[11px] font-semibold muted">Sources</div>
     <div :for="s in sources()" :key="s.provider" class="contents">
@@ -909,7 +943,7 @@ onMount(async () => {
         <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}</div>
       </div>
       <button :if="detail()?.state !== 'archived'" class="toolbar-button" :title="archiveHint(detail())" :disabled="busy() !== ''" @click="archive()">
-        <span class="i-hugeicons-archive-02 text-[16px]"></span>Archive
+        <span class="i-hugeicons-archive-02 text-[16px]"></span>{{ archiveLabel() }}
       </button>
       <button :if="detail()?.state === 'archived'" class="toolbar-button" title="Move to Inbox (⇧⌘U)" @click="unarchive()">
         <span class="i-hugeicons-inbox-upload text-[16px]"></span>Move to Inbox
@@ -943,7 +977,9 @@ onMount(async () => {
           <div :if="row.showSender" class="text-[11px] muted px-3 pt-1">{{ row.m.senderName }}</div>
           <div :for="a in row.m.attachments" class="mb-[3px]">
             <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[16px]" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
-            <div :if="!isImage(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
+            <video :if="isVideo(a)" :src="a.url" controls preload="metadata" class="block max-w-[320px] max-h-[360px] rounded-[16px] bg-black"></video>
+            <audio :if="isAudio(a)" :src="a.url" controls preload="metadata" class="block w-[260px]"></audio>
+            <div :if="isFile(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
               <span class="i-hugeicons-attachment-01 text-[15px]"></span>
               <span>{{ a.name }}</span>
               <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
