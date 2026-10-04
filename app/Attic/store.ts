@@ -349,6 +349,13 @@ export class ArchiveStore {
       if (!columns.includes(column))
         this.db.exec(ddl)
     }
+    // Attachment placeholders (U+FFFC) copied as text before the drivers
+    // dropped them: an attachment-only message has no text, not an
+    // invisible character that renders as an empty bubble.
+    this.db.exec(`
+      UPDATE messages SET text = NULLIF(TRIM(REPLACE(text, char(65532), '')), '')
+      WHERE text LIKE '%' || char(65532) || '%'
+    `)
     const unprefixed = `key NOT LIKE 'imessage:%' AND key NOT LIKE 'slack:%' AND key NOT LIKE 'discord:%'`
     if ((this.db.query(`SELECT COUNT(*) AS n FROM conversations WHERE ${unprefixed}`).get() as { n: number }).n === 0)
       return

@@ -53,6 +53,8 @@ export interface ConversationSummary {
   url: string | null
   /** What archiving does in the real app: 'native', 'confirm' or 'unsupported'. */
   archiveMode: string
+  /** Messages in the app's Recently Deleted, not yet purged. */
+  deleted: number
   archiveDetail: string
 }
 
@@ -186,12 +188,22 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       url: conversation?.url ?? stored?.url ?? null,
       archiveMode: archive.mode,
       archiveDetail: archive.detail,
+      deleted: conversation?.deleted ?? 0,
     }
   }
 
-  async function conversations(view: 'inbox' | 'archived', source: Provider | 'all'): Promise<ConversationSummary[]> {
+  async function conversations(view: 'inbox' | 'archived' | 'deleted', source: Provider | 'all'): Promise<ConversationSummary[]> {
     const stored = new Map(store.conversations().map(c => [c.key, c]))
     const live = await sources.live()
+    // Deleted in the app but still recoverable there, and not yet kept by
+    // Attic: the ones to rescue before the app purges them.
+    if (view === 'deleted') {
+      return live
+        .filter(e => !e.conversation.visible && (e.conversation.deleted ?? 0) > 0 && stored.get(e.key)?.state !== 'archived')
+        .filter(e => source === 'all' || e.provider === source)
+        .map(e => summarize(e, stored.get(e.key)))
+        .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))
+    }
     const liveKeys = new Set(live.map(e => e.key))
     const rows: ConversationSummary[] = []
     for (const entry of live) {
@@ -223,8 +235,11 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   }
 
   function presentMessage(message: TranscriptMessage): Record<string, unknown> {
+    // Belt and braces for the attachment placeholder: never an empty bubble.
+    const text = message.text?.replace(/\uFFFC/g, '').trim() || null
     return {
       ...message,
+      text,
       senderName: message.isFromMe ? 'You' : (message.senderName ?? (message.sender ? inbox.formatHandle(message.sender) : null)),
       reactions: message.reactions.map(r => ({ ...r, senderName: r.fromMe ? 'You' : r.senderName })),
       attachments: message.attachments.map(a => ({
@@ -407,7 +422,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           })
         }
         case 'GET /api/conversations': {
-          const view = url.searchParams.get('view') === 'archived' ? 'archived' : 'inbox'
+          const requested = url.searchParams.get('view')
+          const view = requested === 'archived' || requested === 'deleted' ? requested : 'inbox'
           const source = url.searchParams.get('source')
           return json(await conversations(view, source === 'imessage' || source === 'slack' || source === 'discord' ? source : 'all'))
         }

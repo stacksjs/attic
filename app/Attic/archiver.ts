@@ -159,7 +159,8 @@ export class Archiver {
   private async copy(entry: LiveEntry | undefined, key: string): Promise<{ messages: inbox.InboxMessage[], copied: number, missing: number }> {
     const { provider, id, driver } = this.driverFor(key)
     const stored = this.store.conversation(key)
-    const messages = await driver.messages(id, { after: stored?.syncedCursor ?? '0', limit: COPY_LIMIT })
+    // Recently Deleted included: a conversation deleted in the app can still be kept.
+    const messages = await driver.messages(id, { after: stored?.syncedCursor ?? '0', limit: COPY_LIMIT, includeDeleted: true })
     if (entry) {
       this.store.upsertConversation({
         key,
@@ -216,7 +217,7 @@ export class Archiver {
       await this.copy(entry, key)
       // Everything the app still holds must now be in the store.
       const { id, driver } = this.driverFor(key)
-      const all = await driver.messages(id, { after: '0', limit: COPY_LIMIT })
+      const all = await driver.messages(id, { after: '0', limit: COPY_LIMIT, includeDeleted: true })
       const have = new Set(this.store.messages(key).map(m => m.guid))
       verified = all.every(m => have.has(m.id))
     }
@@ -313,7 +314,7 @@ export class Archiver {
     let live: inbox.InboxMessage[] = []
     if (driver && this.sources.connected(provider)) {
       try {
-        live = await driver.messages(id, stored?.syncedCursor ? { after: stored.syncedCursor, limit: COPY_LIMIT } : { limit })
+        live = await driver.messages(id, stored?.syncedCursor ? { after: stored.syncedCursor, limit: COPY_LIMIT } : { limit, includeDeleted: !(await this.entry(key))?.conversation.visible })
       }
       catch {}
     }
