@@ -5,7 +5,7 @@ import type { ArchiveStore } from './store'
 import { randomBytes } from 'node:crypto'
 import { hostname, networkInterfaces } from 'node:os'
 import { toSvg } from 'ts-qr-codes'
-import { encodePairing, randomKey, toBase64Url, unseal, seal } from '../../resources/functions/sealed'
+import { encodePairing, pairingLink, randomKey, seal, toBase64Url, unseal } from '../../resources/functions/sealed'
 
 /**
  * The phone app's way in. A paired phone keeps its own copy of the archive
@@ -106,7 +106,8 @@ export class PhoneLink {
     this.start()
     const pairing: Pairing = { host, port: this.listening ?? this.port, device, key: toBase64Url(key), name: hostname().replace(/\.local$/, '') }
     const code = encodePairing(pairing)
-    return { code, svg: toSvg(code), pairing }
+    // The QR code is a link, so the phone's own camera opens Attic with it.
+    return { code, svg: toSvg(pairingLink(pairing)), pairing }
   }
 
   forget(id: string): void {

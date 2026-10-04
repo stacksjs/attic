@@ -28,6 +28,8 @@ export interface Pairing {
 }
 
 const PAIRING_PREFIX = 'attic-pair:1:'
+/** The same pairing as a link: scanning the QR code with the phone's camera opens Attic with it. */
+const PAIRING_LINK = 'attic://pair/'
 
 export function toBase64Url(bytes: Uint8Array): string {
   let binary = ''
@@ -71,13 +73,21 @@ export function encodePairing(pairing: Pairing): string {
   return PAIRING_PREFIX + toBase64Url(new TextEncoder().encode(JSON.stringify(pairing)))
 }
 
+/** The pairing as an `attic://pair/…` link, for the QR code. */
+export function pairingLink(pairing: Pairing): string {
+  return PAIRING_LINK + encodePairing(pairing).slice(PAIRING_PREFIX.length)
+}
+
 /** The pairing in a scanned QR code or a pasted code, or null when it is not one. */
 export function decodePairing(text: string): Pairing | null {
   const trimmed = text.trim()
-  if (!trimmed.startsWith(PAIRING_PREFIX))
+  const body = trimmed.startsWith(PAIRING_PREFIX)
+    ? trimmed.slice(PAIRING_PREFIX.length)
+    : trimmed.startsWith(PAIRING_LINK) ? trimmed.slice(PAIRING_LINK.length).replace(/[/?#].*$/, '') : null
+  if (!body)
     return null
   try {
-    const value = JSON.parse(new TextDecoder().decode(fromBase64Url(trimmed.slice(PAIRING_PREFIX.length)))) as Pairing
+    const value = JSON.parse(new TextDecoder().decode(fromBase64Url(body))) as Pairing
     return typeof value.host === 'string' && typeof value.port === 'number' && typeof value.device === 'string' && typeof value.key === 'string' ? value : null
   }
   catch {

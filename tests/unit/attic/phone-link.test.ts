@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PhoneLink } from '../../../app/Attic/phone-link'
 import { ArchiveStore } from '../../../app/Attic/store'
-import { decodePairing, fromBase64Url, seal, unseal } from '../../../resources/functions/sealed'
+import { decodePairing, fromBase64Url, pairingLink, seal, unseal } from '../../../resources/functions/sealed'
 
 function setup() {
   const store = new ArchiveStore(join(mkdtempSync(join(tmpdir(), 'attic-phone-')), 'attic.sqlite'))
@@ -41,6 +41,9 @@ describe('phone link', () => {
     expect(pairing.device).toBe(paired.pairing.device)
     const key = fromBase64Url(pairing.key)
     expect(key).toHaveLength(32)
+    // The QR code carries the same pairing as a link the camera can open.
+    expect(decodePairing(pairingLink(pairing))).toEqual(pairing)
+    expect(decodePairing('https://example.com/attic')).toBeNull()
 
     const hello = await ask(link, pairing.device, key, { op: 'hello', t: Date.now(), r: 'one' })
     expect(hello).toEqual({ status: 200, reply: { ok: true, result: { name: 'Mac' } } })

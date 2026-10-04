@@ -33,12 +33,13 @@
     .search { width: 100%; box-sizing: border-box; border: 0; border-radius: 10px; padding: 8px 12px; background: var(--chip); color: inherit; font: inherit; font-size: 16px; }
     .button { border: 0; border-radius: 12px; padding: 13px 18px; font: inherit; font-weight: 600; background: var(--accent); color: #fff; width: 100%; }
     .button.plain { background: var(--chip); color: var(--accent); }
-    textarea { width: 100%; box-sizing: border-box; border: 0; border-radius: 12px; padding: 12px; background: var(--surface); color: inherit; font: 13px ui-monospace, monospace; }
+    /* 16px: smaller inputs make iOS zoom the page when they take focus. */
+    textarea { width: 100%; box-sizing: border-box; border: 0; border-radius: 12px; padding: 12px; background: var(--surface); color: inherit; font: 16px ui-monospace, monospace; }
   </style>
 </head>
 <body>
 <script client>
-import { askMac, avatarFor, forgetPairing, lastSynced, loadPairing, localConversations, localMessages, savePairing, scanPairingCode, syncArchive } from '../functions/phone-archive'
+import { askMac, avatarFor, forgetPairing, lastSynced, loadPairing, localConversations, localMessages, onPairingLink, savePairing, scanPairingCode, syncArchive } from '../functions/phone-archive'
 
 const screen = state('loading')
 const pairing = state(null)
@@ -203,6 +204,8 @@ async function refreshed(event) {
 }
 
 onMount(async () => {
+  // Scanning the Mac's QR code with the Camera app opens this link.
+  onPairingLink(code => finishPairing(code))
   const saved = await loadPairing()
   pairing.set(saved)
   screen.set(saved ? 'list' : 'pair')
@@ -219,7 +222,7 @@ onMount(async () => {
     <div class="text-center">
       <div class="i-hugeicons-archive-02 text-[56px] mx-auto mb-3" style="color: var(--accent)"></div>
       <h1 class="text-[30px] font-bold m-0">Attic</h1>
-      <p class="muted mt-2 mb-0 leading-snug">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Attic and choose Pair a phone.</p>
+      <p class="muted mt-2 mb-0 leading-snug">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Attic and choose Pair a phone, then point this phone's camera at the code.</p>
     </div>
     <button class="button" @click="scan()">Scan the code on your Mac</button>
     <textarea :if="true" rows="3" placeholder="Or paste the pairing code" x-model="pasted"></textarea>

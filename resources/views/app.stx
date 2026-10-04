@@ -1239,7 +1239,7 @@ onMount(async () => {
       <p class="muted text-[12px] leading-relaxed mb-3">The phone keeps its own copy of the archive to read anywhere, and syncs with this Mac on the same Wi-Fi. Everything between them is encrypted with a key only the two hold.</p>
       <div :if="pairing() && !pairedPhone()" class="flex flex-col items-center gap-2 py-2">
         <div class="w-[220px] h-[220px] rounded-[12px] p-2 bg-white [&>svg]:w-full [&>svg]:h-full" :html="pairing().svg"></div>
-        <div class="text-[12px] muted text-center">Open Attic on the phone and scan this. Waiting for it…</div>
+        <div class="text-[12px] muted text-center">Point the phone's camera at this code to open Attic there and pair. Waiting for it…</div>
       </div>
       <div :if="pairedPhone()" class="flex items-center gap-2 py-3 text-[13px]">
         <span class="i-hugeicons-checkmark-circle-02 text-[18px]" style="color: #30d158"></span>

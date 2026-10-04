@@ -1,4 +1,5 @@
 import type { Pairing } from './sealed'
+import { deepLinks, whenBridgeReady } from '@stacksjs/mobile'
 import { decodePairing, fromBase64Url, seal, unseal } from './sealed'
 
 /**
@@ -69,6 +70,17 @@ function bridge(): CraftBridge | null {
   return (globalThis as { craft?: CraftBridge }).craft ?? null
 }
 
+/**
+ * Craft installs its bridge after the page has started, so storage is chosen
+ * only once it is there (or, in a browser, at once): deciding at script start
+ * would put the archive in localStorage and the key outside the keychain.
+ */
+let bridgeReady: Promise<CraftBridge | null> | null = null
+function ready(): Promise<CraftBridge | null> {
+  bridgeReady ??= whenBridgeReady(4000).then(() => bridge()).catch(() => bridge())
+  return bridgeReady
+}
+
 /** Whether this is the phone app (Craft's bridge is present), not a browser tab. */
 export function inPhoneApp(): boolean {
   const craft = bridge()
@@ -135,7 +147,7 @@ let opened: Promise<Db> | null = null
 
 async function db(): Promise<Db> {
   opened ??= (async () => {
-    const native = bridge()?.db
+    const native = (await ready())?.db
     const store = native ?? browserDb()
     if (native) {
       for (const statement of SCHEMA)
@@ -147,7 +159,7 @@ async function db(): Promise<Db> {
 }
 
 export async function loadPairing(): Promise<Pairing | null> {
-  const secure = bridge()?.secureStorage
+  const secure = (await ready())?.secureStorage
   const raw = secure ? await secure.get(PAIRING_KEY).catch(() => null) : localStorage.getItem(PAIRING_KEY)
   return raw ? decodePairing(raw) : null
 }
@@ -157,7 +169,7 @@ export async function savePairing(code: string): Promise<Pairing | null> {
   const pairing = decodePairing(code)
   if (!pairing)
     return null
-  const secure = bridge()?.secureStorage
+  const secure = (await ready())?.secureStorage
   if (secure)
     await secure.set(PAIRING_KEY, code.trim())
   else
@@ -167,7 +179,7 @@ export async function savePairing(code: string): Promise<Pairing | null> {
 
 /** Unpair: the phone forgets the Mac and its copy of the archive. */
 export async function forgetPairing(): Promise<void> {
-  const secure = bridge()?.secureStorage
+  const secure = (await ready())?.secureStorage
   if (secure)
     await secure.delete(PAIRING_KEY).catch(() => undefined)
   else
@@ -177,9 +189,22 @@ export async function forgetPairing(): Promise<void> {
     await store.execute(`DELETE FROM ${table}`)
 }
 
+/**
+ * Pairing links (`attic://pair/…`) the app is opened with or receives while
+ * running - what scanning the Mac's QR code with the Camera app does.
+ */
+export function onPairingLink(callback: (code: string) => void): () => void {
+  const handle = (url: string | null): void => {
+    if (url && decodePairing(url))
+      callback(url)
+  }
+  void deepLinks.getInitialURL().then(handle).catch(() => undefined)
+  return deepLinks.onLink(url => handle(url))
+}
+
 /** The phone's camera reading the code on the Mac's screen; null when there is no scanner. */
 export async function scanPairingCode(): Promise<string | null> {
-  const scan = bridge()?.scanQRCode
+  const scan = (await ready())?.scanQRCode
   if (!scan)
     return null
   const result = await scan()

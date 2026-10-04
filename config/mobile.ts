@@ -15,6 +15,7 @@ const capabilities = {
   qrScanner: true,
   localNetwork: true,
   clipboard: true,
+  deepLinks: true,
 }
 
 export default {
@@ -29,6 +30,8 @@ export default {
     backgroundColor: '#f2f2f7',
     backgroundColorDark: '#000000',
     orientations: ['portrait'],
+    // Scanning the Mac's pairing QR code opens attic://pair/…
+    urlSchemes: ['attic'],
     capabilities,
   },
   android: {
@@ -39,6 +42,7 @@ export default {
     webAssets: 'storage/attic/mobile',
     darkMode: true,
     backgroundColor: '#f2f2f7',
+    urlSchemes: ['attic'],
     capabilities,
   },
 } satisfies MobileConfig
