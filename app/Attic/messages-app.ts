@@ -46,14 +46,3 @@ export function removeFromMessages(names: string[], url: string | null, confirm:
 export function recoverInMessages(names: string[]): Promise<ControlOutcome> {
   return run(['recover', ...names.flatMap(name => ['--name', name])])
 }
-
-/** Poll until `check` holds or the time runs out. */
-export async function eventually(check: () => boolean, ms = 10_000): Promise<boolean> {
-  const deadline = Date.now() + ms
-  while (Date.now() < deadline) {
-    if (check())
-      return true
-    await Bun.sleep(300)
-  }
-  return check()
-}

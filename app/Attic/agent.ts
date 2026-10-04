@@ -1,26 +1,26 @@
 /* eslint-disable no-console */
 import type { Server } from 'bun'
-import type { ArchiveResult, ResurfaceMode, SyncReport, TranscriptMessage } from './archiver'
-import type { LiveConversation } from './conversations'
-import type { StoredConversation } from './store'
+import type { ResurfaceMode, SyncReport, TranscriptMessage } from './archiver'
+import type { LiveEntry } from './sources'
+import type { Provider, StoredConversation } from './store'
+import { inbox } from '@stacksjs/chat'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import process from 'node:process'
 import { Archiver } from './archiver'
-import { Contacts } from './contacts'
-import { messagesUrl } from './conversations'
-import { formatHandle } from './handles'
-import { accessibilityTrusted, eventually, recoverInMessages, removeFromMessages } from './messages-app'
-import { MessagesAccessError, MessagesDb } from './messages-db'
-import { addressBookDir, ATTACHMENTS_DIR, DATABASE_PATH, DATA_DIR, messagesDbPath, PORT_FILE } from './paths'
-import { ArchiveStore } from './store'
+import { deleteSecret, writeSecret } from './keychain'
+import { accessibilityTrusted } from './messages-app'
+import { ATTACHMENTS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE } from './paths'
+import { Sources } from './sources'
+import { ArchiveStore, splitKey } from './store'
 
 /**
  * The process behind Attic's window: a loopback HTTP server that owns every
- * permission-bound thing - reading chat.db and Contacts (Full Disk Access is
- * granted to Attic.app, whose executable this runs in), copying attachments,
- * opening Messages - and serves the UI the Craft window renders.
+ * credential and permission - reading Messages and Contacts (Full Disk Access
+ * is granted to Attic.app, whose executable this runs in), the Slack and
+ * Discord tokens in the keychain, the archive - and serves the UI the Craft
+ * window renders.
  *
  * Only the page Attic itself served may call it. Every API request must carry
  * the session cookie set with that page (SameSite=Strict, so another site's
@@ -28,11 +28,12 @@ import { ArchiveStore } from './store'
  * DNS-rebinding page cannot pose as it).
  */
 
-export type AccessState = 'granted' | 'needs-full-disk-access' | 'no-messages'
+export type RemovalMode = 'auto' | 'confirm' | 'off'
 
 export interface ConversationSummary {
   key: string
-  kind: 'direct' | 'group'
+  provider: Provider
+  kind: StoredConversation['kind']
   title: string
   subtitle: string
   initials: string
@@ -41,15 +42,18 @@ export interface ConversationSummary {
   lastMessageAt: number | null
   unread: number
   state: 'inbox' | 'archived'
-  /** Messages still lists it. False once removed (or never re-synced). */
-  inMessages: boolean
+  /** The real app lists it right now. */
+  inApp: boolean
   archivedAt: number | null
   resurfacedAt: number | null
   removedAt: number | null
   /** Attic holds a copy. */
   saved: boolean
   savedMessages: number
-  openable: boolean
+  url: string | null
+  /** What archiving does in the real app: 'native', 'confirm' or 'unsupported'. */
+  archiveMode: string
+  archiveDetail: string
 }
 
 export interface AgentOptions {
@@ -78,8 +82,10 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 }
 
-const SYNC_INTERVAL_MS = 2_000
-const CONTACTS_TTL_MS = 10 * 60_000
+/** iMessage is checked every tick (a local stat); Slack and Discord every minute. */
+const TICK_MS = 2_000
+const REMOTE_SYNC_MS = 60_000
+const LABELS: Record<Provider, string> = { imessage: 'iMessage', slack: 'Slack', discord: 'Discord' }
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
@@ -106,130 +112,133 @@ function listFormat(names: string[]): string {
   return `${names.slice(0, 2).join(', ')} & ${names.length - 2} other${names.length - 2 === 1 ? '' : 's'}`
 }
 
+function initialsOf(title: string): string {
+  const words = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0 || /^\d/.test(words[0]!))
+    return '#'
+  return (words[0]![0]! + (words.length > 1 ? words[words.length - 1]![0]! : '')).toUpperCase()
+}
+
+async function waitUntil(check: () => Promise<boolean>, ms = 12_000): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (Date.now() < deadline) {
+    if (await check())
+      return true
+    await Bun.sleep(400)
+  }
+  return check()
+}
+
 export async function startAgent(options: AgentOptions): Promise<Agent> {
   mkdirSync(DATA_DIR, { recursive: true })
   const store = new ArchiveStore(DATABASE_PATH)
-  const archiver = new Archiver({ store, openMessages: () => new MessagesDb(messagesDbPath()), attachmentsDir: ATTACHMENTS_DIR })
+  const usingSample = !!process.env.ATTIC_MESSAGES_DB
   const token = randomBytes(24).toString('hex')
 
-  let contacts = new Contacts()
-  let contactsLoadedAt = 0
-  function names(): Contacts {
-    const dir = addressBookDir()
-    if (dir && Date.now() - contactsLoadedAt > CONTACTS_TTL_MS) {
-      contacts = Contacts.load(dir)
-      contactsLoadedAt = Date.now()
-    }
-    return contacts
+  function removalMode(): RemovalMode {
+    const value = store.setting('removal')
+    return value === 'auto' || value === 'off' ? value : 'confirm'
+  }
+  function resurfaceMode(): ResurfaceMode {
+    return store.setting('resurface') === 'stay' ? 'stay' : 'inbox'
   }
 
-  function access(): AccessState {
-    try {
-      new MessagesDb(messagesDbPath()).close()
-      return 'granted'
-    }
-    catch (error) {
-      if (error instanceof MessagesAccessError && error.needsFullDiskAccess && existsSync(join(messagesDbPath(), '..')))
-        return 'needs-full-disk-access'
-      return 'no-messages'
-    }
+  const sources = new Sources({ confirmDeletes: () => removalMode() === 'auto', sample: usingSample })
+  await sources.load()
+  const archiver = new Archiver({ store, sources, attachmentsDir: ATTACHMENTS_DIR })
+
+  function personLabel(person: { id: string, name: string | null }): string {
+    return person.name ?? inbox.formatHandle(person.id)
   }
 
-  function personName(handle: string | null): string | null {
-    if (!handle)
-      return null
-    return names().nameFor(handle) ?? formatHandle(handle)
-  }
-
-  function titleFor(kind: 'direct' | 'group', displayName: string | null, participants: string[]): string {
-    if (kind === 'group')
-      return displayName || listFormat(participants.map(p => personName(p)!)) || 'Group'
-    return personName(participants[0] ?? null) ?? 'Unknown'
-  }
-
-  function summarize(live: LiveConversation | undefined, stored: StoredConversation | undefined): ConversationSummary {
-    const kind = live?.kind ?? stored!.kind
-    const participants = live?.participants ?? stored!.participants
-    const title = titleFor(kind, live?.displayName ?? stored?.title ?? null, participants)
-    const card = kind === 'direct' && participants[0] ? names().lookup(participants[0]) : null
-    const words = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean)
-    const initials = card?.initials ?? (kind === 'group' ? '' : (words.length > 0 ? (words[0]![0]! + (words.length > 1 ? words[words.length - 1]![0]! : '')).toUpperCase() : '#'))
+  function summarize(live: LiveEntry | undefined, stored: StoredConversation | undefined): ConversationSummary {
+    const conversation = live?.conversation
+    const provider = live?.provider ?? stored!.provider
+    const kind = conversation?.kind ?? stored!.kind
+    const participants = conversation?.participants?.length ? conversation.participants : (stored?.participants ?? [])
+    const named = conversation?.title ?? stored?.title ?? null
+    const title = named
+      ?? (kind === 'direct' && participants[0] ? personLabel(participants[0]) : null)
+      ?? (participants.length > 0 ? listFormat(participants.map(personLabel)) : 'Conversation')
+    const workspace = conversation?.workspace ?? stored?.workspace ?? null
+    const subtitle = workspace
+      ? `${LABELS[provider]} · ${workspace}`
+      : kind === 'group' ? `${participants.length + 1} people` : (participants[0]?.name ? inbox.formatHandle(participants[0].id) : LABELS[provider])
+    const archive = conversation?.archive ?? (provider === 'imessage' ? { mode: 'confirm', detail: '' } : { mode: 'unsupported', detail: '' })
     return {
       key: live?.key ?? stored!.key,
+      provider,
       kind,
       title,
-      subtitle: kind === 'group' ? `${participants.length + 1} people` : (card ? formatHandle(participants[0]!) : (live?.services.join(' · ') ?? '')),
-      initials: /\d/.test(initials) ? '#' : initials,
-      preview: live && live.messageCount > 0 ? live.lastMessageText : null,
-      previewFromMe: !!live?.lastMessageFromMe,
-      lastMessageAt: live?.lastMessageAt ?? stored?.lastMessageAt ?? null,
-      unread: live?.unreadCount ?? 0,
+      subtitle,
+      initials: kind === 'direct' ? initialsOf(title) : '',
+      preview: conversation?.visible ? conversation.preview : null,
+      previewFromMe: !!conversation?.previewFromMe,
+      lastMessageAt: conversation?.lastMessageAt ?? stored?.lastMessageAt ?? null,
+      unread: conversation?.unread ?? 0,
       state: stored?.state === 'archived' ? 'archived' : 'inbox',
-      inMessages: !!live && live.messageCount > 0,
+      inApp: !!conversation?.visible,
       archivedAt: stored?.archivedAt ?? null,
       resurfacedAt: stored?.resurfacedAt ?? null,
       removedAt: stored?.removedAt ?? null,
       saved: !!stored,
       savedMessages: stored?.messageCount ?? 0,
-      openable: !!messagesUrl({ kind, groupId: live?.groupId ?? stored?.groupId ?? null, participants }),
+      url: conversation?.url ?? stored?.url ?? null,
+      archiveMode: archive.mode,
+      archiveDetail: archive.detail,
     }
   }
 
-  function conversations(view: 'inbox' | 'archived'): ConversationSummary[] {
+  async function conversations(view: 'inbox' | 'archived', source: Provider | 'all'): Promise<ConversationSummary[]> {
     const stored = new Map(store.conversations().map(c => [c.key, c]))
-    let live: LiveConversation[] = []
-    try {
-      live = archiver.live()
-    }
-    catch {}
-    const liveKeys = new Map(live.map(c => [c.key, c]))
+    const live = await sources.live()
+    const liveKeys = new Set(live.map(e => e.key))
     const rows: ConversationSummary[] = []
-    for (const conversation of live) {
-      if (conversation.messageCount === 0 && !stored.has(conversation.key))
+    for (const entry of live) {
+      // The real app hides it and Attic has no copy: nothing to show.
+      if (!entry.conversation.visible && !stored.has(entry.key))
         continue
-      rows.push(summarize(conversation, stored.get(conversation.key)))
+      rows.push(summarize(entry, stored.get(entry.key)))
     }
-    // Conversations only Attic still has: removed from Messages, kept here.
+    // Conversations only Attic still has.
     for (const [key, conversation] of stored) {
       if (!liveKeys.has(key))
         rows.push(summarize(undefined, conversation))
     }
     return rows
-      .filter(row => row.state === view)
-      .filter(row => row.inMessages || row.saved)
+      .filter(row => row.state === view && (source === 'all' || row.provider === source))
       .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))
   }
 
-  function summaryFor(key: string): ConversationSummary | null {
+  async function summaryFor(key: string): Promise<ConversationSummary | null> {
     const stored = store.conversation(key) ?? undefined
-    let live: LiveConversation | undefined
-    try {
-      live = archiver.live().find(c => c.key === key)
-    }
-    catch {}
+    const live = (await sources.live()).find(e => e.key === key)
     if (!live && !stored)
       return null
     return summarize(live, stored)
   }
 
+  async function visibleInApp(key: string): Promise<boolean> {
+    return !!(await sources.live(true)).find(e => e.key === key)?.conversation.visible
+  }
+
   function presentMessage(message: TranscriptMessage): Record<string, unknown> {
     return {
       ...message,
-      senderName: message.isFromMe ? 'You' : personName(message.sender),
-      reactions: message.reactions.map(r => ({ ...r, senderName: r.fromMe ? 'You' : personName(r.sender) })),
+      senderName: message.isFromMe ? 'You' : (message.senderName ?? (message.sender ? inbox.formatHandle(message.sender) : null)),
+      reactions: message.reactions.map(r => ({ ...r, senderName: r.fromMe ? 'You' : r.senderName })),
       attachments: message.attachments.map(a => ({
         guid: a.guid,
         name: a.name,
         mimeType: a.mimeType,
         bytes: a.bytes,
-        isSticker: a.isSticker,
         available: a.status === 'copied',
         url: `/api/attachment?guid=${encodeURIComponent(a.guid)}`,
       })),
     }
   }
 
-  // Server-sent events: the page refreshes its lists when Messages changes.
+  // Server-sent events: the page refreshes its lists when an app changes.
   const listeners = new Set<ReadableStreamDefaultController<Uint8Array>>()
   const encoder = new TextEncoder()
   function broadcast(event: Record<string, unknown>): void {
@@ -244,92 +253,18 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     }
   }
 
-  function resurfaceMode(): ResurfaceMode {
-    return store.setting('resurface') === 'stay' ? 'stay' : 'inbox'
+  async function announce(report: SyncReport): Promise<void> {
+    broadcast({
+      type: 'changed',
+      resurfaced: await Promise.all(report.resurfaced.map(async key => ({ key, title: (await summaryFor(key))?.title ?? key }))),
+      removed: report.removed,
+    })
   }
 
-  /**
-   * What archiving an iMessage conversation does to Messages: remove it there
-   * and confirm Messages' alert ('auto'), remove it and leave the alert to
-   * the person ('confirm'), or leave Messages alone ('off').
-   */
-  type RemovalMode = 'auto' | 'confirm' | 'off'
-  function removalMode(): RemovalMode {
-    const value = store.setting('removal')
-    return value === 'auto' || value === 'off' ? value : 'confirm'
-  }
-
-  /** Sample data must never reach the real Messages app. */
-  const usingSample = !!process.env.ATTIC_MESSAGES_DB
-
-  function liveConversation(key: string): LiveConversation | undefined {
-    try {
-      return archiver.live().find(c => c.key === key)
-    }
-    catch {
-      return undefined
-    }
-  }
-
-  /** Every label Messages might give the row: the contact's name, then the number. */
-  function rowNames(key: string): string[] {
-    const summary = summaryFor(key)
-    const stored = store.conversation(key)
-    const participants = liveConversation(key)?.participants ?? stored?.participants ?? []
-    const names = [summary?.title]
-    if (summary?.kind === 'direct' && participants[0])
-      names.push(formatHandle(participants[0]), participants[0])
-    return [...new Set(names.filter((n): n is string => !!n))]
-  }
-
-  function urlFor(key: string): string | null {
-    const live = liveConversation(key)
-    const stored = store.conversation(key)
-    const kind = live?.kind ?? stored?.kind
-    if (!kind)
-      return null
-    return messagesUrl({ kind, groupId: live?.groupId ?? stored?.groupId ?? null, participants: live?.participants ?? stored?.participants ?? [] })
-  }
-
-  interface MessagesOutcome {
-    attempted: boolean
-    removed: boolean
-    detail: string
-  }
-
-  async function takeOutOfMessages(key: string): Promise<MessagesOutcome> {
-    const mode = removalMode()
-    if (mode === 'off')
-      return { attempted: false, removed: false, detail: 'Kept in Messages, as set.' }
-    if (usingSample)
-      return { attempted: false, removed: false, detail: 'Sample data: the real Messages app is not touched.' }
-    if (!liveConversation(key)?.messageCount)
-      return { attempted: false, removed: true, detail: 'Already gone from Messages.' }
-
-    const outcome = await removeFromMessages(rowNames(key), urlFor(key), mode === 'auto')
-    if (!outcome.ok)
-      return { attempted: true, removed: false, detail: outcome.detail }
-    if (mode === 'confirm')
-      return { attempted: true, removed: false, detail: 'Confirm the delete in Messages.' }
-    const gone = await eventually(() => !liveConversation(key)?.messageCount)
-    archiver.sync(resurfaceMode())
-    return { attempted: true, removed: gone, detail: gone ? 'Removed from Messages.' : 'Messages has not removed it yet.' }
-  }
-
-  async function bringBackToMessages(key: string): Promise<MessagesOutcome> {
-    const stored = store.conversation(key)
-    if (!stored?.removedAt || usingSample)
-      return { attempted: false, removed: false, detail: '' }
-    const outcome = await recoverInMessages(rowNames(key))
-    if (!outcome.ok)
-      return { attempted: true, removed: true, detail: outcome.code === 3 ? 'No longer in Messages\' Recently Deleted, so Attic\'s copy is all there is.' : outcome.detail }
-    const back = await eventually(() => !!liveConversation(key)?.messageCount)
-    archiver.sync(resurfaceMode())
-    return { attempted: true, removed: !back, detail: back ? 'Recovered in Messages.' : 'Messages has not recovered it yet.' }
-  }
-
-  let lastState: AccessState = access()
+  // iMessage changes are noticed from chat.db's own files; the rest on a timer.
   let lastStamp = ''
+  let lastRemote = 0
+  let lastStates = ''
   function stamp(): string {
     const path = messagesDbPath()
     let out = ''
@@ -343,32 +278,37 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return out
   }
 
-  function tick(): void {
-    const state = access()
-    if (state !== lastState) {
-      lastState = state
-      broadcast({ type: 'access', state })
-    }
-    if (state !== 'granted')
+  let ticking = false
+  async function tick(): Promise<void> {
+    if (ticking)
       return
-    const current = stamp()
-    if (current === lastStamp)
-      return
-    lastStamp = current
-    let report: SyncReport = { resurfaced: [], removed: [], returned: [], copiedMessages: 0 }
+    ticking = true
     try {
-      report = archiver.sync(resurfaceMode())
+      const states = JSON.stringify(await sources.refreshStates())
+      if (states !== lastStates) {
+        lastStates = states
+        broadcast({ type: 'sources' })
+      }
+      const local = stamp()
+      const remoteDue = Date.now() - lastRemote > REMOTE_SYNC_MS
+      if (local === lastStamp && !remoteDue)
+        return
+      lastStamp = local
+      if (remoteDue) {
+        lastRemote = Date.now()
+        sources.invalidate('slack')
+        sources.invalidate('discord')
+      }
+      await announce(await archiver.sync(resurfaceMode()))
     }
     catch (error) {
       console.error(`[attic] sync failed: ${error instanceof Error ? error.message : String(error)}`)
     }
-    broadcast({
-      type: 'changed',
-      resurfaced: report.resurfaced.map(key => ({ key, title: summaryFor(key)?.title ?? key })),
-      removed: report.removed,
-    })
+    finally {
+      ticking = false
+    }
   }
-  const timer = setInterval(tick, SYNC_INTERVAL_MS)
+  const timer = setInterval(() => void tick(), TICK_MS)
 
   function authorized(req: Request, port: number): boolean {
     const host = req.headers.get('host')
@@ -416,6 +356,31 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     Bun.spawn(['/usr/bin/open', url], { stdio: ['ignore', 'ignore', 'ignore'] })
   }
 
+  interface AppOutcome {
+    attempted: boolean
+    removed: boolean
+    detail: string
+  }
+
+  /** After a verified copy: out of the real app, as far as it allows. */
+  async function takeOutOfApp(key: string): Promise<AppOutcome> {
+    const mode = removalMode()
+    if (mode === 'off')
+      return { attempted: false, removed: false, detail: 'Kept in the app, as set.' }
+    const { provider } = splitKey(key)
+    if (!(await visibleInApp(key)))
+      return { attempted: false, removed: true, detail: '' }
+    const outcome = await archiver.removeFromApp(key)
+    if (outcome.mode === 'unsupported')
+      return { attempted: false, removed: false, detail: outcome.detail }
+    let removed = outcome.removed
+    // A delete Attic confirmed lands in chat.db a moment later.
+    if (!removed && provider === 'imessage' && mode === 'auto' && !usingSample)
+      removed = await waitUntil(async () => !(await visibleInApp(key)))
+    await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+    return { attempted: true, removed, detail: removed ? `Removed from ${LABELS[provider]}.` : outcome.detail }
+  }
+
   let port = 0
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
@@ -428,10 +393,13 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       switch (`${req.method} ${url.pathname}`) {
         case 'GET /api/status': {
           const stored = store.conversations()
+          const states = sources.statesList()
+          const imessage = states.find(s => s.provider === 'imessage')?.status
           return json({
             version: options.version,
-            access: access(),
-            fixture: !!process.env.ATTIC_MESSAGES_DB,
+            access: imessage?.connected ? 'granted' : imessage?.needs === 'full-disk-access' ? 'needs-full-disk-access' : 'no-messages',
+            sources: states,
+            fixture: usingSample,
             archived: stored.filter(c => c.state === 'archived').length,
             saved: stored.length,
             settings: { resurface: resurfaceMode(), removal: removalMode() },
@@ -440,18 +408,17 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         }
         case 'GET /api/conversations': {
           const view = url.searchParams.get('view') === 'archived' ? 'archived' : 'inbox'
-          return json(access() === 'granted' || store.conversations().length > 0 ? conversations(view) : [])
+          const source = url.searchParams.get('source')
+          return json(await conversations(view, source === 'imessage' || source === 'slack' || source === 'discord' ? source : 'all'))
         }
         case 'GET /api/conversation': {
           const key = keyFrom(url.searchParams)
-          const summary = key ? summaryFor(key) : null
+          const summary = key ? await summaryFor(key) : null
           if (!summary)
             return problem('No such conversation', 404)
           const stored = store.conversation(summary.key)
-          const participants = (stored?.participants ?? []).length > 0 ? stored!.participants : []
           return json({
             ...summary,
-            participants: participants.map(handle => ({ handle, name: personName(handle) })),
             attachments: stored?.attachmentCount ?? 0,
             attachmentBytes: stored?.attachmentBytes ?? 0,
             missingAttachments: stored?.missingAttachments ?? 0,
@@ -461,31 +428,32 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const key = keyFrom(url.searchParams)
           if (!key)
             return problem('key is required')
-          const before = Number(url.searchParams.get('before')) || undefined
-          const transcript = archiver.transcript(key, { beforeMs: before, limit: 250 })
+          const transcript = await archiver.transcript(key)
           return json({ ...transcript, messages: transcript.messages.map(presentMessage) })
         }
         case 'POST /api/archive': {
           const key = keyFrom(await body(req))
           if (!key)
             return problem('key is required')
-          const result: ArchiveResult = archiver.archive(key)
-          // Only a complete, verified copy may leave Messages.
-          const messagesApp = result.verified ? await takeOutOfMessages(key) : { attempted: false, removed: false, detail: 'The copy is not complete yet, so Messages was not touched.' }
+          const result = await archiver.archive(key)
+          // Only a complete, verified copy may leave the real app.
+          const app = result.verified ? await takeOutOfApp(key) : { attempted: false, removed: false, detail: 'The copy is not complete yet, so the app was not touched.' }
           broadcast({ type: 'changed', resurfaced: [], removed: [] })
-          return json({ ...result, messagesApp })
+          return json({ ...result, app })
         }
         case 'POST /api/unarchive': {
           const key = keyFrom(await body(req))
           if (!key)
             return problem('key is required')
-          const messagesApp = await bringBackToMessages(key)
-          archiver.unarchive(key)
-          broadcast({ type: 'changed', resurfaced: [], removed: [] })
-          return json({ ok: true, messagesApp })
-        }
-        case 'POST /api/accessibility': {
-          return json({ trusted: await accessibilityTrusted(true) })
+          const before = store.conversation(key)
+          await archiver.unarchive(key)
+          let detail = ''
+          if (before?.removedAt && splitKey(key).provider === 'imessage' && !usingSample) {
+            const back = await waitUntil(() => visibleInApp(key))
+            detail = back ? 'Recovered in Messages.' : 'It is no longer in Messages\' Recently Deleted, so Attic\'s copy is all there is.'
+          }
+          await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+          return json({ ok: true, app: { detail } })
         }
         case 'POST /api/forget': {
           const key = keyFrom(await body(req))
@@ -497,48 +465,75 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         }
         case 'POST /api/open': {
           const key = keyFrom(await body(req))
-          const summary = key ? summaryFor(key) : null
-          const stored = key ? store.conversation(key) : null
-          const live = key ? archiver.live().find(c => c.key === key) : undefined
-          const target = summary && messagesUrl({ kind: summary.kind, groupId: live?.groupId ?? stored?.groupId ?? null, participants: live?.participants ?? stored?.participants ?? [] })
-          if (!target)
-            return problem('Messages cannot open this conversation by address', 422)
-          openUrl(target)
+          const summary = key ? await summaryFor(key) : null
+          if (!summary?.url)
+            return problem('This app cannot open the conversation by link', 422)
+          openUrl(summary.url)
           return json({ ok: true })
         }
         case 'GET /api/search': {
           const q = url.searchParams.get('q') ?? ''
-          const hits = store.search(q, 60).map(hit => ({
+          const hits = await Promise.all(store.search(q, 60).map(async hit => ({
             ...hit,
-            title: summaryFor(hit.conversationKey)?.title ?? hit.conversationKey,
-            senderName: hit.isFromMe ? 'You' : personName(hit.sender),
-          }))
+            provider: splitKey(hit.conversationKey).provider,
+            title: (await summaryFor(hit.conversationKey))?.title ?? hit.conversationKey,
+            senderName: hit.isFromMe ? 'You' : (hit.senderName ?? (hit.sender ? inbox.formatHandle(hit.sender) : null)),
+          })))
           return json(hits)
         }
         case 'GET /api/attachment': {
           const guid = url.searchParams.get('guid')
-          const file = guid ? archiver.attachmentFile(guid) : null
-          if (!file)
+          const response = guid ? await archiver.attachmentResponse(guid) : null
+          if (!response || !response.ok)
             return new Response('Not found', { status: 404 })
-          return new Response(Bun.file(file.path), {
-            headers: {
-              'content-type': file.mimeType ?? 'application/octet-stream',
-              'content-disposition': `inline; filename="${encodeURIComponent(file.name)}"`,
-              'cache-control': 'private, max-age=3600',
-            },
+          return new Response(response.body, {
+            headers: { 'content-type': response.headers.get('content-type') ?? 'application/octet-stream', 'cache-control': 'private, max-age=3600' },
           })
         }
         case 'POST /api/settings': {
           const data = await body(req)
           if (data.resurface === 'inbox' || data.resurface === 'stay')
             store.setSetting('resurface', data.resurface)
-          if (data.removal === 'auto' || data.removal === 'confirm' || data.removal === 'off')
+          if (data.removal === 'auto' || data.removal === 'confirm' || data.removal === 'off') {
             store.setSetting('removal', data.removal)
+            await sources.load()
+          }
           return json({ resurface: resurfaceMode(), removal: removalMode() })
+        }
+        case 'POST /api/sources/connect': {
+          const data = await body(req)
+          const provider = data.provider
+          const secret = typeof data.token === 'string' ? data.token.trim() : ''
+          if ((provider !== 'slack' && provider !== 'discord') || !secret)
+            return problem('A provider and a token are required')
+          await writeSecret(provider, secret)
+          if (provider === 'discord') {
+            if (typeof data.userId === 'string' && data.userId.trim())
+              await writeSecret('discord-user', data.userId.trim())
+            else
+              await deleteSecret('discord-user')
+          }
+          await sources.load()
+          broadcast({ type: 'sources' })
+          return json({ sources: sources.statesList() })
+        }
+        case 'POST /api/sources/disconnect': {
+          const data = await body(req)
+          if (data.provider !== 'slack' && data.provider !== 'discord')
+            return problem('Only Slack and Discord can be disconnected')
+          await deleteSecret(data.provider)
+          if (data.provider === 'discord')
+            await deleteSecret('discord-user')
+          await sources.load()
+          broadcast({ type: 'sources' })
+          return json({ sources: sources.statesList() })
         }
         case 'POST /api/privacy': {
           openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')
           return json({ ok: true })
+        }
+        case 'POST /api/accessibility': {
+          return json({ trusted: await accessibilityTrusted(true) })
         }
         case 'GET /api/events': {
           let controller: ReadableStreamDefaultController<Uint8Array> | null = null
@@ -546,7 +541,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
             start(c) {
               controller = c
               listeners.add(c)
-              c.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'hello', access: access() })}\n\n`))
+              c.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'hello' })}\n\n`))
             },
             cancel() {
               if (controller)
@@ -561,7 +556,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[attic] ${req.method} ${url.pathname}: ${message}`)
-      return problem(message, error instanceof MessagesAccessError ? 403 : 500)
+      return problem(message, 500)
     }
   }
 
@@ -579,7 +574,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   }
   catch {}
 
-  tick()
+  void tick()
   return {
     port,
     server,

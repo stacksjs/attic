@@ -111,7 +111,7 @@ console.log(`[attic] ${pkg.version} serving on 127.0.0.1:${agent.port}`)
 
 const runtime = craftRuntime()
 const flags = [
-  `http://127.0.0.1:${agent.port}/`,
+  `http://127.0.0.1:${agent.port}/app`,
   '--title',
   'Attic',
   '--width',

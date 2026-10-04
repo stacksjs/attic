@@ -58,6 +58,12 @@
     }
 
     html, body { height: 100%; margin: 0; }
+    /* Outside Craft there is no window material behind the page, so paint the
+       sidebar grey a Mac draws there (development in a browser, screenshots). */
+    html:not([data-craft-window-controls]) body { background: #ececee; }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-craft-window-controls]) body { background: #262628; }
+    }
     body {
       font: 13px/1.38 -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
       color: var(--label);
@@ -101,6 +107,10 @@
       color: #fff; font-weight: 600; font-size: 15px; letter-spacing: .02em;
     }
     .avatar.large { width: 30px; height: 30px; font-size: 12px; }
+    .source-badge {
+      position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; border-radius: 50%;
+      display: grid; place-items: center; box-shadow: 0 0 0 2px var(--list-bg);
+    }
 
     .tag {
       display: inline-flex; align-items: center; gap: 3px;
@@ -159,6 +169,11 @@ import { app, contextMenu, menu, notifications, showMessageBox, standardMenus } 
 
 /* ---------- state ---------- */
 const view = state('inbox')
+const source = state('all')
+const sources = state([])
+const connecting = state('')
+const tokenDraft = state('')
+const userDraft = state('')
 const inbox = state([])
 const archived = state([])
 const selectedKey = state('')
@@ -183,6 +198,9 @@ const archivedCount = derived(() => archived().length)
 const selected = derived(() => list().find(c => c.key === selectedKey()) ?? null)
 const needsAccess = derived(() => access() === 'needs-full-disk-access')
 const noMessages = derived(() => access() === 'no-messages')
+const anyConnected = derived(() => sources().some(s => s.status.connected))
+const SOURCE_ICONS = { imessage: 'i-hugeicons-message-01', slack: 'i-hugeicons-slack', discord: 'i-hugeicons-discord' }
+const SOURCE_COLORS = { imessage: '#34c759', slack: '#e01e5a', discord: '#5865f2' }
 const showingResults = derived(() => query().trim().length > 0)
 
 /* ---------- formatting ---------- */
@@ -239,7 +257,7 @@ function reactionGlyph(type) {
 }
 
 function preview(c) {
-  if (!c.inMessages)
+  if (!c.inApp)
     return c.savedMessages > 0 ? `${c.savedMessages.toLocaleString()} messages kept by Attic` : 'Kept by Attic'
   return c.preview ?? 'Attachment'
 }
@@ -258,7 +276,15 @@ function unsentText(m) {
 }
 
 function bubbleClass(m) {
-  return [m.isFromMe ? 'out' : 'in', m.service === 'SMS' ? 'sms' : '', m.inMessages ? '' : 'attic'].join(' ')
+  return [m.isFromMe ? 'out' : 'in', m.inApp ? '' : 'attic'].join(' ')
+}
+
+/** Your own bubbles take the app's colour: iMessage blue, Slack berry, Discord blurple. */
+function bubbleStyle(m) {
+  if (!m.isFromMe)
+    return ''
+  const provider = detail()?.provider
+  return provider === 'slack' ? 'background: #611f69' : provider === 'discord' ? 'background: #5865f2' : ''
 }
 
 function keptSummary(d) {
@@ -287,7 +313,7 @@ const timeline = derived(() => {
     const gap = !prev || m.sentAt - prev.sentAt > 60 * 60_000
     if (gap)
       rows.push({ type: 'day', id: `day-${m.guid}`, label: dayLabel(m.sentAt) })
-    if (prev && !prev.inMessages && m.inMessages)
+    if (prev && !prev.inApp && m.inApp)
       rows.push({ type: 'kept', id: `kept-${m.guid}` })
   }
   return rows
@@ -309,6 +335,7 @@ async function post(path, payload) {
 async function loadStatus() {
   const status = await api('/api/status')
   access.set(status.access)
+  sources.set(status.sources)
   fixture.set(status.fixture)
   resurface.set(status.settings.resurface)
   removal.set(status.settings.removal)
@@ -316,7 +343,7 @@ async function loadStatus() {
 }
 
 async function loadLists() {
-  const [a, b] = await Promise.all([api('/api/conversations?view=inbox'), api('/api/conversations?view=archived')])
+  const [a, b] = await Promise.all([api(`/api/conversations?view=inbox&source=${source()}`), api(`/api/conversations?view=archived&source=${source()}`)])
   inbox.set(a)
   archived.set(b)
 }
@@ -351,7 +378,7 @@ async function loadConversation(key) {
 
 /** Identity of a transcript as rendered: every message, edit, unsend and reaction. */
 function fingerprint(list) {
-  return list.map(m => `${m.guid}:${m.editedAt ?? ''}:${m.unsent ? 1 : 0}:${m.reactions.length}:${m.inMessages ? 1 : 0}`).join('|')
+  return list.map(m => `${m.guid}:${m.editedAt ?? ''}:${m.unsent ? 1 : 0}:${m.reactions.length}:${m.inApp ? 1 : 0}`).join('|')
 }
 
 async function loadEarlier() {
@@ -403,6 +430,84 @@ function show(next) {
   select(first ? first.key : '')
 }
 
+async function pickSource(next) {
+  source.set(next)
+  view.set('inbox')
+  query.set('')
+  await loadLists()
+  const first = list()[0]
+  select(first ? first.key : '')
+}
+
+function appName(provider) {
+  return provider === 'slack' ? 'Slack' : provider === 'discord' ? 'Discord' : 'Messages'
+}
+
+function connectedTo(provider) {
+  return sources().some(s => s.provider === provider && s.status.connected)
+}
+
+const listTitle = derived(() => {
+  if (view() === 'archived')
+    return 'Archived'
+  return source() === 'all' ? 'All Inboxes' : appName(source()) === 'Messages' ? 'iMessage' : appName(source())
+})
+
+function archiveHint(d) {
+  if (!d)
+    return 'Archive (⌃⌘A)'
+  const what = d.archiveMode === 'unsupported' ? 'Archive in Attic' : 'Archive'
+  return `${what} (⌃⌘A). ${d.archiveDetail ?? ''}`.trim()
+}
+
+function sourceIcon(provider) {
+  return SOURCE_ICONS[provider] ?? 'i-hugeicons-message-01'
+}
+
+function colorStyle(provider) {
+  return 'color: ' + sourceColor(provider)
+}
+
+function badgeStyle(provider) {
+  return 'background: ' + sourceColor(provider)
+}
+
+function showHint(d) {
+  return 'Show in ' + appName(d?.provider) + ' (⌘O)'
+}
+
+function sourceColor(provider) {
+  return SOURCE_COLORS[provider] ?? 'var(--accent)'
+}
+
+function openConnect(provider) {
+  connecting.set(provider)
+  tokenDraft.set('')
+  userDraft.set('')
+}
+
+async function saveConnect() {
+  const provider = connecting()
+  try {
+    const result = await post('/api/sources/connect', { provider, token: tokenDraft(), userId: userDraft() })
+    sources.set(result.sources)
+    const state = result.sources.find(s => s.provider === provider)
+    connecting.set('')
+    say(state?.status.connected ? `${state.label} is connected.` : (state?.status.detail ?? 'Saved.'))
+    await loadLists()
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+async function disconnect(provider) {
+  const result = await post('/api/sources/disconnect', { provider })
+  sources.set(result.sources)
+  connecting.set('')
+  await loadLists()
+}
+
 function move(delta) {
   const rows = list()
   if (rows.length === 0)
@@ -436,7 +541,7 @@ async function archive(key = selectedKey()) {
     selectNeighbour(key)
     await loadLists()
     const kept = `${result.messages.toLocaleString()} messages${result.attachmentsCopied ? `, ${result.attachmentsCopied} attachments` : ''} kept`
-    say(`Archived ${target.title}: ${kept}. ${result.messagesApp?.detail ?? ''}`.trim())
+    say(`Archived ${target.title}: ${kept}. ${result.app?.detail ?? ''}`.trim())
   }
   catch (error) {
     say(error.message)
@@ -455,7 +560,7 @@ async function unarchive(key = selectedKey()) {
     const result = await post('/api/unarchive', { key })
     selectNeighbour(key)
     await loadLists()
-    say(`${target.title} is back in the Inbox. ${result.messagesApp?.detail ?? ''}`.trim())
+    say(`${target.title} is back in the Inbox. ${result.app?.detail ?? ''}`.trim())
   }
   finally {
     busy.set('')
@@ -478,9 +583,9 @@ async function forget(key = selectedKey()) {
   const answer = await showMessageBox({
     type: 'warning',
     title: `Delete Attic's copy of ${target.title}?`,
-    message: target.inMessages
-      ? 'The conversation stays in Messages. Attic forgets its archived copy and attachments.'
-      : 'This conversation is no longer in Messages, so Attic\'s copy is the only one. It cannot be recovered.',
+    message: target.inApp
+      ? 'The conversation stays in the app. Attic forgets its archived copy and attachments.'
+      : 'This conversation is no longer in the app, so Attic\'s copy may be the only one. It cannot be recovered.',
     buttons: ['Delete Copy', 'Cancel'],
     defaultId: 1,
     cancelId: 1,
@@ -519,7 +624,7 @@ async function rowMenu(event, c) {
     ? [{ id: 'unarchive', title: 'Move to Inbox', icon: 'tray.and.arrow.up', shortcut: 'cmd+shift+u' }]
     : [{ id: 'archive', title: 'Archive', icon: 'archivebox', shortcut: 'ctrl+cmd+a' }]
   items.push({ separator: true })
-  items.push({ id: 'open', title: 'Show in Messages', icon: 'message', shortcut: 'cmd+o', disabled: !c.openable })
+  items.push({ id: 'open', title: `Show in ${c.provider === 'imessage' ? 'Messages' : c.provider === 'slack' ? 'Slack' : 'Discord'}`, icon: 'arrow.up.forward.app', shortcut: 'cmd+o', disabled: !c.url })
   if (c.saved) {
     items.push({ separator: true })
     items.push({ id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'xmark.bin' })
@@ -550,7 +655,7 @@ async function installMenus() {
           { label: 'Archive', shortcut: 'ctrl+cmd+a', onClick: () => archive() },
           { label: 'Move to Inbox', shortcut: 'cmd+shift+u', onClick: () => unarchive() },
           { separator: true },
-          { label: 'Show in Messages', shortcut: 'cmd+o', onClick: () => openInMessages() },
+          { label: 'Show in App', shortcut: 'cmd+o', onClick: () => openInMessages() },
           { separator: true },
           { label: 'Delete Attic\'s Copy…', onClick: () => forget() },
         ],
@@ -628,8 +733,16 @@ function listen() {
   }
 }
 
+const params = useSearchParams()
+// ?presentation hides development labels, for screenshots of the real app.
+const presenting = params.get('presentation') !== null
+
 onMount(async () => {
   await refresh()
+  // ?q= opens with a search filled in.
+  const initialQuery = params.get('q')
+  if (initialQuery)
+    query.set(initialQuery)
   let remembered = ''
   try {
     remembered = localStorage.getItem('attic:selected') ?? ''
@@ -647,18 +760,28 @@ onMount(async () => {
 <div data-stx-content class="flex h-screen">
   <!-- Sidebar, on the window material. -->
   <nav class="w-[212px] shrink-0 flex flex-col" aria-label="Mailboxes">
-    <div class="h-[52px] shrink-0" style="height: calc(var(--window-controls-height) + 24px)"></div>
-    <div class="px-[19px] pb-1 text-[11px] font-semibold muted">Messages</div>
-    <button class="sidebar-item" :aria-current="view() === 'inbox' ? 'true' : 'false'" @click="show('inbox')">
-      <span class="i-hugeicons-message-multiple-01 text-[15px] text-[var(--accent)]"></span>
-      <span>Inbox</span>
-      <span class="count">{{ inboxCount() }}</span>
+    <div class="shrink-0" style="height: calc(var(--window-controls-height) + 24px)"></div>
+    <button class="sidebar-item" :aria-current="view() === 'inbox' && source() === 'all' ? 'true' : 'false'" @click="pickSource('all')">
+      <span class="i-hugeicons-inbox text-[15px] text-[var(--accent)]"></span>
+      <span>All Inboxes</span>
+      <span class="count" :if="source() === 'all'">{{ inboxCount() }}</span>
     </button>
     <button class="sidebar-item" :aria-current="view() === 'archived' ? 'true' : 'false'" @click="show('archived')">
       <span class="i-hugeicons-archive-02 text-[15px] text-[var(--accent)]"></span>
       <span>Archived</span>
       <span class="count">{{ archivedCount() }}</span>
     </button>
+
+    <div class="px-[19px] pt-4 pb-1 text-[11px] font-semibold muted">Sources</div>
+    <div :for="s in sources()" :key="s.provider" class="contents">
+      <button class="sidebar-item" :aria-current="view() === 'inbox' && source() === s.provider ? 'true' : 'false'" @click="s.status.connected ? pickSource(s.provider) : openConnect(s.provider)" :title="s.status.detail">
+        <span class="text-[15px]" :class="sourceIcon(s.provider)" :style="colorStyle(s.provider)"></span>
+        <span>{{ s.label }}</span>
+        <span :if="s.status.connected" class="count">{{ source() === s.provider ? inboxCount() : '' }}</span>
+        <span :if="!s.status.connected && s.provider !== 'imessage'" class="count" style="color: var(--accent)">Connect</span>
+        <span :if="!s.status.connected && s.provider === 'imessage'" class="count" style="color: var(--amber)">Set up</span>
+      </button>
+    </div>
 
     <div class="mt-auto px-4 pb-4 text-[11.5px] muted leading-snug">
       <div class="font-semibold mb-1.5" style="color: var(--label)">When someone writes again</div>
@@ -670,61 +793,60 @@ onMount(async () => {
         <input type="radio" name="resurface" :checked="resurface() === 'stay'" @change="setResurface('stay')">
         <span>Keep it archived</span>
       </label>
-      <div class="font-semibold mt-4 mb-1.5" style="color: var(--label)">When you archive from iMessage</div>
+      <div class="font-semibold mt-4 mb-1.5" style="color: var(--label)">When you archive</div>
       <label class="flex items-center gap-2 py-0.5">
         <input type="radio" name="removal" :checked="removal() === 'auto'" @change="setRemoval('auto')">
-        <span>Remove it from Messages</span>
+        <span>Take it out of the app</span>
       </label>
       <label class="flex items-center gap-2 py-0.5">
         <input type="radio" name="removal" :checked="removal() === 'confirm'" @change="setRemoval('confirm')">
-        <span>Remove it, I confirm in Messages</span>
+        <span>Take it out, Messages asks first</span>
       </label>
       <label class="flex items-center gap-2 py-0.5">
         <input type="radio" name="removal" :checked="removal() === 'off'" @change="setRemoval('off')">
-        <span>Keep it in Messages</span>
+        <span>Archive in Attic only</span>
       </label>
       <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages</button>
-      <div :if="fixture()" class="mt-3 tag">Sample data</div>
+      <div :if="fixture() && !presenting" class="mt-3 tag">Sample data</div>
     </div>
   </nav>
 
-  <!-- Full Disk Access, before anything else can work. -->
-  <main :if="needsAccess()" class="flex-1 grid place-items-center" style="background: var(--pane-bg)">
-    <div class="max-w-[440px] text-center px-6">
-      <div class="i-hugeicons-lock-key text-[44px] mx-auto mb-4 muted"></div>
-      <h1 class="text-[20px] font-semibold mb-2">Attic needs Full Disk Access</h1>
-      <p class="muted mb-5">macOS keeps your messages behind a privacy wall. Attic reads them on this Mac only, and never changes them. Switch Attic on in Privacy &amp; Security, and this window carries on by itself.</p>
-      <button class="toolbar-button" style="background: var(--accent); color: #fff; height: 32px; padding: 0 16px" @click="grantAccess()">Open Privacy &amp; Security</button>
-    </div>
-  </main>
-
-  <main :if="noMessages()" class="flex-1 grid place-items-center" style="background: var(--pane-bg)">
-    <div class="max-w-[420px] text-center px-6">
-      <div class="i-hugeicons-message-cancel-01 text-[44px] mx-auto mb-4 muted"></div>
-      <h1 class="text-[20px] font-semibold mb-2">Messages is not set up on this Mac</h1>
-      <p class="muted">Sign in to Messages with your Apple Account, then come back. Anything Attic has already archived is still here.</p>
+  <!-- Nothing connected yet: the one thing to do first. -->
+  <main :if="!anyConnected() && needsAccess()" class="flex-1 grid place-items-center" style="background: var(--pane-bg)">
+    <div class="max-w-[460px] text-center px-6">
+      <img src="/images/app-icon.png" alt="" class="w-[88px] h-[88px] mx-auto mb-4">
+      <h1 class="text-[22px] font-semibold mb-2">Every conversation, one calm place</h1>
+      <p class="muted mb-5">Attic reads iMessage on this Mac, and Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Attic on in Privacy &amp; Security and this window carries on by itself.</p>
+      <div class="flex gap-2 justify-center">
+        <button class="toolbar-button" style="background: var(--accent); color: #fff; height: 32px; padding: 0 16px" @click="grantAccess()">Open Privacy &amp; Security</button>
+        <button class="toolbar-button" style="height: 32px; padding: 0 14px; background: var(--chip)" @click="openConnect('slack')">Connect Slack</button>
+      </div>
     </div>
   </main>
 
   <!-- Conversation list. -->
-  <section :if="!needsAccess() && !noMessages()" class="w-[340px] shrink-0 flex flex-col border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
+  <section :if="anyConnected() || !needsAccess()" class="w-[340px] shrink-0 flex flex-col border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
     <div class="shrink-0 px-3 pb-2" style="padding-top: calc(var(--window-controls-height) + 14px)">
       <div class="flex items-baseline justify-between px-1 mb-2">
-        <h2 class="text-[17px] font-bold m-0">{{ view() === 'archived' ? 'Archived' : 'Inbox' }}</h2>
+        <h2 class="text-[17px] font-bold m-0">{{ listTitle() }}</h2>
         <span class="muted text-[11.5px]">{{ list().length }} conversations</span>
       </div>
       <div class="relative">
         <span class="i-hugeicons-search-01 absolute left-2 top-[7px] text-[14px] muted"></span>
-        <input id="search" class="search selectable" type="search" placeholder="Search archived messages" x-model="query" autocomplete="off" spellcheck="false">
+        <input id="search" class="search selectable" type="search" placeholder="Search everything Attic kept" x-model="query" autocomplete="off" spellcheck="false">
       </div>
+      <button :if="needsAccess()" class="banner mt-2 w-full text-left border-0" @click="grantAccess()">
+        <span class="i-hugeicons-lock-key text-[16px] mt-[1px]" style="color: var(--amber)"></span>
+        <span class="text-[11.5px]"><span class="font-semibold">iMessage needs Full Disk Access.</span> <span class="muted">Switch Attic on in Privacy &amp; Security.</span></span>
+      </button>
     </div>
 
     <div class="scroller flex-1 pb-3" tabindex="0" @keydown="onListKey($event)">
       <!-- Search results. -->
       <div :if="showingResults()">
-        <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">No archived messages match.</div>
+        <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">Nothing Attic kept matches.</div>
         <button :for="hit in results()" :key="hit.guid" class="row w-[calc(100%-16px)] text-left border-0 bg-transparent" @click="openResult(hit)">
-          <div class="avatar large mt-0.5"><span class="i-hugeicons-search-01"></span></div>
+          <div class="avatar large mt-0.5"><span :class="sourceIcon(hit.provider)"></span></div>
           <div class="min-w-0">
             <div class="flex justify-between gap-2">
               <span class="font-semibold truncate">{{ hit.title }}</span>
@@ -741,16 +863,19 @@ onMount(async () => {
           <div :if="view() === 'archived'">
             <div class="i-hugeicons-archive-02 text-[34px] mx-auto mb-3"></div>
             <div class="font-semibold mb-1" style="color: var(--label)">Nothing archived yet</div>
-            <div class="text-[12px]">Archive a conversation to keep it out of the way without deleting a thing.</div>
+            <div class="text-[12px]">Archive a conversation to clear it out of the app without deleting a thing.</div>
           </div>
           <div :if="view() === 'inbox'">All caught up.</div>
         </div>
         <div :for="c in list()" :key="c.key" class="row" role="option" :aria-selected="c.key === selectedKey() ? 'true' : 'false'" @click="select(c.key)" @contextmenu="rowMenu($event, c)">
           <span :if="c.unread > 0" class="unread"></span>
-          <div class="avatar">
+          <div class="avatar relative">
             <span :if="c.kind === 'group'" class="i-hugeicons-user-group text-[19px]"></span>
-            <span :if="c.kind !== 'group' && c.initials !== '#'">{{ c.initials }}</span>
-            <span :if="c.kind !== 'group' && c.initials === '#'" class="i-hugeicons-user text-[19px]"></span>
+            <span :if="c.kind === 'channel'" class="text-[18px] font-bold">#</span>
+            <span :if="c.kind === 'thread'" class="i-hugeicons-message-multiple-02 text-[18px]"></span>
+            <span :if="c.kind === 'direct' && c.initials !== '#'">{{ c.initials }}</span>
+            <span :if="c.kind === 'direct' && c.initials === '#'" class="i-hugeicons-user text-[19px]"></span>
+            <span class="source-badge" :style="badgeStyle(c.provider)"><span class="text-[9px] text-white" :class="sourceIcon(c.provider)"></span></span>
           </div>
           <div class="min-w-0">
             <div class="flex justify-between gap-2">
@@ -758,10 +883,10 @@ onMount(async () => {
               <span class="muted text-[11.5px] shrink-0">{{ when(c.lastMessageAt) }}</span>
             </div>
             <div class="muted text-[12px] leading-[1.3] line-clamp-2 min-h-[31px]">{{ preview(c) }}</div>
-            <div :if="c.resurfacedAt || !c.inMessages || busy() === c.key" class="flex gap-1 mt-1">
-              <span :if="busy() === c.key" class="tag">Copying…</span>
+            <div :if="c.resurfacedAt || !c.inApp || busy() === c.key" class="flex gap-1 mt-1">
+              <span :if="busy() === c.key" class="tag">Working…</span>
               <span :if="c.resurfacedAt && c.state === 'inbox'" class="tag"><span class="i-hugeicons-arrow-turn-backward text-[11px]"></span>Wrote again</span>
-              <span :if="!c.inMessages" class="tag"><span class="i-hugeicons-archive-02 text-[11px]"></span>Only in Attic</span>
+              <span :if="!c.inApp" class="tag"><span class="i-hugeicons-archive-02 text-[11px]"></span>Out of {{ appName(c.provider) }}</span>
             </div>
           </div>
         </div>
@@ -770,7 +895,7 @@ onMount(async () => {
   </section>
 
   <!-- Transcript. -->
-  <section :if="!needsAccess() && !noMessages()" class="flex-1 min-w-0 flex flex-col" style="background: var(--pane-bg)" aria-label="Transcript">
+  <section :if="anyConnected() || !needsAccess()" class="flex-1 min-w-0 flex flex-col" style="background: var(--pane-bg)" aria-label="Transcript">
     <div :if="!detail()" class="flex-1 grid place-items-center muted">
       <div class="text-center">
         <div class="i-hugeicons-message-02 text-[40px] mx-auto mb-3"></div>
@@ -783,23 +908,23 @@ onMount(async () => {
         <div class="font-semibold text-[14px] truncate">{{ detail()?.title }}</div>
         <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}</div>
       </div>
-      <button :if="detail()?.state !== 'archived'" class="toolbar-button" title="Archive (⌃⌘A)" :disabled="busy() !== ''" @click="archive()">
+      <button :if="detail()?.state !== 'archived'" class="toolbar-button" :title="archiveHint(detail())" :disabled="busy() !== ''" @click="archive()">
         <span class="i-hugeicons-archive-02 text-[16px]"></span>Archive
       </button>
       <button :if="detail()?.state === 'archived'" class="toolbar-button" title="Move to Inbox (⇧⌘U)" @click="unarchive()">
         <span class="i-hugeicons-inbox-upload text-[16px]"></span>Move to Inbox
       </button>
-      <button class="toolbar-button" title="Show in Messages (⌘O)" :disabled="!detail()?.openable" @click="openInMessages()">
+      <button class="toolbar-button" :title="showHint(detail())" :disabled="!detail()?.url" @click="openInMessages()">
         <span class="i-hugeicons-message-02 text-[16px]"></span>
       </button>
     </header>
 
-    <div :if="detail() && !detail()?.inMessages" class="shrink-0 px-4 pt-3">
+    <div :if="detail() && !detail()?.inApp" class="shrink-0 px-4 pt-3">
       <div class="banner">
         <span class="i-hugeicons-archive-02 text-[18px] mt-[1px]" style="color: var(--amber)"></span>
         <div class="text-[12px]">
-          <div class="font-semibold">Only in Attic</div>
-          <div class="muted">This conversation is gone from Messages. Attic kept every message and attachment it copied, outlined below.</div>
+          <div class="font-semibold">Out of {{ appName(detail()?.provider) }}</div>
+          <div class="muted">Attic kept every message and attachment it copied; what the app no longer holds is outlined.</div>
         </div>
       </div>
     </div>
@@ -817,15 +942,15 @@ onMount(async () => {
         <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex flex-col" :class="row.m.isFromMe ? 'items-end' : 'items-start'" :style="row.m.reactions.length ? 'margin-top: 12px' : ''">
           <div :if="row.showSender" class="text-[11px] muted px-3 pt-1">{{ row.m.senderName }}</div>
           <div :for="a in row.m.attachments" class="mb-[3px]">
-            <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[16px]" :style="row.m.inMessages ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
+            <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[16px]" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
             <div :if="!isImage(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
               <span class="i-hugeicons-attachment-01 text-[15px]"></span>
               <span>{{ a.name }}</span>
               <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
             </div>
           </div>
-          <div :if="row.m.text && !row.m.unsent" class="bubble" :class="bubbleClass(row.m)">
-            <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ reactionGlyph(r.type) }}</span></div>{{ row.m.text }}</div>
+          <div :if="row.m.text && !row.m.unsent" class="bubble" :class="bubbleClass(row.m)" :style="bubbleStyle(row.m)">
+            <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
           <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
           <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
         </div>
@@ -835,6 +960,28 @@ onMount(async () => {
       </div>
     </div>
   </section>
+
+  <!-- Connecting Slack or Discord: a sheet over the window. -->
+  <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="connecting.set('')">
+    <div class="w-[440px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-[26px]" :class="sourceIcon(connecting())" :style="colorStyle(connecting())"></span>
+        <h2 class="text-[16px] font-semibold m-0">Connect {{ appName(connecting()) }}</h2>
+      </div>
+      <p :if="connecting() === 'slack'" class="muted text-[12px] leading-relaxed mb-3">Paste a Slack <b>user</b> token (it starts with xoxp-), from a Slack app you create with the read scopes for channels, groups, DMs and users, plus im:write, mpim:write and channels:write so archiving can close and leave conversations. It stays in your keychain.</p>
+      <p :if="connecting() === 'discord'" class="muted text-[12px] leading-relaxed mb-3">Paste a Discord <b>bot</b> token and add the bot to your servers with Read Message History (and Manage Threads to archive threads). Discord does not let apps read personal DMs, so those stay in Discord. Your user id marks your own messages.</p>
+      <input class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="Token" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
+      <input :if="connecting() === 'discord'" class="search selectable mb-2" style="padding-left: 10px" type="text" placeholder="Your Discord user id (optional)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
+      <div class="flex justify-between items-center mt-3">
+        <button :if="connectedTo(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">Disconnect</button>
+        <span :if="!connectedTo(connecting())"></span>
+        <div class="flex gap-2">
+          <button class="toolbar-button" style="background: var(--chip)" @click="connecting.set('')">Cancel</button>
+          <button class="toolbar-button" style="background: var(--accent); color: #fff" :disabled="!tokenDraft()" @click="saveConnect()">Connect</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- A quiet status line for confirmations, bottom centre like a Mail toast. -->
   <div :if="flash()" class="fixed left-1/2 bottom-5 -translate-x-1/2 px-4 py-2 rounded-[10px] text-[12px] text-white shadow-lg max-w-[520px] text-center" style="background: rgba(40, 40, 40, .92)">{{ flash() }}</div>

@@ -1,38 +1,55 @@
-import type { MessageKind } from './messages-db'
 import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 /**
- * Attic's own database: the copies it keeps of archived conversations, so
- * they outlive Messages deleting them.
+ * Attic's own database: the copies it keeps of archived conversations, from
+ * every source, so they outlive the real app deleting or closing them.
  *
  * Plain bun:sqlite rather than Stacks models, deliberately. This file ships
  * inside the desktop app, where there is no project tree, no migrations
  * runner and no query builder - only the binary - and it needs an FTS5 index
- * the model layer cannot declare. The schema is small and created idempotently
+ * the model layer cannot declare. The schema is created and upgraded in place
  * on open.
  */
 
+export type MessageKind = 'message' | 'reaction' | 'event'
+export type Provider = 'imessage' | 'slack' | 'discord'
 export type ConversationState = 'archived' | 'unarchived'
 
+export interface Person {
+  id: string
+  name: string | null
+}
+
 export interface StoredConversation {
+  /** `<provider>:<id>`, e.g. `imessage:direct:+15551234567`, `slack:D012AB`. */
   key: string
-  kind: 'direct' | 'group'
+  provider: Provider
+  /** The provider's own id for it. */
+  id: string
+  kind: 'direct' | 'group' | 'channel' | 'thread'
   title: string | null
-  participants: string[]
-  chatGuids: string[]
-  groupId: string | null
+  participants: Person[]
+  /** The Slack workspace or Discord server. */
+  workspace: string | null
+  /** Opens it in the real app. */
+  url: string | null
   state: ConversationState
   archivedAt: number | null
   unarchivedAt: number | null
   /** New messages arrived after archiving. */
   resurfacedAt: number | null
-  /** Attic saw the conversation gone from Messages. */
+  /** Attic saw it leave the real app. */
   removedAt: number | null
+  /**
+   * Messages sent up to here were deleted from the real app (an iMessage
+   * delete), so only Attic has them, even after the thread comes back.
+   */
+  goneBefore: number | null
   lastMessageAt: number | null
-  /** Highest chat.db message ROWID copied; anything above is new. */
-  syncedRowId: number
+  /** The provider's cursor at the last message copied; anything after is new. */
+  syncedCursor: string | null
   messageCount: number
   attachmentCount: number
   attachmentBytes: number
@@ -54,21 +71,21 @@ export interface StoredAttachment {
 export interface StoredMessage {
   guid: string
   conversationKey: string
-  chatGuid: string
   kind: MessageKind
   text: string | null
   isFromMe: boolean
   sentAt: number
+  /** The sender's provider id; null for your own. */
   sender: string | null
-  service: string | null
+  senderName: string | null
   targetGuid: string | null
-  reactionType: number
+  /** For a reaction: the emoji. */
+  reaction: string | null
+  reactionRemoved: boolean
   replyToGuid: string | null
   editedAt: number | null
   unsent: boolean
-  eventType: number
-  groupTitle: string | null
-  sourceRowId: number | null
+  cursor: string | null
   attachments: StoredAttachment[]
 }
 
@@ -78,6 +95,7 @@ export interface SearchHit {
   sentAt: number
   isFromMe: boolean
   sender: string | null
+  senderName: string | null
   /** The matching text with `\u0001`/`\u0002` around each match. */
   snippet: string
 }
@@ -102,7 +120,7 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS messages (
     guid TEXT PRIMARY KEY,
     conversation_key TEXT NOT NULL,
-    chat_guid TEXT NOT NULL,
+    chat_guid TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL,
     text TEXT,
     is_from_me INTEGER NOT NULL,
@@ -149,20 +167,58 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
+/**
+ * Columns added since 0.1 (iMessage only), and the statement adding each.
+ * Applied on open when missing, so an existing archive upgrades in place.
+ */
+const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
+  ['conversations', 'provider', `ALTER TABLE conversations ADD COLUMN provider TEXT NOT NULL DEFAULT 'imessage'`],
+  ['conversations', 'workspace', 'ALTER TABLE conversations ADD COLUMN workspace TEXT'],
+  ['conversations', 'url', 'ALTER TABLE conversations ADD COLUMN url TEXT'],
+  ['conversations', 'synced_cursor', 'ALTER TABLE conversations ADD COLUMN synced_cursor TEXT'],
+  ['conversations', 'gone_before', 'ALTER TABLE conversations ADD COLUMN gone_before INTEGER'],
+  ['messages', 'sender_name', 'ALTER TABLE messages ADD COLUMN sender_name TEXT'],
+  ['messages', 'reaction', 'ALTER TABLE messages ADD COLUMN reaction TEXT'],
+  ['messages', 'reaction_removed', 'ALTER TABLE messages ADD COLUMN reaction_removed INTEGER NOT NULL DEFAULT 0'],
+  ['messages', 'cursor', 'ALTER TABLE messages ADD COLUMN cursor TEXT'],
+]
+
+const PROVIDERS: readonly Provider[] = ['imessage', 'slack', 'discord']
+
+/** Messages' reaction codes, for rows written before reactions were stored as emoji. */
+const REACTION_EMOJI: Record<number, string> = { 2000: '❤️', 2001: '👍', 2002: '👎', 2003: '😂', 2004: '‼️', 2005: '❓', 2006: '😀', 2007: '🔖' }
+
+/** The store's key for a provider's conversation. */
+export function conversationKey(provider: Provider, id: string): string {
+  return `${provider}:${id}`
+}
+
+export function splitKey(key: string): { provider: Provider, id: string } {
+  const at = key.indexOf(':')
+  const provider = key.slice(0, at) as Provider
+  if (at === -1 || !PROVIDERS.includes(provider))
+    return { provider: 'imessage', id: key }
+  return { provider, id: key.slice(at + 1) }
+}
+
 interface ConversationRow {
   key: string
+  provider: string
   kind: string
   title: string | null
   participants: string
-  chat_guids: string
   group_id: string | null
+  workspace: string | null
+  url: string | null
   state: string
   archived_at: number | null
   unarchived_at: number | null
   resurfaced_at: number | null
   removed_at: number | null
+  gone_before: number | null
   last_message_at: number | null
   synced_rowid: number
+  synced_cursor: string | null
   message_count: number
   attachment_count: number
   attachment_bytes: number
@@ -172,20 +228,21 @@ interface ConversationRow {
 interface MessageDbRow {
   guid: string
   conversation_key: string
-  chat_guid: string
   kind: string
   text: string | null
   is_from_me: number
   sent_at: number
   sender: string | null
-  service: string | null
+  sender_name: string | null
   target_guid: string | null
+  reaction: string | null
   reaction_type: number
+  reaction_removed: number
   reply_to_guid: string | null
   edited_at: number | null
   unsent: number
-  event_type: number
   group_title: string | null
+  cursor: string | null
   source_rowid: number | null
 }
 
@@ -209,21 +266,36 @@ const CONVERSATION_SELECT = `
   FROM conversations c
 `
 
+function parsePeople(raw: string): Person[] {
+  try {
+    const value = JSON.parse(raw) as Array<string | Person>
+    // 0.1 stored bare handles.
+    return value.map(p => (typeof p === 'string' ? { id: p, name: null } : p))
+  }
+  catch {
+    return []
+  }
+}
+
 function toConversation(row: ConversationRow): StoredConversation {
+  const { provider, id } = splitKey(row.key)
   return {
     key: row.key,
-    kind: row.kind === 'group' ? 'group' : 'direct',
+    provider: PROVIDERS.includes(row.provider as Provider) ? row.provider as Provider : provider,
+    id,
+    kind: (['direct', 'group', 'channel', 'thread'] as const).find(k => k === row.kind) ?? 'direct',
     title: row.title,
-    participants: JSON.parse(row.participants) as string[],
-    chatGuids: JSON.parse(row.chat_guids) as string[],
-    groupId: row.group_id,
+    participants: parsePeople(row.participants),
+    workspace: row.workspace,
+    url: row.url ?? (row.group_id ? `sms://open?groupid=${encodeURIComponent(row.group_id)}` : null),
     state: row.state === 'unarchived' ? 'unarchived' : 'archived',
     archivedAt: row.archived_at,
     unarchivedAt: row.unarchived_at,
     resurfacedAt: row.resurfaced_at,
     removedAt: row.removed_at,
+    goneBefore: row.gone_before,
     lastMessageAt: row.last_message_at,
-    syncedRowId: row.synced_rowid,
+    syncedCursor: row.synced_cursor ?? (row.synced_rowid ? String(row.synced_rowid) : null),
     messageCount: row.message_count,
     attachmentCount: row.attachment_count,
     attachmentBytes: row.attachment_bytes,
@@ -264,6 +336,27 @@ export class ArchiveStore {
     this.db = new Database(path, { create: true })
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
     this.db.exec(SCHEMA)
+    this.migrate()
+  }
+
+  /**
+   * Upgrade a 0.1 archive: add the newer columns, and prefix iMessage keys
+   * (`direct:+1555…` became `imessage:direct:+1555…` when other sources came).
+   */
+  private migrate(): void {
+    for (const [table, column, ddl] of ADDED_COLUMNS) {
+      const columns = (this.db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(c => c.name)
+      if (!columns.includes(column))
+        this.db.exec(ddl)
+    }
+    const unprefixed = `key NOT LIKE 'imessage:%' AND key NOT LIKE 'slack:%' AND key NOT LIKE 'discord:%'`
+    if ((this.db.query(`SELECT COUNT(*) AS n FROM conversations WHERE ${unprefixed}`).get() as { n: number }).n === 0)
+      return
+    this.transaction(() => {
+      this.db.exec(`UPDATE conversations SET key = 'imessage:' || key WHERE ${unprefixed}`)
+      for (const table of ['messages', 'attachments'])
+        this.db.exec(`UPDATE ${table} SET conversation_key = 'imessage:' || conversation_key WHERE ${unprefixed.replaceAll('key', 'conversation_key')}`)
+    })
   }
 
   close(): void {
@@ -274,39 +367,41 @@ export class ArchiveStore {
     return this.db.transaction(fn)()
   }
 
-  upsertConversation(c: Pick<StoredConversation, 'key' | 'kind' | 'title' | 'participants' | 'chatGuids' | 'groupId' | 'lastMessageAt'>): void {
+  upsertConversation(c: Pick<StoredConversation, 'key' | 'provider' | 'kind' | 'title' | 'participants' | 'workspace' | 'url' | 'lastMessageAt'>): void {
     this.db.query(`
-      INSERT INTO conversations (key, kind, title, participants, chat_guids, group_id, last_message_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      INSERT INTO conversations (key, provider, kind, title, participants, workspace, url, last_message_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
       ON CONFLICT (key) DO UPDATE SET
+        provider = excluded.provider,
         kind = excluded.kind,
         title = COALESCE(excluded.title, conversations.title),
-        participants = excluded.participants,
-        chat_guids = excluded.chat_guids,
-        group_id = COALESCE(excluded.group_id, conversations.group_id),
+        participants = CASE WHEN excluded.participants = '[]' THEN conversations.participants ELSE excluded.participants END,
+        workspace = COALESCE(excluded.workspace, conversations.workspace),
+        url = COALESCE(excluded.url, conversations.url),
         last_message_at = MAX(COALESCE(excluded.last_message_at, 0), COALESCE(conversations.last_message_at, 0))
-    `).run(c.key, c.kind, c.title, JSON.stringify(c.participants), JSON.stringify(c.chatGuids), c.groupId, c.lastMessageAt)
+    `).run(c.key, c.provider, c.kind, c.title, JSON.stringify(c.participants), c.workspace, c.url, c.lastMessageAt)
   }
 
   /**
    * Copy or refresh messages. A message already stored is updated in place,
-   * because Messages edits them after the fact: an edit, an Undo Send.
+   * because apps edit them after the fact: an edit, an Undo Send.
    */
   upsertMessages(conversationKey: string, messages: Omit<StoredMessage, 'conversationKey' | 'attachments'>[]): void {
     const insert = this.db.query(`
-      INSERT INTO messages (guid, conversation_key, chat_guid, kind, text, is_from_me, sent_at, sender, service,
-        target_guid, reaction_type, reply_to_guid, edited_at, unsent, event_type, group_title, source_rowid)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+      INSERT INTO messages (guid, conversation_key, kind, text, is_from_me, sent_at, sender, sender_name,
+        target_guid, reaction, reaction_removed, reply_to_guid, edited_at, unsent, cursor)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
       ON CONFLICT (guid) DO UPDATE SET
         text = CASE WHEN excluded.unsent = 1 THEN messages.text ELSE COALESCE(excluded.text, messages.text) END,
+        sender_name = COALESCE(excluded.sender_name, messages.sender_name),
         edited_at = COALESCE(excluded.edited_at, messages.edited_at),
         unsent = MAX(excluded.unsent, messages.unsent),
-        source_rowid = excluded.source_rowid
+        cursor = excluded.cursor
     `)
     this.transaction(() => {
       for (const m of messages) {
-        insert.run(m.guid, conversationKey, m.chatGuid, m.kind, m.text, m.isFromMe ? 1 : 0, m.sentAt, m.sender, m.service,
-          m.targetGuid, m.reactionType, m.replyToGuid, m.editedAt, m.unsent ? 1 : 0, m.eventType, m.groupTitle, m.sourceRowId)
+        insert.run(m.guid, conversationKey, m.kind, m.text, m.isFromMe ? 1 : 0, m.sentAt, m.sender, m.senderName,
+          m.targetGuid, m.reaction, m.reactionRemoved ? 1 : 0, m.replyToGuid, m.editedAt, m.unsent ? 1 : 0, m.cursor)
       }
     })
   }
@@ -327,8 +422,8 @@ export class ArchiveStore {
     return row ? toAttachment(row) : null
   }
 
-  setSyncedRowId(key: string, rowid: number): void {
-    this.db.query('UPDATE conversations SET synced_rowid = MAX(synced_rowid, ?2) WHERE key = ?1').run(key, rowid)
+  setSyncedCursor(key: string, cursor: string): void {
+    this.db.query('UPDATE conversations SET synced_cursor = ?2 WHERE key = ?1').run(key, cursor)
   }
 
   archive(key: string, at = Date.now()): void {
@@ -341,11 +436,13 @@ export class ArchiveStore {
       .run(key, at, options.resurfaced ? 1 : 0)
   }
 
-  markRemoved(key: string, at: number | null): void {
-    this.db.query('UPDATE conversations SET removed_at = ?2 WHERE key = ?1').run(key, at)
+  /** `deleted`: the app deleted the history too, not just hid the conversation. */
+  markRemoved(key: string, at: number | null, deleted = false): void {
+    this.db.query('UPDATE conversations SET removed_at = ?2, gone_before = CASE WHEN ?3 THEN MAX(COALESCE(gone_before, 0), COALESCE(last_message_at, 0)) ELSE gone_before END WHERE key = ?1')
+      .run(key, at, deleted ? 1 : 0)
   }
 
-  /** Forget a conversation and every copy Attic holds of it. */
+  /** Forget a conversation and every copy Attic holds of it; returns the files to delete. */
   forget(key: string): StoredAttachment[] {
     const attachments = (this.db.query('SELECT * FROM attachments WHERE conversation_key = ?').all(key) as AttachmentDbRow[]).map(toAttachment)
     this.transaction(() => {
@@ -374,33 +471,34 @@ export class ArchiveStore {
 
   /** Every stored message of a conversation, oldest first, attachments attached. */
   messages(key: string): StoredMessage[] {
-    const rows = this.db.query('SELECT * FROM messages WHERE conversation_key = ? ORDER BY sent_at ASC, source_rowid ASC').all(key) as MessageDbRow[]
+    const rows = this.db.query('SELECT * FROM messages WHERE conversation_key = ? ORDER BY sent_at ASC, rowid ASC').all(key) as MessageDbRow[]
     const attachments = new Map<string, StoredAttachment[]>()
     for (const row of this.db.query('SELECT * FROM attachments WHERE conversation_key = ?').all(key) as AttachmentDbRow[]) {
       const list = attachments.get(row.message_guid) ?? []
       list.push(toAttachment(row))
       attachments.set(row.message_guid, list)
     }
-    return rows.map(row => ({
-      guid: row.guid,
-      conversationKey: row.conversation_key,
-      chatGuid: row.chat_guid,
-      kind: (row.kind === 'reaction' || row.kind === 'event') ? row.kind : 'message',
-      text: row.text,
-      isFromMe: row.is_from_me === 1,
-      sentAt: row.sent_at,
-      sender: row.sender,
-      service: row.service,
-      targetGuid: row.target_guid,
-      reactionType: row.reaction_type,
-      replyToGuid: row.reply_to_guid,
-      editedAt: row.edited_at,
-      unsent: row.unsent === 1,
-      eventType: row.event_type,
-      groupTitle: row.group_title,
-      sourceRowId: row.source_rowid,
-      attachments: attachments.get(row.guid) ?? [],
-    }))
+    return rows.map((row): StoredMessage => {
+      const legacyRemoved = row.reaction_type >= 3000
+      return {
+        guid: row.guid,
+        conversationKey: row.conversation_key,
+        kind: (row.kind === 'reaction' || row.kind === 'event') ? row.kind : 'message',
+        text: row.kind === 'event' && !row.text && row.group_title ? `Named the conversation “${row.group_title}”` : row.text,
+        isFromMe: row.is_from_me === 1,
+        sentAt: row.sent_at,
+        sender: row.sender,
+        senderName: row.sender_name,
+        targetGuid: row.target_guid,
+        reaction: row.reaction ?? (row.reaction_type ? REACTION_EMOJI[legacyRemoved ? row.reaction_type - 1000 : row.reaction_type] ?? '•' : null),
+        reactionRemoved: row.reaction_removed === 1 || legacyRemoved,
+        replyToGuid: row.reply_to_guid,
+        editedAt: row.edited_at,
+        unsent: row.unsent === 1,
+        cursor: row.cursor ?? (row.source_rowid ? String(row.source_rowid) : null),
+        attachments: attachments.get(row.guid) ?? [],
+      }
+    })
   }
 
   search(input: string, limit = 50): SearchHit[] {
@@ -408,19 +506,20 @@ export class ArchiveStore {
     if (!query)
       return []
     const rows = this.db.query(`
-      SELECT m.conversation_key, m.guid, m.sent_at, m.is_from_me, m.sender,
+      SELECT m.conversation_key, m.guid, m.sent_at, m.is_from_me, m.sender, m.sender_name,
         snippet(messages_fts, 0, char(1), char(2), '…', 12) AS snippet
       FROM messages_fts f JOIN messages m ON m.rowid = f.rowid
       WHERE messages_fts MATCH ? AND m.kind = 'message'
       ORDER BY m.sent_at DESC
       LIMIT ?
-    `).all(query, limit) as Array<{ conversation_key: string, guid: string, sent_at: number, is_from_me: number, sender: string | null, snippet: string }>
+    `).all(query, limit) as Array<{ conversation_key: string, guid: string, sent_at: number, is_from_me: number, sender: string | null, sender_name: string | null, snippet: string }>
     return rows.map(row => ({
       conversationKey: row.conversation_key,
       guid: row.guid,
       sentAt: row.sent_at,
       isFromMe: row.is_from_me === 1,
       sender: row.sender,
+      senderName: row.sender_name,
       snippet: row.snippet,
     }))
   }
