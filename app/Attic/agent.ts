@@ -9,10 +9,10 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { extname, join, normalize, sep } from 'node:path'
 import process from 'node:process'
 import { decode, encode, resize } from 'ts-images'
-import { Archiver } from './archiver'
+import { Archiver, ruleFor, ruleValue } from './archiver'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
-import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR } from './paths'
+import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
 
@@ -38,6 +38,8 @@ export interface ConversationSummary {
   title: string
   /** The person's or group's picture, served by this agent; null to show initials. */
   avatar: string | null
+  /** The "always archive" rule covering it, if any. */
+  rule: { id: number, kind: 'person' | 'conversation', removeFromApp: boolean } | null
   subtitle: string
   initials: string
   preview: string | null
@@ -234,6 +236,9 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return ref ? `/api/avatar?provider=${provider}&ref=${encodeURIComponent(ref)}` : null
   }
 
+  // Rules are read once per request burst; they change only through the endpoints below.
+  let currentRules = store.rules()
+
   function summarize(live: LiveEntry | undefined, stored: StoredConversation | undefined): ConversationSummary {
     const conversation = live?.conversation
     const provider = live?.provider ?? stored!.provider
@@ -254,6 +259,10 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       kind,
       title,
       avatar: avatarUrl(provider, kind === 'direct' ? participants[0]?.avatar : (conversation?.avatar ?? stored?.avatar)),
+      rule: (() => {
+        const rule = ruleFor(currentRules, live?.key ?? stored!.key, kind, participants)
+        return rule ? { id: rule.id, kind: rule.kind, removeFromApp: rule.removeFromApp } : null
+      })(),
       subtitle,
       initials: kind === 'direct' ? initialsOf(title) : '',
       preview: conversation?.visible ? conversation.preview : null,
@@ -378,9 +387,9 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   let lastRemote = 0
   let lastStates = ''
   function stamp(): string {
-    const path = messagesDbPath()
+    // Messages and WhatsApp both write locally: either changing means a sync.
     let out = ''
-    for (const file of [path, `${path}-wal`]) {
+    for (const file of [messagesDbPath(), whatsappDbPath()].flatMap(path => [path, `${path}-wal`])) {
       try {
         const s = statSync(file)
         out += `${s.mtimeMs}:${s.size};`
@@ -653,20 +662,65 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         case 'GET /api/bulk': {
           return json({ job: bulkState() })
         }
+        case 'GET /api/rules': {
+          return json(currentRules)
+        }
+        case 'POST /api/rules/for-conversation': {
+          // "Always archive" from a conversation: its person when it is one
+          // to one, the conversation itself when it is a group.
+          const data = await body(req)
+          const key = keyFrom(data)
+          if (!key)
+            return problem('key is required')
+          const { provider } = splitKey(key)
+          const live = (await sources.live()).find(e => e.key === key)
+          const stored = store.conversation(key)
+          const kind = live?.conversation.kind ?? stored?.kind
+          const person = (live?.conversation.participants ?? stored?.participants ?? [])[0]
+          const summary = await summaryFor(key)
+          const rule = kind === 'direct' && person
+            ? store.addRule({ provider, kind: 'person', value: ruleValue(provider, person.id), label: summary?.title ?? person.name ?? person.id, removeFromApp: data.removeFromApp === true })
+            : store.addRule({ provider, kind: 'conversation', value: key, label: summary?.title ?? key, removeFromApp: data.removeFromApp === true })
+          currentRules = store.rules()
+          // Apply it now rather than on the next change.
+          await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+          return json({ rule, rules: currentRules })
+        }
+        case 'POST /api/rules/update': {
+          const data = await body(req)
+          store.updateRule(Number(data.id), { removeFromApp: data.removeFromApp === true })
+          currentRules = store.rules()
+          await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+          return json({ rules: currentRules })
+        }
+        case 'POST /api/rules/delete': {
+          const data = await body(req)
+          store.deleteRule(Number(data.id))
+          currentRules = store.rules()
+          broadcast({ type: 'changed', resurfaced: [], removed: [] })
+          return json({ rules: currentRules })
+        }
         case 'POST /api/unarchive': {
           const key = keyFrom(await body(req))
           if (!key)
             return problem('key is required')
           const before = store.conversation(key)
+          // Moving a conversation back to the Inbox ends the rule that would
+          // archive it again on the next sync.
+          const covering = (await summaryFor(key))?.rule ?? null
+          if (covering) {
+            store.deleteRule(covering.id)
+            currentRules = store.rules()
+          }
           await archiver.unarchive(key)
-          let detail = ''
+          let detail = covering ? 'It is no longer archived automatically.' : ''
           const { provider } = splitKey(key)
           if (before?.removedAt && provider === 'imessage' && !usingSample) {
             const back = await waitUntil(() => visibleInApp(key))
-            detail = back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'
+            detail = `${back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'} ${detail}`.trim()
           }
           else if (before?.removedAt && !usingSample) {
-            detail = await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`
+            detail = `${await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`} ${detail}`.trim()
           }
           await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
           return json({ ok: true, app: { detail } })

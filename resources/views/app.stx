@@ -195,6 +195,10 @@ const results = state([])
 const searching = state(false)
 const busy = state('')
 const flash = state('')
+/* Always archive: rules for a person or a group. */
+const rules = state([])
+const rulesOpen = state(false)
+
 /* Clean up: bulk archive of everything quiet for longer than a cutoff. */
 const BULK_AGES = [{ days: 182, label: '6 months' }, { days: 365, label: '1 year' }, { days: 730, label: '2 years' }]
 const bulkOpen = state(false)
@@ -484,6 +488,44 @@ async function pickSource(next) {
   select(first ? first.key : '')
 }
 
+async function loadRules() {
+  try {
+    rules.set(await api('/api/rules'))
+  }
+  catch {}
+}
+
+/** "Always archive" from a conversation: its person, or the group itself. */
+async function setRule(c, removeFromApp) {
+  try {
+    const result = await post('/api/rules/for-conversation', { key: c.key, removeFromApp })
+    rules.set(result.rules)
+    await loadLists()
+    const where = appName(c.provider)
+    say(`Always archiving ${result.rule.label}${removeFromApp ? `, and taking it out of ${where}` : `, still arriving in ${where}`}.`)
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+async function updateRule(rule, removeFromApp) {
+  const result = await post('/api/rules/update', { id: rule.id, removeFromApp })
+  rules.set(result.rules)
+  await loadLists()
+}
+
+async function deleteRule(rule) {
+  const result = await post('/api/rules/delete', { id: rule.id })
+  rules.set(result.rules)
+  await loadLists()
+  say(`Stopped always archiving ${rule.label}. What Attic already kept stays.`)
+}
+
+function ruleAppName(provider) {
+  return appName(provider) === 'Messages' ? 'Messages' : appName(provider)
+}
+
 async function previewBulk() {
   bulkPreview.set(null)
   try {
@@ -759,6 +801,17 @@ async function rowMenu(event, c) {
     ? [{ id: 'unarchive', title: 'Move to Inbox', icon: 'tray.and.arrow.up', shortcut: 'cmd+shift+u' }]
     : [{ id: 'archive', title: 'Archive', icon: 'archivebox', shortcut: 'ctrl+cmd+a' }]
   items.push({ separator: true })
+  const where = appName(c.provider)
+  items.push({
+    id: 'rule',
+    title: c.kind === 'direct' ? `Always Archive ${c.title.split(' ')[0]}` : 'Always Archive This Group',
+    icon: 'archivebox.circle',
+    submenu: [
+      { id: 'rule-keep', title: `Keep Them in ${where}`, checked: !!c.rule && !c.rule.removeFromApp },
+      { id: 'rule-remove', title: `Take Them Out of ${where}`, checked: !!c.rule && c.rule.removeFromApp },
+      ...(c.rule ? [{ separator: true }, { id: 'rule-stop', title: 'Stop Always Archiving' }] : []),
+    ],
+  })
   items.push({ id: 'open', title: `Show in ${appName(c.provider)}`, icon: 'arrow.up.forward.app', shortcut: 'cmd+o', disabled: !c.url })
   if (c.saved) {
     items.push({ separator: true })
@@ -773,6 +826,10 @@ async function rowMenu(event, c) {
     openInMessages(c.key)
   else if (choice === 'forget')
     forget(c.key)
+  else if (choice === 'rule-keep' || choice === 'rule-remove')
+    setRule(c, choice === 'rule-remove')
+  else if (choice === 'rule-stop' && c.rule)
+    deleteRule({ id: c.rule.id, label: c.title })
 }
 
 const searchField = useFocus('#search')
@@ -881,6 +938,7 @@ const presenting = params.get('presentation') !== null
 
 onMount(async () => {
   await refresh()
+  loadRules()
   // ?q= opens with a search filled in.
   const initialQuery = params.get('q')
   if (initialQuery)
@@ -953,6 +1011,8 @@ onMount(async () => {
         <input type="radio" name="removal" :checked="removal() === 'off'" @change="setRemoval('off')">
         <span>Archive in Attic only</span>
       </label>
+      <div class="font-semibold mt-4 mb-1" style="color: var(--label)">Always archive</div>
+      <button class="text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="rulesOpen.set(true)">{{ rules().length === 0 ? 'Choose people and groups…' : `${rules().length} ${rules().length === 1 ? 'person or group' : 'people and groups'}…` }}</button>
       <button :if="removal() !== 'off' && !accessible()" class="mt-2 text-left text-[11.5px] border-0 bg-transparent p-0" style="color: var(--accent)" @click="allowAccessibility()">Allow Accessibility so Attic can reach Messages and WhatsApp</button>
       <div :if="fixture() && !presenting" class="mt-3 tag">Sample data</div>
     </div>
@@ -976,7 +1036,7 @@ onMount(async () => {
     <div class="shrink-0 px-3 pb-2" style="padding-top: calc(var(--window-controls-height) + 14px)">
       <div class="flex items-baseline justify-between px-1 mb-2">
         <h2 class="text-[17px] font-bold m-0">{{ listTitle() }}</h2>
-        <span class="muted text-[11.5px]">{{ list().length.toLocaleString() }} conversations</span>
+        <span class="muted text-[11.5px]">{{ list().length.toLocaleString() }} {{ list().length === 1 ? 'conversation' : 'conversations' }}</span>
       </div>
       <button :if="view() === 'inbox' && !showingResults()" class="toolbar-button w-full justify-center mb-2" style="background: var(--chip)" @click="openBulk()" title="Archive everything that has gone quiet">
         <span class="i-hugeicons-clean text-[15px]"></span>
@@ -1063,7 +1123,7 @@ onMount(async () => {
       </div>
       <div class="min-w-0 flex-1">
         <div class="font-semibold text-[14px] truncate">{{ detail()?.title }}</div>
-        <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}</div>
+        <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}<span :if="detail()?.rule" class="tag ml-1.5" :title="detail()?.rule?.removeFromApp ? 'New messages are archived and taken out of the app' : 'New messages are archived and still arrive in the app'">Always archived</span></div>
       </div>
       <button :if="detail()?.state !== 'archived'" class="toolbar-button" :title="archiveHint(detail())" :disabled="busy() !== ''" @click="archive()">
         <span class="i-hugeicons-archive-02 text-[16px]"></span>{{ archiveLabel() }}
@@ -1123,6 +1183,33 @@ onMount(async () => {
       </div>
     </div>
   </section>
+
+  <!-- Always archive: every rule, each one easy to change or end. -->
+  <div :if="rulesOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="rulesOpen.set(false)">
+    <div class="w-[480px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+      <div class="flex items-center gap-3 mb-2">
+        <span class="i-hugeicons-archive-02 text-[22px]" style="color: var(--accent)"></span>
+        <h2 class="text-[16px] font-semibold m-0">Always archive</h2>
+      </div>
+      <p class="muted text-[12px] leading-relaxed mb-3">Everything from these people and groups goes straight into Attic's archive as it arrives, added to what is already kept. Choose whether it also stays in the app. Add one by right-clicking a conversation and choosing Always Archive.</p>
+      <div :if="rules().length === 0" class="muted text-[12px] py-6 text-center">No one yet.</div>
+      <div :for="r in rules()" :key="r.id" class="flex items-center gap-3 py-2 border-t" style="border-color: var(--separator)">
+        <span class="text-[16px]" :class="sourceIcon(r.provider)" :style="colorStyle(r.provider)"></span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[13px] font-medium truncate">{{ r.label || r.value }}</div>
+          <div class="muted text-[11px]">{{ r.kind === 'person' ? 'Person' : 'Group' }} on {{ ruleAppName(r.provider) === 'Messages' ? 'iMessage' : ruleAppName(r.provider) }}</div>
+        </div>
+        <div class="flex rounded-[7px] overflow-hidden text-[11px]" style="background: var(--chip)">
+          <button class="px-2 py-1 border-0" :style="!r.removeFromApp ? 'background: var(--accent); color: #fff' : 'background: transparent'" @click="updateRule(r, false)">Keep in app</button>
+          <button class="px-2 py-1 border-0" :style="r.removeFromApp ? 'background: var(--accent); color: #fff' : 'background: transparent'" @click="updateRule(r, true)">Take out</button>
+        </div>
+        <button class="toolbar-button" title="Stop always archiving" @click="deleteRule(r)"><span class="i-hugeicons-cancel-01 text-[14px]"></span></button>
+      </div>
+      <div class="flex justify-end mt-4">
+        <button class="toolbar-button" style="background: var(--accent); color: #fff" @click="rulesOpen.set(false)">Done</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Clean up: archive everything quiet for longer than a cutoff. -->
   <div :if="bulkOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="bulkOpen.set(false)">
