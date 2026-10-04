@@ -27,7 +27,10 @@ export interface SourceState {
   status: inbox.InboxStatus
 }
 
-const TTL: Record<Provider, number> = { imessage: 0, whatsapp: 0, slack: 60_000, discord: 60_000 }
+// Local apps are re-read at most every couple of seconds: each list request
+// used to re-query Messages and WhatsApp in full (half a second with a real
+// history). Anything that must see the app's latest state passes `force`.
+const TTL: Record<Provider, number> = { imessage: 2_000, whatsapp: 2_000, slack: 60_000, discord: 60_000 }
 
 export interface SourcesOptions {
   /** Whether Attic also confirms Messages' delete alert. Read on load(). */
@@ -128,25 +131,54 @@ export class Sources {
   }
 
   /** Every conversation in every connected app. */
-  async live(force = false): Promise<LiveEntry[]> {
+  /**
+   * Every conversation the connected apps list. `force` re-reads them all;
+   * `freshLocal` re-reads only the apps on this Mac (cheap, and what changed
+   * when the archiver is asked to sync), leaving Slack and Discord cached.
+   */
+  async live(force = false, freshLocal = false): Promise<LiveEntry[]> {
     const lists = await Promise.all([...this.drivers.entries()].map(async ([provider, driver]) => {
       if (!this.connected(provider))
         return []
       const cached = this.cache.get(provider)
-      if (!force && cached && Date.now() - cached.at < TTL[provider])
-        return cached.entries
+      const local = provider === 'imessage' || provider === 'whatsapp'
+      if (force || (freshLocal && local) || !cached)
+        return this.refresh(provider, driver)
+      // Stale-while-revalidate: listing thousands of conversations takes the
+      // apps most of a second, and the window should never wait on it. An old
+      // list answers now while a fresh one is read behind it.
+      if (Date.now() - cached.at >= TTL[provider])
+        void this.refresh(provider, driver)
+      return cached.entries
+    }))
+    return lists.flat()
+  }
+
+  private inflight = new Map<Provider, Promise<LiveEntry[]>>()
+
+  /** Re-read one app's list, once at a time however many callers ask. */
+  private refresh(provider: Provider, driver: inbox.InboxDriver): Promise<LiveEntry[]> {
+    const running = this.inflight.get(provider)
+    if (running)
+      return running
+    const read = (async () => {
       try {
         const entries = (await driver.conversations()).map(conversation => ({ key: `${provider}:${conversation.id}`, provider, conversation }))
         this.cache.set(provider, { at: Date.now(), entries })
         return entries
       }
       catch {
-        // A transient API failure keeps the last good list rather than emptying the inbox.
-        return cached?.entries ?? []
+        // A transient failure keeps the last good list rather than emptying the inbox.
+        return this.cache.get(provider)?.entries ?? []
       }
-    }))
-    return lists.flat()
+      finally {
+        this.inflight.delete(provider)
+      }
+    })()
+    this.inflight.set(provider, read)
+    return read
   }
+
 
   /** Forget a provider's cached list, after acting on it. */
   invalidate(provider: Provider): void {
