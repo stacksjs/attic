@@ -119,6 +119,9 @@ export interface ArchiverOptions {
 }
 
 export class Archiver {
+  /** The cursor each rule-driven removal was last tried at. */
+  private removalTried = new Map<string, string>()
+
   readonly store: ArchiveStore
   readonly sources: Sources
   readonly attachmentsDir: string
@@ -279,7 +282,13 @@ export class Archiver {
    * conversations back when someone writes again, and notice conversations
    * leaving and returning to their apps.
    */
-  async sync(mode: ResurfaceMode = 'inbox', now = Date.now(), force = false): Promise<SyncReport> {
+  /**
+   * Bring the archive up to date with the apps. `removeFromApps` is whether
+   * archiving takes conversations out of the apps (the "When you archive"
+   * setting); it decides what happens to what an always-archived person sends.
+   */
+  async sync(mode: ResurfaceMode = 'inbox', now = Date.now(), force = false, options: { removeFromApps?: boolean } = {}): Promise<SyncReport> {
+    const removeFromApps = options.removeFromApps ?? true
     const report: SyncReport = { resurfaced: [], removed: [], returned: [], ruled: [], copiedMessages: 0 }
     const stored = this.store.conversations()
     const rules = this.store.rules()
@@ -303,6 +312,25 @@ export class Archiver {
         report.returned.push(conversation.key)
       }
 
+      const rule = current ? ruleFor(rules, conversation.key, current.conversation.kind, current.conversation.participants) : null
+      if (rule && current && conversation.state === 'archived' && visible && removeFromApps) {
+        // Archived means out of the app. Something new from them brought the
+        // thread back: copy it, then take it out again. Tried once per new
+        // message, so a removal that fails does not repeat on every sync.
+        if (current.conversation.cursor !== conversation.syncedCursor) {
+          try {
+            const { messages } = await this.copy(current, conversation.key)
+            report.copiedMessages += messages.length
+          }
+          catch {}
+        }
+        if (this.removalTried.get(conversation.key) !== current.conversation.cursor) {
+          this.removalTried.set(conversation.key, current.conversation.cursor)
+          await this.removeFromApp(conversation.key).catch(() => undefined)
+        }
+        continue
+      }
+
       if (!current || current.conversation.cursor === conversation.syncedCursor || laterCursor(conversation.syncedCursor, current.conversation.cursor) === conversation.syncedCursor)
         continue
 
@@ -310,12 +338,8 @@ export class Archiver {
         const { messages } = await this.copy(current, conversation.key)
         report.copiedMessages += messages.length
         const fresh = messages.some(m => m.kind === 'message')
-        const rule = ruleFor(rules, conversation.key, current.conversation.kind, current.conversation.participants)
-        // An "always archive" conversation keeps what arrives and stays put;
-        // with removeFromApp it leaves the app again, each time.
-        if (fresh && conversation.state === 'archived' && rule?.removeFromApp && visible)
-          await this.removeFromApp(conversation.key)
-        else if (fresh && conversation.state === 'archived' && mode === 'inbox' && !rule) {
+        // An always-archived conversation keeps what arrives and stays put.
+        if (fresh && conversation.state === 'archived' && mode === 'inbox' && !rule) {
           this.store.unarchive(conversation.key, { resurfaced: true, at: now })
           report.resurfaced.push(conversation.key)
         }
@@ -340,8 +364,10 @@ export class Archiver {
           if (!result.verified)
             continue
           report.ruled.push(entry.key)
-          if (rule.removeFromApp && entry.conversation.visible)
-            await this.removeFromApp(entry.key)
+          if (removeFromApps && entry.conversation.visible) {
+            this.removalTried.set(entry.key, entry.conversation.cursor)
+            await this.removeFromApp(entry.key).catch(() => undefined)
+          }
         }
         catch {
           // Tried again on the next sync.

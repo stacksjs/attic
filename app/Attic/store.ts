@@ -27,9 +27,9 @@ export interface Person {
 /**
  * "Always archive" for one person (every direct conversation with that
  * handle, phone number, email, WhatsApp JID or Slack/Discord user id) or one
- * conversation (a group). New messages are copied into the archive as they
- * arrive and the conversation never resurfaces; `removeFromApp` also takes
- * it out of the real app each time, otherwise it stays there as usual.
+ * conversation (a group). What they send still arrives in the app, then is
+ * copied into the archive they already have and taken out of the app again,
+ * as any archive is; the conversation never resurfaces in the Inbox.
  */
 export interface ArchiveRule {
   id: number
@@ -39,7 +39,6 @@ export interface ArchiveRule {
   value: string
   /** The name shown when the rule was made. */
   label: string | null
-  removeFromApp: boolean
   createdAt: number
 }
 
@@ -574,20 +573,16 @@ export class ArchiveStore {
   rules(): ArchiveRule[] {
     return (this.db.query('SELECT * FROM rules ORDER BY created_at').all() as Array<{ id: number, provider: string, kind: string, value: string, label: string | null, remove_from_app: number, created_at: number }>)
       .filter(r => PROVIDERS.includes(r.provider as Provider) && (r.kind === 'person' || r.kind === 'conversation'))
-      .map(r => ({ id: r.id, provider: r.provider as Provider, kind: r.kind as ArchiveRule['kind'], value: r.value, label: r.label, removeFromApp: !!r.remove_from_app, createdAt: r.created_at }))
+      .map(r => ({ id: r.id, provider: r.provider as Provider, kind: r.kind as ArchiveRule['kind'], value: r.value, label: r.label, createdAt: r.created_at }))
   }
 
   /** Adds a rule, or updates the one already there for the same person or conversation. */
   addRule(rule: Omit<ArchiveRule, 'id' | 'createdAt'>, at = Date.now()): ArchiveRule {
     this.db.query(`
-      INSERT INTO rules (provider, kind, value, label, remove_from_app, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-      ON CONFLICT (provider, kind, value) DO UPDATE SET label = COALESCE(excluded.label, rules.label), remove_from_app = excluded.remove_from_app
-    `).run(rule.provider, rule.kind, rule.value, rule.label, rule.removeFromApp ? 1 : 0, at)
+      INSERT INTO rules (provider, kind, value, label, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT (provider, kind, value) DO UPDATE SET label = COALESCE(excluded.label, rules.label)
+    `).run(rule.provider, rule.kind, rule.value, rule.label, at)
     return this.rules().find(r => r.provider === rule.provider && r.kind === rule.kind && r.value === rule.value)!
-  }
-
-  updateRule(id: number, changes: { removeFromApp: boolean }): void {
-    this.db.query('UPDATE rules SET remove_from_app = ? WHERE id = ?').run(changes.removeFromApp ? 1 : 0, id)
   }
 
   deleteRule(id: number): void {

@@ -39,7 +39,7 @@ export interface ConversationSummary {
   /** The person's or group's picture, served by this agent; null to show initials. */
   avatar: string | null
   /** The "always archive" rule covering it, if any. */
-  rule: { id: number, kind: 'person' | 'conversation', removeFromApp: boolean } | null
+  rule: { id: number, kind: 'person' | 'conversation' } | null
   subtitle: string
   initials: string
   preview: string | null
@@ -261,7 +261,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       avatar: avatarUrl(provider, kind === 'direct' ? participants[0]?.avatar : (conversation?.avatar ?? stored?.avatar)),
       rule: (() => {
         const rule = ruleFor(currentRules, live?.key ?? stored!.key, kind, participants)
-        return rule ? { id: rule.id, kind: rule.kind, removeFromApp: rule.removeFromApp } : null
+        return rule ? { id: rule.id, kind: rule.kind } : null
       })(),
       subtitle,
       initials: kind === 'direct' ? initialsOf(title) : '',
@@ -374,6 +374,11 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     }
   }
 
+  /** A sync that follows the "When you archive" setting, for what rules archive. */
+  function syncArchive(force = false): Promise<SyncReport> {
+    return archiver.sync(resurfaceMode(), Date.now(), force, { removeFromApps: removalMode() !== 'off' })
+  }
+
   async function announce(report: SyncReport): Promise<void> {
     broadcast({
       type: 'changed',
@@ -420,7 +425,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         sources.invalidate('slack')
         sources.invalidate('discord')
       }
-      await announce(await archiver.sync(resurfaceMode()))
+      await announce(await syncArchive())
     }
     catch (error) {
       console.error(`[attic] sync failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -499,7 +504,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     if (!removed && provider === 'imessage' && mode === 'auto' && !usingSample)
       removed = await waitUntil(async () => !(await visibleInApp(key)))
     if (options.sync !== false)
-      await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+      await announce(await syncArchive(true))
     return { attempted: true, removed, detail: removed ? `Removed from ${LABELS[provider]}.` : outcome.detail }
   }
 
@@ -517,7 +522,6 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     archived: number
     removed: number
     failed: number
-    removeFromApps: boolean
     cancelled: boolean
     finished: boolean
     startedAt: number
@@ -542,7 +546,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         const result = await archiver.archive(key)
         if (result.verified) {
           job.archived++
-          if (job.removeFromApps && (await takeOutOfApp(key, { sync: false })).removed)
+          // Out of the app as any archive is, per the "When you archive" setting.
+          if ((await takeOutOfApp(key, { sync: false })).removed)
             job.removed++
         }
         else {
@@ -561,7 +566,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       }
     }
     job.finished = true
-    await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+    await announce(await syncArchive(true))
     broadcast({ type: 'bulk', job: bulkState() })
     broadcast({ type: 'changed', resurfaced: [], removed: [] })
   }
@@ -649,7 +654,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const days = Number(data.olderThanDays) || 365
           const source = data.source === 'imessage' || data.source === 'whatsapp' || data.source === 'slack' || data.source === 'discord' ? data.source : 'all'
           const keys = (await bulkCandidates(days, source)).map(c => c.key)
-          const job: BulkJob = { total: keys.length, done: 0, archived: 0, removed: 0, failed: 0, removeFromApps: data.removeFromApps === true && !usingSample, cancelled: false, finished: false, startedAt: Date.now() }
+          const job: BulkJob = { total: keys.length, done: 0, archived: 0, removed: 0, failed: 0, cancelled: false, finished: false, startedAt: Date.now() }
           bulk = job
           void runBulk(job, keys)
           return json({ job: bulkState() })
@@ -679,19 +684,12 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const person = (live?.conversation.participants ?? stored?.participants ?? [])[0]
           const summary = await summaryFor(key)
           const rule = kind === 'direct' && person
-            ? store.addRule({ provider, kind: 'person', value: ruleValue(provider, person.id), label: summary?.title ?? person.name ?? person.id, removeFromApp: data.removeFromApp === true })
-            : store.addRule({ provider, kind: 'conversation', value: key, label: summary?.title ?? key, removeFromApp: data.removeFromApp === true })
+            ? store.addRule({ provider, kind: 'person', value: ruleValue(provider, person.id), label: summary?.title ?? person.name ?? person.id })
+            : store.addRule({ provider, kind: 'conversation', value: key, label: summary?.title ?? key })
           currentRules = store.rules()
           // Apply it now rather than on the next change.
-          await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+          await announce(await syncArchive(true))
           return json({ rule, rules: currentRules })
-        }
-        case 'POST /api/rules/update': {
-          const data = await body(req)
-          store.updateRule(Number(data.id), { removeFromApp: data.removeFromApp === true })
-          currentRules = store.rules()
-          await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
-          return json({ rules: currentRules })
         }
         case 'POST /api/rules/delete': {
           const data = await body(req)
@@ -722,7 +720,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           else if (before?.removedAt && !usingSample) {
             detail = `${await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`} ${detail}`.trim()
           }
-          await announce(await archiver.sync(resurfaceMode(), Date.now(), true))
+          await announce(await syncArchive(true))
           return json({ ok: true, app: { detail } })
         }
         case 'POST /api/forget': {

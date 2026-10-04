@@ -204,7 +204,6 @@ const BULK_AGES = [{ days: 182, label: '6 months' }, { days: 365, label: '1 year
 const bulkOpen = state(false)
 const bulkDays = state(365)
 const bulkPreview = state(null)
-const bulkRemove = state(false)
 const bulkJob = state(null)
 /** Picture URLs that failed to load, so the initials show instead of a broken image. */
 const failedAvatars = state([])
@@ -496,23 +495,16 @@ async function loadRules() {
 }
 
 /** "Always archive" from a conversation: its person, or the group itself. */
-async function setRule(c, removeFromApp) {
+async function setRule(c) {
   try {
-    const result = await post('/api/rules/for-conversation', { key: c.key, removeFromApp })
+    const result = await post('/api/rules/for-conversation', { key: c.key })
     rules.set(result.rules)
     await loadLists()
-    const where = appName(c.provider)
-    say(`Always archiving ${result.rule.label}${removeFromApp ? `, and taking it out of ${where}` : `, still arriving in ${where}`}.`)
+    say(`Always archiving ${result.rule.label}: new messages still reach you, then go into the archive.`)
   }
   catch (error) {
     say(error.message)
   }
-}
-
-async function updateRule(rule, removeFromApp) {
-  const result = await post('/api/rules/update', { id: rule.id, removeFromApp })
-  rules.set(result.rules)
-  await loadLists()
 }
 
 async function deleteRule(rule) {
@@ -556,7 +548,7 @@ function bulkBreakdown() {
 
 async function startBulk() {
   try {
-    const result = await post('/api/bulk/archive', { olderThanDays: bulkDays(), source: source(), removeFromApps: bulkRemove() })
+    const result = await post('/api/bulk/archive', { olderThanDays: bulkDays(), source: source() })
     bulkJob.set(result.job)
   }
   catch (error) {
@@ -801,16 +793,11 @@ async function rowMenu(event, c) {
     ? [{ id: 'unarchive', title: 'Move to Inbox', icon: 'tray.and.arrow.up', shortcut: 'cmd+shift+u' }]
     : [{ id: 'archive', title: 'Archive', icon: 'archivebox', shortcut: 'ctrl+cmd+a' }]
   items.push({ separator: true })
-  const where = appName(c.provider)
   items.push({
-    id: 'rule',
+    id: c.rule ? 'rule-stop' : 'rule-start',
     title: c.kind === 'direct' ? `Always Archive ${c.title.split(' ')[0]}` : 'Always Archive This Group',
     icon: 'archivebox.circle',
-    submenu: [
-      { id: 'rule-keep', title: `Keep Them in ${where}`, checked: !!c.rule && !c.rule.removeFromApp },
-      { id: 'rule-remove', title: `Take Them Out of ${where}`, checked: !!c.rule && c.rule.removeFromApp },
-      ...(c.rule ? [{ separator: true }, { id: 'rule-stop', title: 'Stop Always Archiving' }] : []),
-    ],
+    checked: !!c.rule,
   })
   items.push({ id: 'open', title: `Show in ${appName(c.provider)}`, icon: 'arrow.up.forward.app', shortcut: 'cmd+o', disabled: !c.url })
   if (c.saved) {
@@ -826,8 +813,8 @@ async function rowMenu(event, c) {
     openInMessages(c.key)
   else if (choice === 'forget')
     forget(c.key)
-  else if (choice === 'rule-keep' || choice === 'rule-remove')
-    setRule(c, choice === 'rule-remove')
+  else if (choice === 'rule-start')
+    setRule(c)
   else if (choice === 'rule-stop' && c.rule)
     deleteRule({ id: c.rule.id, label: c.title })
 }
@@ -1123,7 +1110,7 @@ onMount(async () => {
       </div>
       <div class="min-w-0 flex-1">
         <div class="font-semibold text-[14px] truncate">{{ detail()?.title }}</div>
-        <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}<span :if="detail()?.rule" class="tag ml-1.5" :title="detail()?.rule?.removeFromApp ? 'New messages are archived and taken out of the app' : 'New messages are archived and still arrive in the app'">Always archived</span></div>
+        <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}<span :if="detail()?.rule" class="tag ml-1.5" title="New messages reach you, then go into this archive">Always archived</span></div>
       </div>
       <button :if="detail()?.state !== 'archived'" class="toolbar-button" :title="archiveHint(detail())" :disabled="busy() !== ''" @click="archive()">
         <span class="i-hugeicons-archive-02 text-[16px]"></span>{{ archiveLabel() }}
@@ -1191,17 +1178,13 @@ onMount(async () => {
         <span class="i-hugeicons-archive-02 text-[22px]" style="color: var(--accent)"></span>
         <h2 class="text-[16px] font-semibold m-0">Always archive</h2>
       </div>
-      <p class="muted text-[12px] leading-relaxed mb-3">Everything from these people and groups goes straight into Attic's archive as it arrives, added to what is already kept. Choose whether it also stays in the app. Add one by right-clicking a conversation and choosing Always Archive.</p>
+      <p class="muted text-[12px] leading-relaxed mb-3">New messages from these people and groups still reach you, then go into the archive Attic already keeps for them and leave the app, as any archive does. Moving one back to the Inbox ends its rule. Add one by right-clicking a conversation and choosing Always Archive.</p>
       <div :if="rules().length === 0" class="muted text-[12px] py-6 text-center">No one yet.</div>
       <div :for="r in rules()" :key="r.id" class="flex items-center gap-3 py-2 border-t" style="border-color: var(--separator)">
         <span class="text-[16px]" :class="sourceIcon(r.provider)" :style="colorStyle(r.provider)"></span>
         <div class="min-w-0 flex-1">
           <div class="text-[13px] font-medium truncate">{{ r.label || r.value }}</div>
           <div class="muted text-[11px]">{{ r.kind === 'person' ? 'Person' : 'Group' }} on {{ ruleAppName(r.provider) === 'Messages' ? 'iMessage' : ruleAppName(r.provider) }}</div>
-        </div>
-        <div class="flex rounded-[7px] overflow-hidden text-[11px]" style="background: var(--chip)">
-          <button class="px-2 py-1 border-0" :style="!r.removeFromApp ? 'background: var(--accent); color: #fff' : 'background: transparent'" @click="updateRule(r, false)">Keep in app</button>
-          <button class="px-2 py-1 border-0" :style="r.removeFromApp ? 'background: var(--accent); color: #fff' : 'background: transparent'" @click="updateRule(r, true)">Take out</button>
         </div>
         <button class="toolbar-button" title="Stop always archiving" @click="deleteRule(r)"><span class="i-hugeicons-cancel-01 text-[14px]"></span></button>
       </div>
@@ -1228,10 +1211,7 @@ onMount(async () => {
           <span :if="!bulkPreview()" class="muted">Counting…</span>
         </div>
         <div :if="bulkPreview()" class="muted text-[11.5px] mb-3">{{ bulkBreakdown() }}</div>
-        <label class="flex items-start gap-2 text-[12px] mb-1">
-          <input type="checkbox" class="mt-[2px]" :checked="bulkRemove()" @change="bulkRemove.set($event.target.checked)">
-          <span>Also take them out of the apps<span class="block muted text-[11px] leading-snug mt-0.5">Off keeps them in Messages and WhatsApp and archives them in Attic only. On, Messages deletes each thread (it keeps them 30 days in Recently Deleted) and WhatsApp archives them; with thousands of threads this takes a long while.</span></span>
-        </label>
+        <p class="muted text-[11.5px] leading-snug mb-1">{{ removal() === 'off' ? 'They are archived in Attic only, as set under When you archive.' : 'Each is copied and checked, then taken out of its app, as any archive is. Messages keeps deleted threads 30 days in Recently Deleted. With thousands this takes a while; it runs in the background.' }}</p>
         <div :if="bulkJob() && bulkJob().finished" class="text-[12px] mt-3 muted">Last run: {{ bulkJob().archived.toLocaleString() }} archived{{ bulkJob().removed ? `, ${bulkJob().removed.toLocaleString()} taken out of the apps` : '' }}{{ bulkJob().failed ? `, ${bulkJob().failed} not copied completely and left in the Inbox` : '' }}{{ bulkJob().cancelled ? ' (stopped)' : '' }}.</div>
         <div class="flex justify-end gap-2 mt-4">
           <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Cancel</button>

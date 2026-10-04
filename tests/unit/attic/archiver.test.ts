@@ -208,7 +208,7 @@ describe('archiving iMessage', () => {
 })
 
 describe('always archive', () => {
-  it('keeps adding what a person sends to the archive they already have, and leaves it in Messages', async () => {
+  it('adds what a person sends to the archive they already have, then takes the thread out of Messages again', async () => {
     const alice = chat.direct(ALICE)
     chat.add(alice, { text: 'old news' })
     const key = `imessage:direct:${ALICE}`
@@ -219,37 +219,45 @@ describe('always archive', () => {
     await archiver.sync()
     const removals = controllerCalls.length
 
-    store.addRule({ provider: 'imessage', kind: 'person', value: ALICE, label: 'Alice', removeFromApp: false })
+    store.addRule({ provider: 'imessage', kind: 'person', value: ALICE, label: 'Alice' })
     chat.add(chat.direct(ALICE, 'any'), { text: 'are you around?' })
     chat.add(chat.direct(ALICE, 'any'), { text: 'call me' })
     const report = await archiver.sync()
 
-    // Merged into the one archive: nothing resurfaced, nothing deleted again.
+    // Merged into the one archive and out of Messages again; nothing resurfaced.
     expect(report.resurfaced).toEqual([])
-    expect(controllerCalls.length).toBe(removals)
-    expect(store.conversation(key)).toMatchObject({ state: 'archived', removedAt: null })
+    expect(controllerCalls.length).toBe(removals + 1)
+    expect(controllerCalls.at(-1)).toStartWith('remove ')
+    expect(store.conversation(key)!.state).toBe('archived')
     const transcript = await archiver.transcript(key)
-    expect(transcript.messages.map(m => [m.text, m.inApp])).toEqual([['old news', false], ['are you around?', true], ['call me', true]])
+    expect(transcript.messages.map(m => m.text)).toEqual(['old news', 'are you around?', 'call me'])
+
+    // The same message seen again does not ask Messages to delete twice.
+    await archiver.sync()
+    expect(controllerCalls.length).toBe(removals + 1)
   })
 
   it('archives a person\'s conversation as soon as a rule names them, matching any spelling of the handle', async () => {
     chat.add(chat.direct(BOB), { text: 'first time writing' })
     chat.add(chat.direct(ALICE), { text: 'not covered' })
-    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob', removeFromApp: false })
+    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
 
     const report = await archiver.sync()
     const key = `imessage:direct:${BOB}`
     expect(report.ruled).toEqual([key])
     expect(store.conversation(key)!.state).toBe('archived')
     expect(store.conversation(`imessage:direct:${ALICE}`)).toBeNull()
-    expect(controllerCalls).toEqual([])
+    // Archived means out of the app: Messages is asked to delete it.
+    expect(controllerCalls).toHaveLength(1)
+    expect(controllerCalls[0]).toStartWith('remove ')
   })
 
-  it('takes the conversation out of the app too when the rule says so', async () => {
+  it('leaves it in the app when archiving is set to Attic only', async () => {
     chat.add(chat.direct(BOB), { text: 'hello' })
-    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob', removeFromApp: true })
-    await archiver.sync()
-    expect(controllerCalls[0]).toStartWith('remove ')
+    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
+    const report = await archiver.sync('inbox', Date.now(), false, { removeFromApps: false })
+    expect(report.ruled).toEqual([`imessage:direct:${BOB}`])
+    expect(controllerCalls).toEqual([])
   })
 
   it('covers a group by conversation, and leaves other providers alone', async () => {
@@ -258,8 +266,8 @@ describe('always archive', () => {
     const key = (await archiver.sync(), store.conversations()[0]?.key) ?? ''
     expect(key).toBe('')
     const live = (await archiver['sources'].live(true)).find(e => e.conversation.title === 'Climbers')!
-    store.addRule({ provider: 'imessage', kind: 'conversation', value: live.key, label: 'Climbers', removeFromApp: false })
-    store.addRule({ provider: 'slack', kind: 'person', value: ALICE, label: 'not iMessage', removeFromApp: false })
+    store.addRule({ provider: 'imessage', kind: 'conversation', value: live.key, label: 'Climbers' })
+    store.addRule({ provider: 'slack', kind: 'person', value: ALICE, label: 'not iMessage' })
     expect((await archiver.sync()).ruled).toEqual([live.key])
   })
 })
