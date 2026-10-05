@@ -19,6 +19,8 @@ export const ATTACHMENTS_DIR = join(DATA_DIR, 'Attachments')
 export const AVATARS_DIR = join(DATA_DIR, 'Avatars')
 /** JPEG renderings of HEIC photos, for viewers that cannot decode HEIC. Disposable. */
 export const PREVIEWS_DIR = join(DATA_DIR, 'Previews')
+/** Files picked in the compose field, held until they are sent. */
+export const OUTGOING_DIR = join(DATA_DIR, 'Outgoing')
 export const PORT_FILE = join(DATA_DIR, 'port')
 export const LOCK_FILE = join(DATA_DIR, 'attic.pid')
 export const LOG_FILE = join(homedir(), 'Library', 'Logs', 'Attic.log')

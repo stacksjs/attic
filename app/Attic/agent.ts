@@ -14,7 +14,7 @@ import { Archiver, ruleFor, ruleValue } from './archiver'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
 import { PhoneLink } from './phone-link'
-import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
+import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, OUTGOING_DIR, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
 
@@ -428,6 +428,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         sources.invalidate('discord')
       }
       await announce(await syncArchive())
+      await noticeIncoming()
     }
     catch (error) {
       console.error(`[attic] sync failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -437,6 +438,64 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     }
   }
   const timer = setInterval(() => void tick(), TICK_MS)
+
+  // ── New messages, for notifications ─────────────────────────────────
+  //
+  // Two ways in, one rule. Apps that push (Slack over Socket Mode, Discord's
+  // gateway) report each message as it arrives. The rest - Messages and
+  // WhatsApp on this Mac, Slack without Socket Mode - are compared after each
+  // sync: a conversation whose newest message is newer than before, someone
+  // else's, and unread. Each conversation remembers the newest message it was
+  // announced for, so the two never announce one message twice.
+  const announced = new Map<string, number>()
+  let primed = false
+
+  function announceIncoming(key: string, details: { title: string, sender: string | null, text: string, at: number, group: boolean }): void {
+    if ((announced.get(key) ?? 0) >= details.at)
+      return
+    announced.set(key, details.at)
+    broadcast({ type: 'incoming', key, provider: splitKey(key).provider, ...details })
+  }
+
+  async function noticeIncoming(): Promise<void> {
+    for (const entry of await sources.live()) {
+      const conversation = entry.conversation
+      const at = conversation.lastMessageAt ?? 0
+      const seen = announced.get(entry.key) ?? 0
+      // The first pass learns where everything stands; it announces nothing.
+      if (!primed || at <= seen || conversation.previewFromMe || conversation.unread === 0) {
+        announced.set(entry.key, Math.max(seen, at))
+        continue
+      }
+      announceIncoming(entry.key, {
+        title: summarize(entry, store.conversation(entry.key) ?? undefined).title,
+        sender: null,
+        text: conversation.preview ?? 'New message',
+        at,
+        group: conversation.kind !== 'direct',
+      })
+    }
+    primed = true
+  }
+
+  const stopListening = sources.listen(({ provider, event }) => {
+    // Something changed in a pushing app: sync it on the next tick.
+    lastRemote = 0
+    if (event.type !== 'message' || event.message.fromMe || event.message.kind !== 'message')
+      return
+    const key = `${provider}:${event.conversationId}`
+    const message = event.message
+    void (async () => {
+      const entry = (await sources.live()).find(e => e.key === key)
+      announceIncoming(key, {
+        title: entry ? summarize(entry, store.conversation(key) ?? undefined).title : (message.sender?.name ?? 'New message'),
+        sender: message.sender?.name ?? null,
+        text: message.text ?? (message.attachments.length > 0 ? (message.attachments.length === 1 ? 'Attachment' : `${message.attachments.length} attachments`) : 'New message'),
+        at: message.sentAt,
+        group: !!entry && entry.conversation.kind !== 'direct',
+      })
+    })()
+  })
 
   function authorized(req: Request, port: number): boolean {
     const host = req.headers.get('host')
@@ -866,7 +925,15 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           if ((provider !== 'slack' && provider !== 'discord') || !secret)
             return problem('A provider and a token are required')
           await writeSecret(provider, secret)
+          if (provider === 'slack') {
+            // Socket Mode's app-level token, for messages as they are sent.
+            if (typeof data.appToken === 'string' && data.appToken.trim())
+              await writeSecret('slack-app', data.appToken.trim())
+            else
+              await deleteSecret('slack-app')
+          }
           if (provider === 'discord') {
+            await writeSecret('discord-account', data.account === 'bot' ? 'bot' : 'user')
             if (typeof data.userId === 'string' && data.userId.trim())
               await writeSecret('discord-user', data.userId.trim())
             else
@@ -881,11 +948,76 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           if (data.provider !== 'slack' && data.provider !== 'discord')
             return problem('Only Slack and Discord can be disconnected')
           await deleteSecret(data.provider)
-          if (data.provider === 'discord')
+          if (data.provider === 'slack')
+            await deleteSecret('slack-app')
+          if (data.provider === 'discord') {
             await deleteSecret('discord-user')
+            await deleteSecret('discord-account')
+          }
           await sources.load()
           broadcast({ type: 'sources' })
           return json({ sources: sources.statesList() })
+        }
+        case 'POST /api/send': {
+          const data = await body(req)
+          const key = keyFrom(data)
+          if (!key)
+            return problem('key is required')
+          const { provider, id } = splitKey(key)
+          const driver = sources.driver(provider)
+          if (!driver?.send)
+            return problem(`Attic cannot send to ${driver?.label ?? provider} yet.`)
+          // Only files that came through /api/upload: never an arbitrary path.
+          const files = (Array.isArray(data.files) ? data.files : [])
+            .filter((f): f is { path: string, name?: string, mimeType?: string } => !!f && typeof (f as { path?: unknown }).path === 'string')
+            .filter(f => normalize(f.path).startsWith(`${OUTGOING_DIR}${sep}`) && existsSync(f.path))
+          const outcome = await driver.send(id, {
+            text: typeof data.text === 'string' ? data.text : '',
+            replyToId: typeof data.replyToId === 'string' ? data.replyToId : null,
+            files,
+          })
+          // A reply settles the conversation: nothing new to announce in it.
+          announced.set(key, Math.max(announced.get(key) ?? 0, outcome.sentAt))
+          sources.invalidate(provider)
+          lastStamp = ''
+          lastRemote = 0
+          return json(outcome)
+        }
+        case 'POST /api/react': {
+          const data = await body(req)
+          const key = keyFrom(data)
+          if (!key || typeof data.messageId !== 'string' || typeof data.reaction !== 'string')
+            return problem('key, messageId and reaction are required')
+          const { provider, id } = splitKey(key)
+          const driver = sources.driver(provider)
+          if (!driver?.react)
+            return problem(`Attic cannot react in ${driver?.label ?? provider} yet.`)
+          await driver.react(id, data.messageId, data.reaction, data.remove === true)
+          sources.invalidate(provider)
+          lastStamp = ''
+          lastRemote = 0
+          return json({ ok: true })
+        }
+        case 'POST /api/read': {
+          const key = keyFrom(await body(req))
+          if (!key)
+            return problem('key is required')
+          const { provider, id } = splitKey(key)
+          const driver = sources.driver(provider)
+          if (driver?.markRead) {
+            await driver.markRead(id)
+            sources.invalidate(provider)
+          }
+          return json({ ok: true })
+        }
+        case 'POST /api/upload': {
+          // A file picked in the compose field, held until it is sent.
+          const name = (req.headers.get('x-filename') ?? 'file').replace(/[/\\:]/g, '_').slice(0, 200) || 'file'
+          const folder = join(OUTGOING_DIR, randomBytes(8).toString('hex'))
+          mkdirSync(folder, { recursive: true })
+          const path = join(folder, name)
+          writeFileSync(path, new Uint8Array(await req.arrayBuffer()))
+          return json({ path, name, mimeType: req.headers.get('content-type') || null })
         }
         case 'POST /api/client-error': {
           // The window's own errors, which WebKit keeps to itself in a build
@@ -947,6 +1079,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     server,
     stop() {
       clearInterval(timer)
+      stopListening()
       for (const listener of listeners) {
         try {
           listener.close()

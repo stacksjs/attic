@@ -130,6 +130,11 @@ if (supports(runtime, '--persistent-storage'))
   flags.push('--persistent-storage')
 if (supports(runtime, '--frame-autosave'))
   flags.push('--frame-autosave', 'AtticMain')
+// A messaging app keeps running with its window closed, as Messages does:
+// the page stays alive to hear new messages and notify, and the Dock icon
+// brings the window back.
+if (supports(runtime, '--keep-running'))
+  flags.push('--keep-running')
 if (IN_APP_BUNDLE)
   flags.push('--no-devtools')
 

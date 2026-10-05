@@ -184,6 +184,23 @@
       border: 1px solid var(--separator); background: transparent; color: var(--secondary);
     }
     .composer:hover { background: var(--chip); }
+    .compose-field {
+      display: flex; align-items: flex-end; gap: 6px; padding: 3px 4px 3px 6px;
+      border: 1px solid var(--separator); border-radius: 18px; background: var(--pane-bg);
+    }
+    .compose-field:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--separator)); }
+    .compose-input {
+      flex: 1; min-width: 0; border: 0; outline: none; resize: none; background: transparent;
+      color: var(--label); font: inherit; line-height: 1.35; padding: 6px 2px; max-height: 140px;
+      field-sizing: content;
+    }
+    .compose-input::placeholder { color: var(--tertiary); }
+    .send-button {
+      width: 28px; height: 28px; margin-bottom: 1px; border: 0; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; color: #fff; background: var(--bubble-imessage);
+    }
+    .send-button[disabled] { opacity: .35; }
+    .bubble.pending { opacity: .6; }
     .icon-button {
       display: inline-grid; place-items: center; width: 30px; height: 28px; border-radius: 7px;
       border: 0; background: transparent; color: var(--secondary);
@@ -212,7 +229,7 @@
 </head>
 <body>
 <script client>
-import { app, contextMenu, menu, nativeWindow, notifications, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
+import { app, clipboard, contextMenu, menu, nativeWindow, notifications, shell, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
 import { reportClientErrors } from '../functions/client-errors'
 
 reportClientErrors()
@@ -366,7 +383,7 @@ function unsentText(m) {
 
 function bubbleClass(row) {
   const m = row.m
-  return [m.isFromMe ? 'out' : 'in', m.service === 'SMS' ? 'sms' : '', m.inApp ? '' : 'attic', row.tail ? 'tail' : ''].join(' ')
+  return [m.isFromMe ? 'out' : 'in', m.service === 'SMS' ? 'sms' : '', m.inApp ? '' : 'attic', row.tail ? 'tail' : '', m.pending ? 'pending' : ''].join(' ')
 }
 
 /** A sender's initials for their picture, when there is no photo. */
@@ -392,6 +409,241 @@ function compose() {
     unarchive()
   else
     openInMessages()
+}
+
+/* ---------- writing ---------- */
+const draft = state('')
+/** The message being answered, shown above the compose field. */
+const replyTo = state(null)
+/** Files picked to go with the next message, already uploaded to the agent. */
+const outgoingFiles = state([])
+const sending = state(false)
+const composerField = useFocus('#composer')
+
+const NO_CAPABILITIES = { send: false, attachments: false, replies: false, reactions: false, markRead: false, live: false }
+function capabilitiesOf(provider) {
+  return sources().find(s => s.provider === provider)?.capabilities ?? NO_CAPABILITIES
+}
+const canSend = derived(() => !!detail() && capabilitiesOf(detail().provider).send)
+
+function placeholderFor(d) {
+  if (!d)
+    return ''
+  if (d.provider === 'imessage')
+    return messages().some(m => m.service === 'SMS') && !messages().some(m => m.service === 'iMessage') ? 'Text Message' : 'iMessage'
+  return `Message ${d.title}`
+}
+
+async function sendDraft() {
+  const d = detail()
+  if (!d || sending())
+    return
+  const text = draft().trim()
+  const files = outgoingFiles()
+  if (!text && files.length === 0)
+    return
+  const key = d.key
+  const answering = replyTo()
+  // Shown at once, settled when the app reports it.
+  const pending = {
+    guid: `pending-${Date.now()}`,
+    kind: 'message',
+    text: text || null,
+    isFromMe: true,
+    sentAt: Date.now(),
+    sender: null,
+    senderName: null,
+    attachments: [],
+    reactions: [],
+    inApp: true,
+    pending: true,
+    replyToGuid: answering?.guid ?? null,
+    service: messages().at(-1)?.service ?? null,
+  }
+  messages.set([...messages(), pending])
+  draft.set('')
+  outgoingFiles.set([])
+  replyTo.set(null)
+  sending.set(true)
+  try {
+    await post('/api/send', { key, text, replyToId: answering?.guid ?? null, files })
+    setTimeout(() => {
+      if (selectedKey() === key)
+        loadConversation(key)
+    }, 900)
+  }
+  catch (error) {
+    messages.set(messages().filter(m => m.guid !== pending.guid))
+    draft.set(text)
+    outgoingFiles.set(files)
+    replyTo.set(answering)
+    say(error.message)
+  }
+  finally {
+    sending.set(false)
+  }
+}
+
+/** Return sends, Shift-Return starts a new line - as in Messages. */
+function onComposerKey(event) {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault()
+    sendDraft()
+  }
+  else if (event.key === 'Escape' && replyTo()) {
+    replyTo.set(null)
+  }
+}
+
+async function attachFiles(event) {
+  const picked = Array.from(event.target.files ?? [])
+  event.target.value = ''
+  for (const file of picked) {
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'x-filename': file.name, 'content-type': file.type || 'application/octet-stream' },
+      body: file,
+    })
+    if (response.ok)
+      outgoingFiles.set([...outgoingFiles(), await response.json()])
+    else
+      say(`Could not attach ${file.name}`)
+  }
+}
+
+function removeOutgoing(file) {
+  outgoingFiles.set(outgoingFiles().filter(f => f.path !== file.path))
+}
+
+function replyPreview(m) {
+  if (!m)
+    return ''
+  const what = m.text || (m.attachments?.length ? 'Attachment' : 'Message')
+  return what.length > 80 ? `${what.slice(0, 80)}…` : what
+}
+
+/** Messages' tapbacks, and what Slack and Discord call them. */
+const TAPBACKS = [
+  { emoji: '❤️', label: 'Love' },
+  { emoji: '👍', label: 'Like' },
+  { emoji: '👎', label: 'Dislike' },
+  { emoji: '😂', label: 'Laugh' },
+  { emoji: '‼️', label: 'Emphasize' },
+  { emoji: '❓', label: 'Question' },
+]
+
+async function messageMenu(event, m) {
+  if (m.pending)
+    return
+  event.preventDefault()
+  const d = detail()
+  if (!d)
+    return
+  const caps = capabilitiesOf(d.provider)
+  const items = []
+  if (caps.send && caps.replies)
+    items.push({ id: 'reply', title: 'Reply', icon: 'arrowshape.turn.up.left' })
+  if (caps.reactions) {
+    if (items.length)
+      items.push({ separator: true })
+    for (const tapback of TAPBACKS)
+      items.push({ id: `react:${tapback.emoji}`, title: `${tapback.emoji}  ${tapback.label}`, checked: m.reactions.some(r => r.reaction === tapback.emoji && r.fromMe) })
+  }
+  if (m.text) {
+    if (items.length)
+      items.push({ separator: true })
+    items.push({ id: 'copy', title: 'Copy', icon: 'doc.on.doc' })
+  }
+  if (items.length === 0)
+    return
+  const choice = await contextMenu.pick({ x: event.clientX, y: event.clientY, targetId: m.guid, items })
+  if (choice === 'reply') {
+    replyTo.set(m)
+    composerField.focus()
+  }
+  else if (choice === 'copy') {
+    await clipboard.writeText(m.text)
+  }
+  else if (choice?.startsWith('react:')) {
+    const reaction = choice.slice('react:'.length)
+    const mine = m.reactions.some(r => r.reaction === reaction && r.fromMe)
+    try {
+      await post('/api/react', { key: d.key, messageId: m.guid, reaction, remove: mine })
+      loadConversation(d.key)
+    }
+    catch (error) {
+      say(error.message)
+    }
+  }
+}
+
+/* ---------- notifications ---------- */
+/** Whether this window is the one in front, so an open conversation is not announced. */
+const windowFocused = state(true)
+useEventListener('focus', () => windowFocused.set(true))
+useEventListener('blur', () => windowFocused.set(false))
+
+/** Which conversation each notification is about, for its click and its reply. */
+const notificationKeys = new Map()
+
+function notifyIncoming(event) {
+  if (windowFocused() && selectedKey() === event.key)
+    return
+  const id = `attic-${event.key}-${event.at}`
+  notificationKeys.set(id, event.key)
+  notifications.show({
+    id,
+    title: event.title,
+    body: event.group && event.sender ? `${event.sender}: ${event.text}` : event.text,
+    threadId: event.key,
+    sound: 'default',
+    reply: capabilitiesOf(event.provider).send ? { placeholder: 'Reply' } : undefined,
+    data: { key: event.key },
+  })
+}
+
+async function openConversation(key) {
+  await nativeWindow.focus()
+  const inArchive = archived().some(c => c.key === key)
+  if (view() !== (inArchive ? 'archived' : 'inbox') || source() !== 'all') {
+    source.set('all')
+    show(inArchive ? 'archived' : 'inbox')
+  }
+  select(key)
+}
+
+notifications.onActionClicked((event) => {
+  const key = notificationKeys.get(event.notificationId)
+  if (key)
+    openConversation(key)
+})
+
+notifications.onReply(async (event) => {
+  const key = notificationKeys.get(event.notificationId)
+  if (!key || !event.text?.trim())
+    return
+  try {
+    await post('/api/send', { key, text: event.text })
+    if (selectedKey() === key)
+      loadConversation(key)
+  }
+  catch (error) {
+    notifications.show({ title: 'Not sent', body: error.message })
+  }
+})
+
+/** The Dock badge: unread conversations, as Messages counts them. */
+function updateBadge() {
+  const unread = inbox().reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0)
+  app.setBadge(unread)
+}
+
+/** The window has no titlebar: its header rows drag it, as a titlebar would. */
+function dragWindow(event) {
+  if (event.button !== 0 || event.target.closest('button, input, textarea, select, a, [role=option]'))
+    return
+  nativeWindow.startDrag()
 }
 
 /** Your own bubbles take the app's colour: iMessage blue, WhatsApp teal, Slack berry, Discord blurple. */
@@ -539,6 +791,7 @@ async function loadLists() {
   inbox.set(a)
   archived.set(b)
   deletedList.set(d)
+  updateBadge()
 }
 
 async function loadConversation(key) {
@@ -627,6 +880,12 @@ function select(key) {
     lastOpen.set(mailbox(), key)
   if (selectedKey() === key)
     return
+  draft.set('')
+  replyTo.set(null)
+  outgoingFiles.set([])
+  const row = list().find(c => c.key === key)
+  if (row && row.unread > 0 && capabilitiesOf(row.provider).markRead)
+    post('/api/read', { key }).then(() => loadLists()).catch(() => {})
   selectedKey.set(key)
   try {
     localStorage.setItem('attic:selected', key)
@@ -880,10 +1139,45 @@ function openConnect(provider) {
   userDraft.set('')
 }
 
+/**
+ * The Slack app Attic signs in through: the person's own scopes, and Socket
+ * Mode with events on their behalf so messages arrive as they are sent.
+ * Pasted into api.slack.com's "From an app manifest".
+ */
+const SLACK_MANIFEST = {
+  display_information: { name: 'Attic', description: 'Your Slack in Attic.' },
+  oauth_config: {
+    scopes: {
+      user: [
+        'channels:history', 'channels:read', 'channels:write',
+        'groups:history', 'groups:read', 'groups:write',
+        'im:history', 'im:read', 'im:write',
+        'mpim:history', 'mpim:read', 'mpim:write',
+        'chat:write', 'reactions:read', 'reactions:write',
+        'files:read', 'files:write', 'users:read', 'team:read',
+      ],
+    },
+  },
+  settings: {
+    event_subscriptions: { user_events: ['message.channels', 'message.groups', 'message.im', 'message.mpim', 'reaction_added', 'reaction_removed'] },
+    socket_mode_enabled: true,
+    org_deploy_enabled: false,
+    token_rotation_enabled: false,
+  },
+}
+
+async function startSlackApp() {
+  await clipboard.writeText(JSON.stringify(SLACK_MANIFEST, null, 2))
+  say('The Slack app manifest is copied. Choose "From an app manifest" and paste it.')
+  await shell.openExternal('https://api.slack.com/apps?new_app=1')
+}
+
 async function saveConnect() {
   const provider = connecting()
   try {
-    const result = await post('/api/sources/connect', { provider, token: tokenDraft(), userId: userDraft() })
+    const result = await post('/api/sources/connect', provider === 'slack'
+      ? { provider, token: tokenDraft(), appToken: userDraft() }
+      : { provider, token: tokenDraft(), account: 'user' })
     sources.set(result.sources)
     const state = result.sources.find(s => s.provider === provider)
     connecting.set('')
@@ -1131,6 +1425,8 @@ function listen() {
         previewBulk()
       }
     }
+    if (event.type === 'incoming')
+      notifyIncoming(event)
     if (event.type === 'changed') {
       await loadLists()
       if (selectedKey())
@@ -1163,7 +1459,7 @@ onMount(async () => {
     select(start.key)
   listen()
   installMenus()
-  app.setBadge(0)
+  notifications.requestPermission()
 })
 </script>
 
@@ -1221,7 +1517,7 @@ onMount(async () => {
   <section :if="anyConnected() || !needsAccess()" class="w-[340px] shrink-0 flex flex-col border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
     <div class="shrink-0 px-3 pb-2">
       <!-- The title-bar row. With the sidebar collapsed the window buttons sit here, so it starts after them. -->
-      <div class="flex items-center gap-2" style="height: var(--toolbar-height); padding-left: max(4px, calc(var(--craft-window-controls-inset-x, 0px) + var(--craft-window-controls-width, 0px) - 4px))">
+      <div class="flex items-center gap-2" @mousedown="dragWindow($event)" style="height: var(--toolbar-height); padding-left: max(4px, calc(var(--craft-window-controls-inset-x, 0px) + var(--craft-window-controls-width, 0px) - 4px))">
         <div class="min-w-0 flex-1">
           <h2 class="text-[15px] font-bold leading-tight m-0 truncate">{{ listTitle() }}</h2>
           <div class="muted text-[11px] leading-tight truncate">{{ bulkJob() && !bulkJob().finished ? `Archiving ${bulkJob().done.toLocaleString()} of ${bulkJob().total.toLocaleString()}…` : `${list().length.toLocaleString()} ${list().length === 1 ? 'conversation' : 'conversations'}` }}</div>
@@ -1304,7 +1600,7 @@ onMount(async () => {
     </div>
 
     <!-- As Messages draws it: the picture and name centred under the title bar, actions at the right. -->
-    <header :if="detail()" class="shrink-0 grid items-center gap-2 px-3 border-b" style="height: var(--toolbar-height); grid-template-columns: 1fr minmax(0, auto) 1fr; border-color: var(--separator)">
+    <header :if="detail()" @mousedown="dragWindow($event)" class="shrink-0 grid items-center gap-2 px-3 border-b" style="height: var(--toolbar-height); grid-template-columns: 1fr minmax(0, auto) 1fr; border-color: var(--separator)">
       <div></div>
       <div class="flex flex-col items-center min-w-0 max-w-[380px]" :title="`${detail()?.subtitle ?? ''}${keptSummary(detail())}`">
         <div class="avatar header-avatar relative shrink-0">
@@ -1378,7 +1674,7 @@ onMount(async () => {
             </div>
             <div :if="row.m.text && !row.m.unsent && isJumbo(row.m.text)" class="jumbo" :class="row.m.isFromMe ? 'out' : 'in'">
               <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
-            <div :if="row.m.text && !row.m.unsent && !isJumbo(row.m.text)" class="bubble" :class="bubbleClass(row)" :style="bubbleStyle(row.m)">
+            <div :if="row.m.text && !row.m.unsent && !isJumbo(row.m.text)" class="bubble" :class="bubbleClass(row)" :style="bubbleStyle(row.m)" @contextmenu="messageMenu($event, row.m)">
               <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
             <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
             <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
@@ -1389,9 +1685,31 @@ onMount(async () => {
         <button class="toolbar-button muted" @click="loadEarlier()">Show earlier messages</button>
       </div>
     </div>
-    <!-- Where Messages has its compose field. Attic keeps; the app itself replies. -->
+    <!-- The compose field, as Messages draws it. -->
     <div :if="detail()" class="shrink-0 px-4 pt-1 pb-3">
-      <button class="composer" :title="showHint(detail())" :disabled="!detail()?.url && detail()?.state !== 'archived'" @click="compose()">
+      <div :if="replyTo()" class="flex items-center gap-2 mb-1.5 px-3 py-1.5 rounded-[10px] text-[12px]" style="background: var(--chip)">
+        <span class="i-hugeicons-arrow-turn-backward text-[14px] muted"></span>
+        <span class="flex-1 min-w-0 truncate"><span class="muted">Replying to</span> {{ replyPreview(replyTo()) }}</span>
+        <button class="icon-button" title="Cancel reply (Esc)" @click="replyTo.set(null)"><span class="i-hugeicons-cancel-01 text-[14px]"></span></button>
+      </div>
+      <div :if="outgoingFiles().length > 0" class="flex flex-wrap gap-1.5 mb-1.5">
+        <span :for="f in outgoingFiles()" :key="f.path" class="tag !text-[11.5px] !py-1">
+          <span class="i-hugeicons-attachment-01 text-[12px]"></span>{{ f.name }}
+          <button class="ml-1 opacity-70 hover:opacity-100" title="Remove" @click="removeOutgoing(f)">×</button>
+        </span>
+      </div>
+      <div :if="canSend()" class="compose-field">
+        <label :if="capabilitiesOf(detail()?.provider).attachments" class="icon-button cursor-pointer shrink-0" title="Attach files">
+          <span class="i-hugeicons-add-circle text-[19px]"></span>
+          <input type="file" multiple class="hidden" @change="attachFiles($event)">
+        </label>
+        <textarea id="composer" rows="1" class="compose-input selectable" :placeholder="placeholderFor(detail())" x-model="draft" @keydown="onComposerKey($event)"></textarea>
+        <button class="send-button" :disabled="sending() || (!draft().trim() && outgoingFiles().length === 0)" title="Send (Return)" @click="sendDraft()">
+          <span class="i-hugeicons-arrow-up-02 text-[16px]"></span>
+        </button>
+      </div>
+      <!-- An app Attic cannot write to yet: reply there. -->
+      <button :if="!canSend()" class="composer" :title="showHint(detail())" :disabled="!detail()?.url && detail()?.state !== 'archived'" @click="compose()">
         <span class="flex-1 truncate">{{ composerLabel(detail()) }}</span>
         <span class="i-hugeicons-arrow-up-right-01 text-[15px]"></span>
       </button>
@@ -1446,16 +1764,24 @@ onMount(async () => {
 
   <!-- Connecting a source: a token for Slack or Discord, what is missing for iMessage or WhatsApp. -->
   <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="connecting.set('')">
-    <div class="w-[440px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+    <div class="w-[480px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
       <div class="flex items-center gap-3 mb-3">
         <span class="text-[26px]" :class="sourceIcon(connecting())" :style="colorStyle(connecting())"></span>
         <h2 class="text-[16px] font-semibold m-0">Connect {{ appName(connecting()) }}</h2>
       </div>
-      <p :if="connecting() === 'slack'" class="muted text-[12px] leading-relaxed mb-3">Paste a Slack <b>user</b> token (it starts with xoxp-), from a Slack app you create with the read scopes for channels, groups, DMs and users, plus im:write, mpim:write and channels:write so archiving can close and leave conversations. It stays in your keychain.</p>
-      <p :if="connecting() === 'discord'" class="muted text-[12px] leading-relaxed mb-3">Paste a Discord <b>bot</b> token and add the bot to your servers with Read Message History (and Manage Threads to archive threads). Discord does not let apps read personal DMs, so those stay in Discord. Your user id marks your own messages.</p>
+      <div :if="connecting() === 'slack'" class="muted text-[12px] leading-relaxed mb-3">
+        <p class="m-0 mb-2">Attic signs in to Slack through a small app of your own, in each workspace:</p>
+        <ol class="m-0 pl-5 flex flex-col gap-1">
+          <li><button class="text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="startSlackApp()">Copy the app manifest and open Slack</button>, choose <b>From an app manifest</b>, and paste.</li>
+          <li><b>Install to Workspace</b>, then copy the <b>User OAuth Token</b> (xoxp-) below.</li>
+          <li>Under <b>Basic Information</b>, generate an <b>App-Level Token</b> with connections:write (xapp-), so messages arrive as they are sent.</li>
+        </ol>
+        <p class="m-0 mt-2">Both stay in your keychain.</p>
+      </div>
+      <p :if="connecting() === 'discord'" class="muted text-[12px] leading-relaxed mb-3">Paste your Discord token, the one the Discord app signs in with: Attic becomes your Discord client, with your DMs, group DMs and servers. Using your own account from another client is against Discord's terms, and Discord can ban accounts for it. Attic identifies itself to Discord as Attic. The token stays in your keychain.</p>
       <p :if="isLocal(connecting())" class="muted text-[12px] leading-relaxed mb-3">Attic reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
-      <input :if="!isLocal(connecting())" class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="Token" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
-      <input :if="connecting() === 'discord'" class="search selectable mb-2" style="padding-left: 10px" type="text" placeholder="Your Discord user id (optional)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
+      <input :if="!isLocal(connecting())" class="search selectable mb-2" style="padding-left: 10px" type="password" :placeholder="connecting() === 'slack' ? 'User OAuth Token (xoxp-…)' : 'Discord token'" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
+      <input :if="connecting() === 'slack'" class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="App-Level Token (xapp-…)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
       <div class="flex justify-between items-center mt-3">
         <button :if="connectedTo(connecting()) && !isLocal(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">Disconnect</button>
         <span :if="!connectedTo(connecting()) || isLocal(connecting())"></span>

@@ -15,6 +15,12 @@ import { sampleDiscord, sampleSlack, sampleWhatsApp } from './sample-sources'
  * conversation, so they are re-read at most once a minute unless forced.
  */
 
+/** Something a pushing app reported, with the app it came from. */
+export interface SourceEvent {
+  provider: Provider
+  event: inbox.InboxEvent
+}
+
 export interface LiveEntry {
   key: string
   provider: Provider
@@ -25,7 +31,11 @@ export interface SourceState {
   provider: Provider
   label: string
   status: inbox.InboxStatus
+  /** What Attic can do in this app beyond reading: send, react, mark read. */
+  capabilities: inbox.InboxCapabilities
 }
+
+const READ_ONLY: inbox.InboxCapabilities = { send: false, attachments: false, replies: false, reactions: false, markRead: false, live: false }
 
 // Local apps are re-read at most every couple of seconds: each list request
 // used to re-query Messages and WhatsApp in full (half a second with a real
@@ -92,18 +102,59 @@ export class Sources {
 
     const slack = await readSecret('slack')
     if (slack)
-      this.drivers.set('slack', inbox.createInboxDriver('slack', { token: slack }))
+      this.drivers.set('slack', inbox.createInboxDriver('slack', { token: slack, appToken: (await readSecret('slack-app')) ?? undefined }))
     else
       this.drivers.delete('slack')
 
+    // A Discord driver holds a gateway session; the old one is closed first.
+    ;(this.drivers.get('discord') as { close?: () => void } | undefined)?.close?.()
     const discord = await readSecret('discord')
-    if (discord)
-      this.drivers.set('discord', inbox.createInboxDriver('discord', { token: discord, userId: (await readSecret('discord-user')) ?? undefined }))
-    else
+    if (discord) {
+      const account = (await readSecret('discord-account')) === 'bot' ? 'bot' : 'user'
+      this.drivers.set('discord', inbox.createInboxDriver('discord', { token: discord, account, userId: (await readSecret('discord-user')) ?? undefined }))
+    }
+    else {
       this.drivers.delete('discord')
+    }
 
     this.cache.clear()
     await this.refreshStates()
+    this.resubscribe()
+  }
+
+  // ── Live events ─────────────────────────────────────────────────────
+
+  private subscriber: ((event: SourceEvent) => void) | null = null
+  private unsubscribers: Array<() => void> = []
+
+  /**
+   * Hear every app that pushes its events (Slack over Socket Mode, Discord's
+   * gateway). Rebuilding the drivers subscribes the new ones. A provider's
+   * cached list is dropped whenever something happens there.
+   */
+  listen(onEvent: (event: SourceEvent) => void): () => void {
+    this.subscriber = onEvent
+    this.resubscribe()
+    return () => {
+      this.subscriber = null
+      this.resubscribe()
+    }
+  }
+
+  private resubscribe(): void {
+    for (const stop of this.unsubscribers.splice(0))
+      stop()
+    const subscriber = this.subscriber
+    if (!subscriber)
+      return
+    for (const [provider, driver] of this.drivers) {
+      if (!driver.watch)
+        continue
+      this.unsubscribers.push(driver.watch((event) => {
+        this.invalidate(provider)
+        subscriber({ provider, event })
+      }))
+    }
   }
 
   driver(provider: Provider): inbox.InboxDriver | undefined {
@@ -116,8 +167,8 @@ export class Sources {
       const driver = this.drivers.get(provider)
       const status = driver
         ? await driver.status()
-        : { connected: false, detail: provider === 'slack' ? 'Add a Slack user token to bring Slack in.' : 'Add a Discord bot token to bring Discord in.', needs: 'token' as const }
-      this.states.set(provider, { provider, label: driver?.label ?? (provider === 'slack' ? 'Slack' : 'Discord'), status })
+        : { connected: false, detail: provider === 'slack' ? 'Sign in to Slack to bring it in.' : 'Sign in to Discord to bring it in.', needs: 'token' as const }
+      this.states.set(provider, { provider, label: driver?.label ?? (provider === 'slack' ? 'Slack' : 'Discord'), status, capabilities: driver?.capabilities?.() ?? READ_ONLY })
     }
     return this.statesList()
   }
