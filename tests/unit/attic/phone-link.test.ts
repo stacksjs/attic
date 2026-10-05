@@ -16,6 +16,12 @@ function setup() {
     inbox: async () => [],
     archive: async (key) => { calls.push(`archive ${key}`); return { ok: true } },
     unarchive: async key => ({ key }),
+    react: async (key, messageId, reaction, remove) => {
+      if (key.startsWith('discord:'))
+        throw new Error('Attic cannot react in Discord yet.')
+      calls.push(`react ${key} ${messageId} ${reaction} ${remove ? 'remove' : 'add'}`)
+      return { ok: true }
+    },
     avatar: async () => null,
   }
   // Port 0: an ephemeral port, so tests never collide with a running Attic.
@@ -49,6 +55,30 @@ describe('phone link', () => {
     expect(hello).toEqual({ status: 200, reply: { ok: true, result: { name: 'Mac' } } })
     const pull = await ask(link, pairing.device, key, { op: 'pull', t: Date.now(), r: 'two', since: 41 })
     expect(pull.reply).toEqual({ ok: true, result: { since: 41 } })
+    link.stop()
+  })
+
+  it('passes a reaction on to the Mac, and its refusal back to the phone', async () => {
+    const { link, calls } = setup()
+    const paired = link.pair()
+    if ('error' in paired)
+      throw new Error(paired.error)
+    const { device } = paired.pairing
+    const key = fromBase64Url(paired.pairing.key)
+
+    const added = await ask(link, device, key, { op: 'react', key: 'imessage:direct:+15550001111', messageId: 'p:0/ABC', reaction: '❤️', remove: false, t: Date.now(), r: 'love' })
+    expect(added.reply).toEqual({ ok: true, result: { ok: true } })
+    // Only a literal true removes: anything else the phone sends adds.
+    await ask(link, device, key, { op: 'react', key: 'imessage:direct:+15550001111', messageId: 'p:0/ABC', reaction: '❤️', remove: true, t: Date.now(), r: 'unlove' })
+    await ask(link, device, key, { op: 'react', key: 'slack:T1:C1', messageId: '1712.0001', reaction: '👍', remove: 'yes', t: Date.now(), r: 'like' })
+    expect(calls).toEqual([
+      'react imessage:direct:+15550001111 p:0/ABC ❤️ add',
+      'react imessage:direct:+15550001111 p:0/ABC ❤️ remove',
+      'react slack:T1:C1 1712.0001 👍 add',
+    ])
+
+    const refused = await ask(link, device, key, { op: 'react', key: 'discord:123', messageId: '9', reaction: '😂', t: Date.now(), r: 'laugh' })
+    expect(refused).toEqual({ status: 200, reply: { ok: false, error: 'Attic cannot react in Discord yet.' } })
     link.stop()
   })
 

@@ -28,6 +28,7 @@
       --bubble-sms: #34c759;
       --chip: rgba(0, 0, 0, .05);
       --amber: #bf6f00;
+      --popover: #ffffff;
       --window-controls-height: var(--craft-window-controls-height, 28px);
       /* The title bar's height: the list's and the transcript's header rows,
          the way Messages and Mail line theirs up under one toolbar. */
@@ -48,6 +49,7 @@
         --bubble-in-text: #fff;
         --chip: rgba(255, 255, 255, .07);
         --amber: #ffb340;
+        --popover: #2c2c2e;
       }
     }
     @supports (color: -apple-system-label) {
@@ -159,6 +161,21 @@
     }
     .bubble.in .reactions, .jumbo.in .reactions { right: -14px; }
     .bubble.out .reactions, .jumbo.out .reactions { left: -14px; }
+    /* Holding a bubble brings up its tapbacks just above it, as Messages does. */
+    .tapback-bar {
+      position: fixed; z-index: 40; display: flex; gap: 2px; padding: 4px;
+      border-radius: 22px; background: var(--popover);
+      box-shadow: 0 0 0 .5px var(--separator), 0 8px 28px rgba(0, 0, 0, .2);
+      animation: tapback-in .14s ease-out;
+    }
+    .tapback-bar button {
+      width: 34px; height: 34px; border: 0; border-radius: 50%; padding: 0;
+      display: grid; place-items: center; background: transparent; font-size: 18px; line-height: 1;
+    }
+    .tapback-bar button:hover { background: var(--chip); }
+    .tapback-bar button[aria-pressed='true'] { background: var(--accent); }
+    @keyframes tapback-in { from { opacity: 0; transform: translateY(4px) scale(.94); } }
+    @media (prefers-reduced-motion: reduce) { .tapback-bar { animation: none; } }
     /* The message a reply answers: a faded copy of its bubble above it. */
     .quote {
       font-size: 12px; padding: 4px 10px; border-radius: 14px; margin-bottom: 2px; max-width: 100%;
@@ -232,6 +249,7 @@
 <script client>
 import { app, clipboard, contextMenu, menu, nativeWindow, notifications, shell, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
 import { reportClientErrors } from '../functions/client-errors'
+import { isMine, pressAndHold, TAPBACKS } from '../functions/tapbacks'
 
 reportClientErrors()
 
@@ -528,16 +546,6 @@ function replyPreview(m) {
   return what.length > 80 ? `${what.slice(0, 80)}…` : what
 }
 
-/** Messages' tapbacks, and what Slack and Discord call them. */
-const TAPBACKS = [
-  { emoji: '❤️', label: 'Love' },
-  { emoji: '👍', label: 'Like' },
-  { emoji: '👎', label: 'Dislike' },
-  { emoji: '😂', label: 'Laugh' },
-  { emoji: '‼️', label: 'Emphasize' },
-  { emoji: '❓', label: 'Question' },
-]
-
 async function messageMenu(event, m) {
   if (m.pending)
     return
@@ -553,7 +561,7 @@ async function messageMenu(event, m) {
     if (items.length)
       items.push({ separator: true })
     for (const tapback of TAPBACKS)
-      items.push({ id: `react:${tapback.emoji}`, title: `${tapback.emoji}  ${tapback.label}`, checked: m.reactions.some(r => r.reaction === tapback.emoji && r.fromMe) })
+      items.push({ id: `react:${tapback.emoji}`, title: `${tapback.emoji}  ${tapback.label}`, checked: isMine(m.reactions, tapback.emoji) })
   }
   if (m.text) {
     if (items.length)
@@ -571,17 +579,78 @@ async function messageMenu(event, m) {
     await clipboard.writeText(m.text)
   }
   else if (choice?.startsWith('react:')) {
-    const reaction = choice.slice('react:'.length)
-    const mine = m.reactions.some(r => r.reaction === reaction && r.fromMe)
-    try {
-      await post('/api/react', { key: d.key, messageId: m.guid, reaction, remove: mine })
-      loadConversation(d.key)
-    }
-    catch (error) {
-      say(error.message)
-    }
+    await react(d.key, m, choice.slice('react:'.length))
   }
 }
+
+/** Add a tapback, or take back one that is already yours, from the menu or the held bubble alike. */
+async function react(key, m, reaction) {
+  try {
+    await post('/api/react', { key, messageId: m.guid, reaction, remove: isMine(m.reactions, reaction) })
+    loadConversation(key)
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+/*
+ * Press and hold a bubble for its tapbacks, the way a long press works on
+ * the phone. The bar is drawn in the page, above the bubble, and placed from
+ * where the bubble was when the hold fired; scrolling or resizing closes it
+ * rather than leaving it pointing at the wrong message. A Mac has no haptics
+ * for Craft to reach, so there are none here.
+ */
+const tapbackBar = state(null)
+const bubbleHold = pressAndHold((m, target) => {
+  const d = detail()
+  if (!d)
+    return
+  const rect = target.getBoundingClientRect()
+  // Too close to the header to fit above: open below instead.
+  const below = rect.top < 110
+  tapbackBar.set({
+    key: d.key,
+    m,
+    style: [
+      below ? `top: ${Math.round(rect.bottom + 8)}px` : `top: ${Math.round(rect.top - 50)}px`,
+      m.isFromMe ? `right: max(8px, calc(100vw - ${Math.round(rect.right)}px))` : `left: ${Math.round(rect.left)}px`,
+    ].join('; '),
+  })
+})
+
+function holdStart(event, m) {
+  if (m.pending || !detail() || !capabilitiesOf(detail().provider).reactions)
+    return
+  bubbleHold.down(event, m)
+}
+
+function holdMove(event) {
+  bubbleHold.move(event)
+}
+
+function holdEnd() {
+  bubbleHold.up()
+}
+
+function closeTapbacks() {
+  if (tapbackBar())
+    tapbackBar.set(null)
+}
+
+async function chooseTapback(reaction) {
+  const bar = tapbackBar()
+  tapbackBar.set(null)
+  if (bar)
+    await react(bar.key, bar.m, reaction)
+}
+
+// A click anywhere but the bar closes it; so does the window changing size.
+useEventListener('pointerdown', (event) => {
+  if (tapbackBar() && !event.target.closest?.('.tapback-bar'))
+    tapbackBar.set(null)
+})
+useEventListener('resize', closeTapbacks)
 
 /* ---------- notifications ---------- */
 /** Whether this window is the one in front, so an open conversation is not announced. */
@@ -706,10 +775,12 @@ function toggleAudio(a) {
   playingAudio.set(playingAudio() === a.url ? '' : a.url)
 }
 
-// Escape closes the viewer wherever focus is, as it does in Messages.
+// Escape closes the viewer or the tapbacks wherever focus is, as it does in Messages.
 useEventListener('keydown', (event) => {
   if (event.key === 'Escape' && viewer())
     closeViewer()
+  else if (event.key === 'Escape' && tapbackBar())
+    closeTapbacks()
 })
 
 /** The transcript, newest first (the scroller is column-reverse), with a day header where the gap is large. */
@@ -1714,7 +1785,7 @@ onMount(async () => {
     </div>
 
     <!-- column-reverse keeps the newest message in view without scripting the scroll. -->
-    <div :if="detail()" class="scroller selectable flex-1 flex flex-col-reverse pl-4 pr-5 pt-4 pb-3">
+    <div :if="detail()" class="scroller selectable flex-1 flex flex-col-reverse pl-4 pr-5 pt-4 pb-3" @scroll="closeTapbacks()">
       <div :for="row in timeline()" :key="row.id" class="contents">
         <div :if="row.type === 'day'" class="text-center text-[11px] muted pt-5 pb-1.5"><span class="font-semibold">{{ row.day }}</span> {{ row.time }}</div>
         <div :if="row.type === 'kept'" class="flex items-center gap-2 py-3 text-[11px] muted">
@@ -1753,7 +1824,7 @@ onMount(async () => {
             </div>
             <div :if="row.m.text && !row.m.unsent && isJumbo(row.m.text)" class="jumbo" :class="row.m.isFromMe ? 'out' : 'in'">
               <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
-            <div :if="row.m.text && !row.m.unsent && !isJumbo(row.m.text)" class="bubble" :class="bubbleClass(row)" :style="bubbleStyle(row.m)" @contextmenu="messageMenu($event, row.m)">
+            <div :if="row.m.text && !row.m.unsent && !isJumbo(row.m.text)" class="bubble" :class="bubbleClass(row)" :style="bubbleStyle(row.m)" @contextmenu="messageMenu($event, row.m)" @pointerdown="holdStart($event, row.m)" @pointermove="holdMove($event)" @pointerup="holdEnd()" @pointerleave="holdEnd()" @pointercancel="holdEnd()">
               <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
             <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
             <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
@@ -1797,6 +1868,11 @@ onMount(async () => {
 
   <!-- One player for every voice message, out of the transcript. -->
   <audio :if="playingAudio()" :src="playingAudio()" autoplay @ended="playingAudio.set('')" @error="playingAudio.set('')"></audio>
+
+  <!-- The held bubble's tapbacks; yours are filled in, and choosing one again takes it back. -->
+  <div :if="tapbackBar() && tapbackBar().key === selectedKey()" class="tapback-bar" role="toolbar" aria-label="Tapbacks" :style="tapbackBar()?.style">
+    <button :for="t in TAPBACKS" :key="t.emoji" :title="t.label" :aria-label="t.label" :aria-pressed="isMine(tapbackBar()?.m.reactions ?? [], t.emoji) ? 'true' : 'false'" @click="chooseTapback(t.emoji)">{{ t.emoji }}</button>
+  </div>
 
   <!-- Photos and videos open here, full size, as Messages' viewer does. -->
   <div :if="viewer()" class="fixed inset-0 z-50 grid place-items-center" style="background: rgba(0, 0, 0, .86)" @click="closeViewer()">

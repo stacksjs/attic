@@ -678,6 +678,22 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return { ok: true, app: { detail } }
   }
 
+  /** React to a message: the window's menu, its press-and-hold, and the phone's long-press all come here. */
+  async function reactTo(key: string, messageId: string, reaction: string, remove: boolean): Promise<{ ok: true }> {
+    if (!key || !messageId || !reaction)
+      throw new Error('key, messageId and reaction are required')
+    const { provider, id } = splitKey(key)
+    const driver = sources.driver(provider)
+    if (!driver?.react || !driver.capabilities?.().reactions)
+      throw new Error(`Attic cannot react in ${driver?.label ?? provider} yet.`)
+    await driver.react(id, messageId, reaction, remove)
+    sources.invalidate(provider)
+    // The reaction lands in the app's own store: look again on the next tick.
+    lastStamp = ''
+    lastRemote = 0
+    return { ok: true }
+  }
+
   /*
    * The phone app: a paired phone keeps its own copy of the archive and
    * reaches this Mac over the local network through PhoneLink, every request
@@ -708,6 +724,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     inbox: async () => (await conversations('inbox', 'all')).slice(0, 300).map(phoneSummary),
     archive: key => archiveConversation(key),
     unarchive: key => unarchiveConversation(key),
+    react: (key, messageId, reaction, remove) => reactTo(key, messageId, reaction, remove),
     avatar: async (url) => {
       const query = new URL(url, 'http://attic.local').searchParams
       const provider = query.get('provider') as Provider | null
@@ -1043,15 +1060,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const key = keyFrom(data)
           if (!key || typeof data.messageId !== 'string' || typeof data.reaction !== 'string')
             return problem('key, messageId and reaction are required')
-          const { provider, id } = splitKey(key)
-          const driver = sources.driver(provider)
-          if (!driver?.react)
-            return problem(`Attic cannot react in ${driver?.label ?? provider} yet.`)
-          await driver.react(id, data.messageId, data.reaction, data.remove === true)
-          sources.invalidate(provider)
-          lastStamp = ''
-          lastRemote = 0
-          return json({ ok: true })
+          return json(await reactTo(key, data.messageId, data.reaction, data.remove === true))
         }
         case 'POST /api/read': {
           const key = keyFrom(await body(req))

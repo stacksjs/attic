@@ -22,6 +22,7 @@ export interface PhoneOps {
   inbox: () => Promise<unknown>
   archive: (key: string) => Promise<unknown>
   unarchive: (key: string) => Promise<unknown>
+  react: (key: string, messageId: string, reaction: string, remove: boolean) => Promise<unknown>
   avatar: (url: string) => Promise<{ type: string, data: string } | null>
 }
 
@@ -34,6 +35,9 @@ interface Request {
   since?: number
   key?: string
   url?: string
+  messageId?: string
+  reaction?: string
+  remove?: boolean
 }
 
 const CORS = {
@@ -189,6 +193,7 @@ export class PhoneLink {
       case 'inbox': return this.ops.inbox()
       case 'archive': return this.ops.archive(String(request.key ?? ''))
       case 'unarchive': return this.ops.unarchive(String(request.key ?? ''))
+      case 'react': return this.ops.react(String(request.key ?? ''), String(request.messageId ?? ''), String(request.reaction ?? ''), request.remove === true)
       case 'avatar': return this.ops.avatar(String(request.url ?? ''))
       default: throw new Error(`Unknown request ${String(request.op)}`)
     }

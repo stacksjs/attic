@@ -26,10 +26,20 @@
     .cell + .cell { box-shadow: inset 72px 0 0 var(--surface), inset 0 .5px 0 var(--separator); }
     .avatar { width: 46px; height: 46px; border-radius: 50%; flex: none; display: grid; place-items: center; overflow: hidden; color: #fff; font-weight: 600; font-size: 17px; background: linear-gradient(180deg, #a5abb8, #858994); }
     .avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .bubble { max-width: 78%; padding: 8px 13px; border-radius: 19px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
+    /* A long press is for tapbacks: no callout, magnifier or text selection under the finger. */
+    .bubble { max-width: 78%; padding: 8px 13px; border-radius: 19px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
     .bubble.in { background: var(--bubble-in); }
     .bubble.out { background: var(--bubble-out); color: #fff; }
     .reactions { position: absolute; top: -14px; right: -6px; display: flex; gap: 1px; background: var(--surface); border-radius: 12px; padding: 1px 5px; font-size: 13px; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+    /* The held bubble, lifted over the dimmed transcript with its tapbacks above it. */
+    .scrim { position: fixed; inset: 0; z-index: 40; touch-action: none; background: rgba(0, 0, 0, .28); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: fade-in .15s ease-out; }
+    .lifted { position: fixed; z-index: 41; touch-action: none; box-sizing: border-box; max-width: none; margin: 0; }
+    .tapback-bar { position: fixed; z-index: 42; display: flex; gap: 2px; padding: 5px; border-radius: 26px; background: var(--surface); box-shadow: 0 6px 24px rgba(0, 0, 0, .22); animation: tapback-in .18s ease-out; }
+    .tapback-bar button { width: 40px; height: 40px; border: 0; border-radius: 50%; padding: 0; display: grid; place-items: center; background: transparent; font-size: 22px; line-height: 1; }
+    .tapback-bar button[aria-pressed='true'] { background: var(--accent); }
+    @keyframes fade-in { from { opacity: 0; } }
+    @keyframes tapback-in { from { opacity: 0; transform: translateY(6px) scale(.9); } }
+    @media (prefers-reduced-motion: reduce) { .scrim, .tapback-bar { animation: none; } }
     .search { width: 100%; box-sizing: border-box; border: 0; border-radius: 10px; padding: 8px 12px; background: var(--chip); color: inherit; font: inherit; font-size: 16px; }
     .button { border: 0; border-radius: 12px; padding: 13px 18px; font: inherit; font-weight: 600; background: var(--accent); color: #fff; width: 100%; }
     .button.plain { background: var(--chip); color: var(--accent); }
@@ -39,7 +49,9 @@
 </head>
 <body>
 <script client>
+import { haptics } from '@stacksjs/mobile'
 import { askMac, avatarFor, forgetPairing, lastSynced, loadPairing, localConversations, localMessages, onPairingLink, savePairing, scanPairingCode, syncArchive } from '../functions/phone-archive'
+import { isMine, pressAndHold, reactionsByMessage, TAPBACKS } from '../functions/tapbacks'
 
 const screen = state('loading')
 const pairing = state(null)
@@ -57,6 +69,10 @@ const openKey = state('')
 const transcript = state([])
 const avatars = state({})
 const busy = state(false)
+/** Tapbacks sent from this phone, shown at once and kept until a sync brings the real ones. */
+const sentReactions = state([])
+/** The held bubble whose tapbacks are showing: the message, and where to draw it. */
+const reacting = state(null)
 
 const conversations = derived(() => {
   const list = view() === 'inbox' ? inbox() : archive()
@@ -66,11 +82,8 @@ const conversations = derived(() => {
 const open = derived(() => [...archive(), ...inbox()].find(c => c.key === openKey()) ?? null)
 const bubbles = derived(() => {
   const all = transcript()
-  const reactions = new Map()
-  for (const m of all) {
-    if (m.kind === 'reaction' && !m.reactionRemoved && m.targetGuid)
-      reactions.set(m.targetGuid, [...(reactions.get(m.targetGuid) ?? []), m.reaction])
-  }
+  const sent = sentReactions().filter(r => r.conversationKey === openKey())
+  const reactions = reactionsByMessage([...all, ...sent].sort((a, b) => a.sentAt - b.sentAt))
   const byGuid = new Map(all.map(m => [m.guid, m]))
   return all.filter(m => m.kind !== 'reaction' && (m.kind !== 'event' || m.text)).map(m => ({
     ...m,
@@ -78,6 +91,88 @@ const bubbles = derived(() => {
     quoted: m.replyToGuid && byGuid.get(m.replyToGuid) ? (byGuid.get(m.replyToGuid).text ?? 'Attachment') : null,
   }))
 })
+
+/** Haptics where the phone has them; a browser tab has none, and nothing should fail for it. */
+function feel(kind) {
+  const done = kind === 'hold' ? haptics.impact('medium') : kind === 'pick' ? haptics.selection() : haptics.notification('error')
+  Promise.resolve(done).catch(() => {})
+}
+
+/*
+ * Long-press a bubble for its tapbacks, as in Messages: a firm tap, the rest
+ * of the conversation dimmed, the bubble lifted with the six tapbacks just
+ * above it. The Mac does the reacting, so only a paired phone offers it.
+ */
+const bubbleHold = pressAndHold((m, target) => {
+  const rect = target.getBoundingClientRect()
+  feel('hold')
+  reacting.set({
+    m,
+    rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
+    // Too near the top to fit above (the navigation bar is there): below it instead.
+    below: rect.top < 140,
+  })
+})
+
+function holdStart(event, m) {
+  if (pairing() && m.kind === 'message' && !m.unsent)
+    bubbleHold.down(event, m)
+}
+
+function holdMove(event) {
+  bubbleHold.move(event)
+}
+
+function holdEnd() {
+  bubbleHold.up()
+}
+
+function lifted(r) {
+  return `top: ${r.rect.top}px; left: ${r.rect.left}px; width: ${r.rect.width}px; min-height: ${r.rect.height}px`
+}
+
+function barStyle(r) {
+  const top = r.below ? `top: ${Math.round(r.rect.bottom + 10)}px` : `top: ${Math.round(r.rect.top - 60)}px`
+  const side = r.m.isFromMe ? `right: max(8px, calc(100vw - ${Math.round(r.rect.right)}px))` : `left: max(8px, ${Math.round(r.rect.left)}px)`
+  return `${top}; ${side}`
+}
+
+function dismissReacting() {
+  // The tap that lifts the finger after the hold lands on the scrim: it is not a dismissal.
+  if (!bubbleHold.justHeld())
+    reacting.set(null)
+}
+
+async function chooseTapback(reaction) {
+  const r = reacting()
+  if (!r)
+    return
+  reacting.set(null)
+  feel('pick')
+  const key = r.m.conversationKey ?? openKey()
+  const remove = isMine(r.m.reactions, reaction)
+  const sent = {
+    guid: `sent-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    conversationKey: key,
+    kind: 'reaction',
+    text: null,
+    isFromMe: true,
+    sentAt: Date.now(),
+    senderName: null,
+    targetGuid: r.m.guid,
+    reaction,
+    reactionRemoved: remove,
+  }
+  sentReactions.set([...sentReactions(), sent])
+  try {
+    await askMac(pairing(), 'react', { key, messageId: r.m.guid, reaction, remove })
+  }
+  catch (error) {
+    sentReactions.set(sentReactions().filter(s => s.guid !== sent.guid))
+    feel('error')
+    say(unreachable(error) ? `Not on the same network as ${pairing().name}, so the tapback was not sent.` : error.message)
+  }
+}
 
 function when(ms) {
   if (!ms)
@@ -89,6 +184,11 @@ function when(ms) {
   if (days < 7)
     return date.toLocaleDateString([], { weekday: 'long' })
   return date.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: '2-digit' })
+}
+
+/** Whether a request failed because the Mac could not be reached, rather than because it said no. */
+function unreachable(error) {
+  return !!(error.message?.includes('abort') || error.message?.includes('Load failed') || error.message?.includes('fetch'))
 }
 
 function say(text) {
@@ -126,9 +226,7 @@ async function sync() {
   }
   catch (error) {
     reachable.set(false)
-    say(error.message?.includes('abort') || error.message?.includes('Load failed') || error.message?.includes('fetch')
-      ? `Not on the same network as ${pairing().name}. The archive here still reads.`
-      : error.message)
+    say(unreachable(error) ? `Not on the same network as ${pairing().name}. The archive here still reads.` : error.message)
   }
   finally {
     syncing.set(false)
@@ -166,6 +264,7 @@ async function openConversation(c) {
 }
 
 function back() {
+  reacting.set(null)
   screen.set('list')
   openKey.set('')
 }
@@ -280,13 +379,22 @@ onMount(async () => {
         <div :if="m.kind === 'event'" class="self-center muted text-[12px] py-1">{{ m.text }}</div>
         <div :if="m.quoted" class="muted text-[13px] px-3 py-1 mb-[2px] max-w-[70%] truncate rounded-[12px]" style="background: var(--chip); border-left: 3px solid var(--separator)">{{ m.quoted }}</div>
         <div :for="a in m.attachments" class="bubble mb-[2px]" :class="m.isFromMe ? 'out' : 'in'"><span class="i-hugeicons-attachment-01"></span> {{ a.name }}</div>
-        <div :if="m.kind === 'message' && m.text" class="bubble" :class="m.isFromMe ? 'out' : 'in'">
-          <span :if="m.reactions.length" class="reactions"><span :for="r in m.reactions">{{ r }}</span></span>{{ m.text }}
+        <div :if="m.kind === 'message' && m.text" class="bubble" :class="m.isFromMe ? 'out' : 'in'" @pointerdown="holdStart($event, m)" @pointermove="holdMove($event)" @pointerup="holdEnd()" @pointercancel="holdEnd()" @contextmenu="$event.preventDefault()">
+          <span :if="m.reactions.length" class="reactions"><span :for="r in m.reactions">{{ r.reaction }}</span></span>{{ m.text }}
         </div>
         <div :if="m.unsent" class="muted text-[12px] italic px-3">{{ m.isFromMe ? 'You unsent a message' : 'Unsent' }}</div>
       </div>
     </div>
   </main>
+
+  <!-- A held bubble: the conversation dimmed, the bubble lifted, its tapbacks above. Tapping outside puts it back. -->
+  <div :if="reacting()" class="scrim" @click="dismissReacting()"></div>
+  <div :if="reacting()" class="bubble lifted" :class="reacting()?.m.isFromMe ? 'out' : 'in'" :style="lifted(reacting())" @click="dismissReacting()">
+    <span :if="reacting()?.m.reactions.length" class="reactions"><span :for="r in reacting()?.m.reactions ?? []">{{ r.reaction }}</span></span>{{ reacting()?.m.text }}
+  </div>
+  <div :if="reacting()" class="tapback-bar" role="toolbar" aria-label="Tapbacks" :style="barStyle(reacting())">
+    <button :for="t in TAPBACKS" :key="t.emoji" :aria-label="t.label" :aria-pressed="isMine(reacting()?.m.reactions ?? [], t.emoji) ? 'true' : 'false'" @click="chooseTapback(t.emoji)">{{ t.emoji }}</button>
+  </div>
 
   <NativeSheet v-model:open="settingsOpen" title="Attic">
     <div class="flex flex-col gap-3 px-4 pb-6">
