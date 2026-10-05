@@ -36,6 +36,15 @@ export interface ArchiveResult {
  */
 export const RULE_QUIET_MS = 20 * 60_000
 
+/**
+ * A removal that did not take - Messages busy, its window in an odd state, a
+ * delete not confirmed - is tried again after this long, a few times for each
+ * new message, rather than leaving the conversation in the app until the
+ * person next writes.
+ */
+export const REMOVAL_RETRY_MS = 10 * 60_000
+export const REMOVAL_ATTEMPTS = 3
+
 export interface SyncReport {
   /** Archived conversations someone wrote in again, now back in the Inbox. */
   resurfaced: string[]
@@ -132,8 +141,8 @@ export interface ArchiverOptions {
 }
 
 export class Archiver {
-  /** The cursor each rule-driven removal was last tried at. */
-  private removalTried = new Map<string, string>()
+  /** Each rule-driven removal: the message it was for, how often it was tried, and when last. */
+  private removalTried = new Map<string, { cursor: string, attempts: number, at: number }>()
 
   readonly store: ArchiveStore
   readonly sources: Sources
@@ -263,6 +272,34 @@ export class Archiver {
     return { key, messages: after.messageCount, attachmentsCopied: after.attachmentCount, attachmentsMissing: after.missingAttachments, verified }
   }
 
+  /** Whether a rule-driven removal should be tried now: first for this message, or a retry that is due. */
+  private removalDue(key: string, cursor: string, now: number): boolean {
+    const tried = this.removalTried.get(key)
+    if (!tried || tried.cursor !== cursor)
+      return true
+    return tried.attempts < REMOVAL_ATTEMPTS && now - tried.at >= REMOVAL_RETRY_MS
+  }
+
+  /**
+   * One attempt at taking a ruled conversation out of its app. A failure is
+   * logged, so a conversation that stays put says why, and the next sync
+   * decides through {@link removalDue} whether to try again; one that
+   * worked is no longer visible, so it is not tried again.
+   */
+  private async tryRemoval(key: string, cursor: string, now: number): Promise<void> {
+    const tried = this.removalTried.get(key)
+    const attempts = tried?.cursor === cursor ? tried.attempts + 1 : 1
+    this.removalTried.set(key, { cursor, attempts, at: now })
+    try {
+      const outcome = await this.removeFromApp(key)
+      if (!outcome.removed && outcome.mode !== 'confirm')
+        console.warn(`[attic] ${key} stays in its app (attempt ${attempts} of ${REMOVAL_ATTEMPTS}): ${outcome.detail}`)
+    }
+    catch (error) {
+      console.warn(`[attic] could not take ${key} out of its app (attempt ${attempts} of ${REMOVAL_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   /** Take an archived conversation out of the real app, as far as it allows. */
   async removeFromApp(key: string): Promise<inbox.ArchiveOutcome> {
     const { provider, id, driver } = this.driverFor(key)
@@ -340,10 +377,8 @@ export class Archiver {
           }
           catch {}
         }
-        if (quiet && this.removalTried.get(conversation.key) !== current.conversation.cursor) {
-          this.removalTried.set(conversation.key, current.conversation.cursor)
-          await this.removeFromApp(conversation.key).catch(() => undefined)
-        }
+        if (quiet && this.removalDue(conversation.key, current.conversation.cursor, now))
+          await this.tryRemoval(conversation.key, current.conversation.cursor, now)
         continue
       }
 
@@ -381,10 +416,8 @@ export class Archiver {
             continue
           report.ruled.push(entry.key)
           // Out of the app once quiet; the archived branch above handles the rest.
-          if (removeFromApps && entry.conversation.visible && now - (entry.conversation.lastMessageAt ?? 0) >= RULE_QUIET_MS) {
-            this.removalTried.set(entry.key, entry.conversation.cursor)
-            await this.removeFromApp(entry.key).catch(() => undefined)
-          }
+          if (removeFromApps && entry.conversation.visible && now - (entry.conversation.lastMessageAt ?? 0) >= RULE_QUIET_MS)
+            await this.tryRemoval(entry.key, entry.conversation.cursor, now)
         }
         catch {
           // Tried again on the next sync.

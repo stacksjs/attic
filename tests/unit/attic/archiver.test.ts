@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inbox } from '@stacksjs/chat'
-import { Archiver, RULE_QUIET_MS } from '../../../app/Attic/archiver'
+import { Archiver, REMOVAL_ATTEMPTS, REMOVAL_RETRY_MS, RULE_QUIET_MS } from '../../../app/Attic/archiver'
 import { ALICE, BOB, FakeChatDb } from '../../../app/Attic/sample-db'
 import { Sources } from '../../../app/Attic/sources'
 import { ArchiveStore, ftsQuery, splitKey } from '../../../app/Attic/store'
@@ -289,6 +289,29 @@ describe('always archive', () => {
     await archiver.sync('inbox', now + RULE_QUIET_MS + 120_000)
     expect(controllerCalls).toHaveLength(1)
     expect(controllerCalls[0]).toStartWith('remove ')
+  })
+
+  it('tries a removal that did not take again, a few times, until a new message starts over', async () => {
+    const now = Date.now()
+    chat.add(chat.direct(BOB), { text: 'see you', at: now - RULE_QUIET_MS - 60_000 })
+    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
+    const key = `imessage:direct:${BOB}`
+
+    // The fake Messages never actually deletes, like a removal that failed.
+    await archiver.sync('inbox', now)
+    expect(controllerCalls).toHaveLength(1)
+    await archiver.sync('inbox', now + REMOVAL_RETRY_MS / 2)
+    expect(controllerCalls).toHaveLength(1)
+    for (let attempt = 2; attempt <= REMOVAL_ATTEMPTS + 1; attempt++)
+      await archiver.sync('inbox', now + (attempt - 1) * (REMOVAL_RETRY_MS + 1000))
+    expect(controllerCalls).toHaveLength(REMOVAL_ATTEMPTS)
+
+    // Something new is said: once it is quiet again, it is tried afresh.
+    const later = now + REMOVAL_ATTEMPTS * (REMOVAL_RETRY_MS + 1000)
+    chat.add(chat.direct(BOB), { text: 'one more thing', at: later })
+    await archiver.sync('inbox', later + RULE_QUIET_MS + 1000)
+    expect(controllerCalls).toHaveLength(REMOVAL_ATTEMPTS + 1)
+    expect(store.messageCount(key)).toBe(2)
   })
 
   it('leaves it in the app when archiving is set to Attic only', async () => {
