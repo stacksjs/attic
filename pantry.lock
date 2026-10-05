@@ -7,10 +7,10 @@
       "dependencies": {
         "@stacksjs/actions": "^0.75.56",
         "@stacksjs/chat": "^0.75.59",
-        "@stacksjs/desktop": "^0.2.367",
+        "@stacksjs/desktop": "^0.2.368",
         "@stacksjs/env": "^0.75.41",
         "@stacksjs/path": "^0.75.41",
-        "@stacksjs/stx": "^0.2.367",
+        "@stacksjs/stx": "^0.2.368",
         "@stacksjs/ts-css": "^0.3.8",
         "craft-native": "^0.0.113",
         "pickier": "^0.1.65",
@@ -107,12 +107,12 @@
         "@stacksjs/logging": "0.75.59"
       }
     },
-    "@stacksjs/desktop@0.2.367": {
+    "@stacksjs/desktop@0.2.368": {
       "name": "@stacksjs/desktop",
-      "version": "0.2.367",
+      "version": "0.2.368",
       "source": "npm",
-      "resolved": "https://registry.npmjs.org/@stacksjs/desktop/-/desktop-0.2.367.tgz",
-      "integrity": "sha512-mqFgDDdhO7KGBgRSeNua8Gr1OpksEXXzFnRpr4oD+RdyoV1sjlX83FFbvEDCpwtrs2wBiCK4zKaAdiIrSahlOA==",
+      "resolved": "https://registry.npmjs.org/@stacksjs/desktop/-/desktop-0.2.368.tgz",
+      "integrity": "sha512-2K1pxLoZcFRfIyv7j/aRxCjQNT3vgDFOc8eB75zit/QdQgf9lq8sC21PbVUxNCewtAnlVH4BSAmvMy2g+OrcdA==",
       "dependencies": {
         "craft-native": ">=0.0.104"
       }
@@ -134,21 +134,21 @@
       "resolved": "https://registry.npmjs.org/@stacksjs/path/-/path-0.75.41.tgz",
       "integrity": "sha512-9R3bRjp2b5uxH+x3d4LGKVZSk9i9XPmzz/RmE6vVU+htlaZXddGKMem4TEPvMBjVevqVJbYQheAvnqTutXY6VA=="
     },
-    "@stacksjs/stx@0.2.367": {
+    "@stacksjs/stx@0.2.368": {
       "name": "@stacksjs/stx",
-      "version": "0.2.367",
+      "version": "0.2.368",
       "source": "npm",
-      "resolved": "https://registry.npmjs.org/@stacksjs/stx/-/stx-0.2.367.tgz",
-      "integrity": "sha512-1NPFjShnSiGz1EtRZ6FH07VUjYEWfgOvg2W6gLhf5Mk99oQKt37asw6eMW0Qt7thasFSvR6jfkHf7l6dQ5bn7w==",
+      "resolved": "https://registry.npmjs.org/@stacksjs/stx/-/stx-0.2.368.tgz",
+      "integrity": "sha512-6NuSdr8xoBI6U6SJi3FMMHE0Fs7DlwYCIre3pygfffcLXZq8SAqoEolG/bp2gshUwVKHj98vq4vMyEZdB21gYw==",
       "dependencies": {
         "@stacksjs/clapp": "^0.2.16",
-        "@stacksjs/desktop": "0.2.367",
-        "@stacksjs/sanitizer": "0.2.367",
+        "@stacksjs/desktop": "0.2.368",
+        "@stacksjs/sanitizer": "0.2.368",
         "@stacksjs/ts-css": "^0.3.2",
         "@stacksjs/ts-i18n": "^0.1.11",
-        "bun-plugin-stx": "0.2.367",
+        "bun-plugin-stx": "0.2.368",
         "bunfig": "^0.15.19",
-        "stx-router": "0.2.367",
+        "stx-router": "0.2.368",
         "ts-broadcasting": "^0.0.10",
         "ts-images": "^0.2.22",
         "ts-syntax-highlighter": "^0.2.1"
