@@ -249,6 +249,7 @@
 <script client>
 import { app, clipboard, contextMenu, menu, nativeWindow, notifications, shell, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
 import { reportClientErrors } from '../functions/client-errors'
+import { haptics } from '@stacksjs/mobile'
 import { isMine, pressAndHold, TAPBACKS } from '../functions/tapbacks'
 
 reportClientErrors()
@@ -584,22 +585,34 @@ async function messageMenu(event, m) {
 }
 
 /** Add a tapback, or take back one that is already yours, from the menu or the held bubble alike. */
-async function react(key, m, reaction) {
+async function react(key, m, reaction, felt = false) {
   try {
     await post('/api/react', { key, messageId: m.guid, reaction, remove: isMine(m.reactions, reaction) })
     loadConversation(key)
   }
   catch (error) {
+    if (felt)
+      feel('error')
     say(error.message)
   }
+}
+
+/**
+ * The trackpad's haptics, through the same helper the phone uses: Craft
+ * plays it on a Force Touch trackpad while a finger is on it, and settles
+ * quietly on a Mac without one.
+ */
+function feel(kind) {
+  const done = kind === 'hold' ? haptics.impact('medium') : kind === 'pick' ? haptics.selection() : haptics.notification('error')
+  Promise.resolve(done).catch(() => {})
 }
 
 /*
  * Press and hold a bubble for its tapbacks, the way a long press works on
  * the phone. The bar is drawn in the page, above the bubble, and placed from
  * where the bubble was when the hold fired; scrolling or resizing closes it
- * rather than leaving it pointing at the wrong message. A Mac has no haptics
- * for Craft to reach, so there are none here.
+ * rather than leaving it pointing at the wrong message. The hold and the
+ * choice each tap the trackpad, as the phone's do.
  */
 const tapbackBar = state(null)
 const bubbleHold = pressAndHold((m, target) => {
@@ -609,6 +622,7 @@ const bubbleHold = pressAndHold((m, target) => {
   const rect = target.getBoundingClientRect()
   // Too close to the header to fit above: open below instead.
   const below = rect.top < 110
+  feel('hold')
   tapbackBar.set({
     key: d.key,
     m,
@@ -641,8 +655,10 @@ function closeTapbacks() {
 async function chooseTapback(reaction) {
   const bar = tapbackBar()
   tapbackBar.set(null)
-  if (bar)
-    await react(bar.key, bar.m, reaction)
+  if (bar) {
+    feel('pick')
+    await react(bar.key, bar.m, reaction, true)
+  }
 }
 
 // A click anywhere but the bar closes it; so does the window changing size.
