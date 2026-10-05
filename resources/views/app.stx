@@ -29,6 +29,9 @@
       --chip: rgba(0, 0, 0, .05);
       --amber: #bf6f00;
       --window-controls-height: var(--craft-window-controls-height, 28px);
+      /* The title bar's height: the list's and the transcript's header rows,
+         the way Messages and Mail line theirs up under one toolbar. */
+      --toolbar-height: 52px;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -131,21 +134,52 @@
     .toolbar-button:active { background: var(--sidebar-selected); }
     .toolbar-button[disabled] { opacity: .4; }
 
+    /* Messages' bubbles: 18pt corners, and a tail on the last bubble of each
+       run, drawn as a curve cut out of the pane's own colour. */
     .bubble {
-      max-width: min(70%, 520px); padding: 6px 12px; border-radius: 18px;
+      max-width: 100%; padding: 6px 12px 7px; border-radius: 18px; line-height: 1.32;
       white-space: pre-wrap; overflow-wrap: anywhere; position: relative;
     }
     .bubble.in { background: var(--bubble-in); color: var(--bubble-in-text); }
     .bubble.out { background: var(--bubble-imessage); color: #fff; }
     .bubble.out.sms { background: var(--bubble-sms); }
     .bubble.attic { box-shadow: inset 0 0 0 1.5px var(--amber); }
+    .bubble.tail::before, .bubble.tail::after { content: ''; position: absolute; bottom: 0; height: 17px; width: 20px; }
+    .bubble.out.tail::before { right: -7px; background: inherit; border-bottom-left-radius: 16px 14px; }
+    .bubble.out.tail::after { right: -20px; background: var(--pane-bg); border-bottom-left-radius: 10px; }
+    .bubble.in.tail::before { left: -7px; background: inherit; border-bottom-right-radius: 16px 14px; }
+    .bubble.in.tail::after { left: -20px; background: var(--pane-bg); border-bottom-right-radius: 10px; }
+    /* One to three emoji on their own are drawn large, without a bubble. */
+    .jumbo { font-size: 42px; line-height: 1.1; padding: 0 2px; position: relative; }
+    /* Tapbacks sit on the bubble's top corner, as Messages draws them. */
     .reactions {
-      position: absolute; top: -12px; display: flex; gap: 2px;
-      background: var(--pane-bg); border-radius: 10px; padding: 1px 4px;
-      box-shadow: 0 0 0 1px var(--separator); font-size: 11px;
+      position: absolute; top: -16px; z-index: 2; display: flex; gap: 1px;
+      background: var(--bubble-in); border-radius: 14px; padding: 3px 6px;
+      box-shadow: 0 0 0 2px var(--pane-bg); font-size: 12px; line-height: 1;
     }
-    .bubble.in .reactions { right: -10px; }
-    .bubble.out .reactions { left: -10px; }
+    .bubble.in .reactions, .jumbo.in .reactions { right: -14px; }
+    .bubble.out .reactions, .jumbo.out .reactions { left: -14px; }
+    /* The message a reply answers: a faded copy of its bubble above it. */
+    .quote {
+      font-size: 12px; padding: 4px 10px; border-radius: 14px; margin-bottom: 2px; max-width: 100%;
+      background: var(--bubble-in); color: var(--bubble-in-text); opacity: .55;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .msg-avatar { width: 28px; height: 28px; font-size: 11px; }
+    .header-avatar { width: 24px; height: 24px; font-size: 10px; }
+    /* Where Messages has its compose field: replying happens in the app itself. */
+    .composer {
+      width: 100%; height: 30px; padding: 0 14px; border-radius: 15px; text-align: left;
+      display: flex; align-items: center; gap: 8px;
+      border: 1px solid var(--separator); background: transparent; color: var(--secondary);
+    }
+    .composer:hover { background: var(--chip); }
+    .icon-button {
+      display: inline-grid; place-items: center; width: 30px; height: 28px; border-radius: 7px;
+      border: 0; background: transparent; color: var(--secondary);
+    }
+    .icon-button:hover { background: var(--chip); color: var(--label); }
+    .icon-button[disabled] { opacity: .35; }
 
     .search {
       width: 100%; height: 28px; box-sizing: border-box; padding: 0 8px 0 26px;
@@ -155,8 +189,8 @@
     .search:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
 
     .scroller { overflow-y: auto; overscroll-behavior: contain; }
-    .scroller::-webkit-scrollbar { width: 8px; }
-    .scroller::-webkit-scrollbar-thumb { background: var(--tertiary); border-radius: 4px; }
+    /* No custom scrollbar: WebKit then draws the system's overlay scrollers,
+       which appear while scrolling, as Messages' do. */
 
     mark { background: color-mix(in srgb, #ffd60a 55%, transparent); color: inherit; border-radius: 2px; }
 
@@ -253,13 +287,29 @@ function when(ms) {
   return shortDate.format(ms)
 }
 
-function dayLabel(ms) {
+const monthDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+const monthDayYear = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+
+/** A transcript timestamp as Messages writes one: the day in bold, then the time. */
+function stamp(ms) {
   const today = startOfDay(Date.now())
-  if (ms >= today)
-    return `Today ${timeOnly.format(ms)}`
-  if (ms >= today - 86_400_000)
-    return `Yesterday ${timeOnly.format(ms)}`
-  return `${longDate.format(ms)} at ${timeOnly.format(ms)}`
+  const day = ms >= today
+    ? 'Today'
+    : ms >= today - 86_400_000
+      ? 'Yesterday'
+      : ms >= today - 6 * 86_400_000
+        ? weekday.format(ms)
+        : new Date(ms).getFullYear() === new Date().getFullYear() ? monthDay.format(ms) : monthDayYear.format(ms)
+  return { day, time: timeOnly.format(ms) }
+}
+
+const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null
+/** One to three emoji and nothing else: drawn large, without a bubble, as Messages does. */
+function isJumbo(text) {
+  if (!text || !segmenter || !/^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(text) || !/\p{Extended_Pictographic}/u.test(text))
+    return false
+  const graphemes = [...segmenter.segment(text.trim())].filter(g => g.segment.trim())
+  return graphemes.length > 0 && graphemes.length <= 3
 }
 
 function bytes(n) {
@@ -301,8 +351,34 @@ function unsentText(m) {
   return m.isFromMe ? 'You unsent a message' : `${m.senderName ?? 'Someone'} unsent a message`
 }
 
-function bubbleClass(m) {
-  return [m.isFromMe ? 'out' : 'in', m.inApp ? '' : 'attic'].join(' ')
+function bubbleClass(row) {
+  const m = row.m
+  return [m.isFromMe ? 'out' : 'in', m.service === 'SMS' ? 'sms' : '', m.inApp ? '' : 'attic', row.tail ? 'tail' : ''].join(' ')
+}
+
+/** A sender's initials for their picture, when there is no photo. */
+function initialsOf(name) {
+  const words = (name ?? '').replace(/[^\p{L}\p{N}\s]/gu, '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0)
+    return '•'
+  return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase()
+}
+
+/** The compose field's place: where replying happens. */
+function composerLabel(d) {
+  if (!d)
+    return ''
+  if (d.state === 'archived' && !d.inApp)
+    return 'Move to Inbox to reply'
+  return d.provider === 'imessage' ? 'Reply in Messages' : `Reply in ${appName(d.provider)}`
+}
+
+function compose() {
+  const d = detail()
+  if (d?.state === 'archived' && !d.inApp)
+    unarchive()
+  else
+    openInMessages()
 }
 
 /** Your own bubbles take the app's colour: iMessage blue, WhatsApp teal, Slack berry, Discord blurple. */
@@ -339,20 +415,51 @@ function isFile(a) {
 }
 
 /** The transcript, newest first (the scroller is column-reverse), with a day header where the gap is large. */
+/** Messages starts a new run of bubbles, with its own tail, after this long. */
+const RUN_GAP_MS = 5 * 60_000
+/** And writes a timestamp over the conversation after this long. */
+const TIMESTAMP_GAP_MS = 30 * 60_000
+
+function sameRun(a, b) {
+  return !!a && !!b && a.kind === 'message' && b.kind === 'message' && a.isFromMe === b.isFromMe
+    && a.sender === b.sender && Math.abs(b.sentAt - a.sentAt) < RUN_GAP_MS
+}
+
+/**
+ * What the transcript draws, newest first (the scroller runs bottom-up):
+ * timestamps where the conversation paused, and for each message whether it
+ * starts a run (space above, the sender's name in a group) and whether it
+ * ends one (the tail, and the sender's picture beside it in a group).
+ */
 const timeline = derived(() => {
   const rows = []
-  // WhatsApp notices with nothing to say (polls, pins and the like the driver
-  // cannot read) would only repeat "Conversation updated"; leave them out.
-  const all = detail()?.provider === 'whatsapp' ? messages().filter(m => m.kind !== 'event' || m.text) : messages()
+  // Reactions are drawn on the message they react to. WhatsApp notices with
+  // nothing to say (polls, pins and the like the driver cannot read) would
+  // only repeat "Conversation updated"; leave them out.
+  const all = messages().filter(m => m.kind !== 'reaction' && (detail()?.provider !== 'whatsapp' || m.kind !== 'event' || m.text))
+  const group = detail()?.kind === 'group'
   for (let i = all.length - 1; i >= 0; i--) {
     const m = all[i]
     const prev = all[i - 1]
-    rows.push({ type: 'message', id: m.guid, m, showSender: detail()?.kind === 'group' && !m.isFromMe && (!prev || prev.sender !== m.sender || prev.isFromMe) })
-    // Pushed bottom-up: the day header sits directly above its message, and
+    const next = all[i + 1]
+    const pausedBefore = !prev || m.sentAt - prev.sentAt > TIMESTAMP_GAP_MS
+    const pausedAfter = !next || next.sentAt - m.sentAt > TIMESTAMP_GAP_MS
+    const starts = pausedBefore || !sameRun(prev, m)
+    const ends = pausedAfter || !sameRun(m, next)
+    rows.push({
+      type: 'message',
+      id: m.guid,
+      m,
+      starts,
+      tail: ends,
+      showSender: group && !m.isFromMe && starts,
+      avatarSlot: group && !m.isFromMe,
+      showAvatar: group && !m.isFromMe && ends,
+    })
+    // Pushed bottom-up: the timestamp sits directly above its message, and
     // the "kept by Attic" divider above that.
-    const gap = !prev || m.sentAt - prev.sentAt > 60 * 60_000
-    if (gap)
-      rows.push({ type: 'day', id: `day-${m.guid}`, label: dayLabel(m.sentAt) })
+    if (pausedBefore)
+      rows.push({ type: 'day', id: `day-${m.guid}`, ...stamp(m.sentAt) })
     if (prev && !prev.inApp && m.inApp)
       rows.push({ type: 'kept', id: `kept-${m.guid}` })
   }
@@ -1054,15 +1161,17 @@ onMount(async () => {
 
   <!-- Conversation list. -->
   <section :if="anyConnected() || !needsAccess()" class="w-[340px] shrink-0 flex flex-col border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
-    <div class="shrink-0 px-3 pb-2" style="padding-top: calc(var(--window-controls-height) + 14px)">
-      <div class="flex items-baseline justify-between px-1 mb-2">
-        <h2 class="text-[17px] font-bold m-0">{{ listTitle() }}</h2>
-        <span class="muted text-[11.5px]">{{ list().length.toLocaleString() }} {{ list().length === 1 ? 'conversation' : 'conversations' }}</span>
+    <div class="shrink-0 px-3 pb-2">
+      <!-- The title-bar row. With the sidebar collapsed the window buttons sit here, so it starts after them. -->
+      <div class="flex items-center gap-2" style="height: var(--toolbar-height); padding-left: max(4px, calc(var(--craft-window-controls-inset-x, 0px) + var(--craft-window-controls-width, 0px) - 4px))">
+        <div class="min-w-0 flex-1">
+          <h2 class="text-[15px] font-bold leading-tight m-0 truncate">{{ listTitle() }}</h2>
+          <div class="muted text-[11px] leading-tight truncate">{{ bulkJob() && !bulkJob().finished ? `Archiving ${bulkJob().done.toLocaleString()} of ${bulkJob().total.toLocaleString()}…` : `${list().length.toLocaleString()} ${list().length === 1 ? 'conversation' : 'conversations'}` }}</div>
+        </div>
+        <button :if="view() === 'inbox' && !showingResults()" class="icon-button" @click="openBulk()" title="Clean up: archive everything that has gone quiet">
+          <span class="i-hugeicons-clean text-[17px]"></span>
+        </button>
       </div>
-      <button :if="view() === 'inbox' && !showingResults()" class="toolbar-button w-full justify-center mb-2" style="background: var(--chip)" @click="openBulk()" title="Archive everything that has gone quiet">
-        <span class="i-hugeicons-clean text-[15px]"></span>
-        <span>{{ bulkJob() && !bulkJob().finished ? `Archiving ${bulkJob().done.toLocaleString()} of ${bulkJob().total.toLocaleString()}…` : 'Clean up…' }}</span>
-      </button>
       <div class="relative">
         <span class="i-hugeicons-search-01 absolute left-2 top-[7px] text-[14px] muted"></span>
         <input id="search" class="search selectable" type="search" placeholder="Search everything Attic kept" x-model="query" autocomplete="off" spellcheck="false">
@@ -1136,25 +1245,29 @@ onMount(async () => {
       </div>
     </div>
 
-    <header :if="detail()" class="shrink-0 flex items-center gap-3 px-4 border-b" style="height: calc(var(--window-controls-height) + 24px); border-color: var(--separator)">
-      <div class="avatar large relative shrink-0">
-        <span :if="detail()?.kind === 'direct' && detail()?.initials !== '#'">{{ detail()?.initials }}</span>
-        <span :if="detail()?.kind !== 'direct' || detail()?.initials === '#'" class="text-[15px]" :class="detail()?.kind === 'direct' ? 'i-hugeicons-user' : detail()?.kind === 'group' ? 'i-hugeicons-user-group' : 'i-hugeicons-message-multiple-02'"></span>
-        <img :if="showAvatar(detail()?.avatar)" class="photo" :src="detail()?.avatar" alt="" @error="avatarFailed(detail()?.avatar)">
+    <!-- As Messages draws it: the picture and name centred under the title bar, actions at the right. -->
+    <header :if="detail()" class="shrink-0 grid items-center gap-2 px-3 border-b" style="height: var(--toolbar-height); grid-template-columns: 1fr minmax(0, auto) 1fr; border-color: var(--separator)">
+      <div></div>
+      <div class="flex flex-col items-center min-w-0 max-w-[380px]" :title="`${detail()?.subtitle ?? ''}${keptSummary(detail())}`">
+        <div class="avatar header-avatar relative shrink-0">
+          <span :if="detail()?.kind === 'direct' && detail()?.initials !== '#'">{{ detail()?.initials }}</span>
+          <span :if="detail()?.kind !== 'direct' || detail()?.initials === '#'" class="text-[14px]" :class="detail()?.kind === 'direct' ? 'i-hugeicons-user' : detail()?.kind === 'group' ? 'i-hugeicons-user-group' : 'i-hugeicons-message-multiple-02'"></span>
+          <img :if="showAvatar(detail()?.avatar)" class="photo" :src="detail()?.avatar" alt="" @error="avatarFailed(detail()?.avatar)">
+        </div>
+        <div class="text-[11px] font-medium leading-tight mt-[3px] max-w-full truncate">{{ detail()?.title }}</div>
       </div>
-      <div class="min-w-0 flex-1">
-        <div class="font-semibold text-[14px] truncate">{{ detail()?.title }}</div>
-        <div class="muted text-[11.5px] truncate">{{ detail()?.subtitle }}{{ keptSummary(detail()) }}<span :if="detail()?.rule" class="tag ml-1.5" title="New messages reach you, then go into this archive">Always archived</span></div>
+      <div class="flex items-center justify-end gap-0.5 min-w-0">
+        <span :if="detail()?.rule" class="tag mr-1.5 shrink-0" title="New messages reach you, then go into this archive">Always archived</span>
+        <button :if="detail()?.state !== 'archived'" class="icon-button" :title="`${archiveLabel()}: ${archiveHint(detail())}`" :disabled="busy() !== ''" @click="archive()">
+          <span class="i-hugeicons-archive-02 text-[17px]"></span>
+        </button>
+        <button :if="detail()?.state === 'archived'" class="icon-button" title="Move to Inbox (⇧⌘U)" @click="unarchive()">
+          <span class="i-hugeicons-inbox-upload text-[17px]"></span>
+        </button>
+        <button class="icon-button" :title="showHint(detail())" :disabled="!detail()?.url" @click="openInMessages()">
+          <span class="i-hugeicons-share-08 text-[17px]"></span>
+        </button>
       </div>
-      <button :if="detail()?.state !== 'archived'" class="toolbar-button" :title="archiveHint(detail())" :disabled="busy() !== ''" @click="archive()">
-        <span class="i-hugeicons-archive-02 text-[16px]"></span>{{ archiveLabel() }}
-      </button>
-      <button :if="detail()?.state === 'archived'" class="toolbar-button" title="Move to Inbox (⇧⌘U)" @click="unarchive()">
-        <span class="i-hugeicons-inbox-upload text-[16px]"></span>Move to Inbox
-      </button>
-      <button class="toolbar-button" :title="showHint(detail())" :disabled="!detail()?.url" @click="openInMessages()">
-        <span class="i-hugeicons-message-02 text-[16px]"></span>
-      </button>
     </header>
 
     <div :if="detail() && !detail()?.inApp" class="shrink-0 px-4 pt-3">
@@ -1168,40 +1281,55 @@ onMount(async () => {
     </div>
 
     <!-- column-reverse keeps the newest message in view without scripting the scroll. -->
-    <div :if="detail()" class="scroller selectable flex-1 flex flex-col-reverse px-5 py-4 gap-[3px]">
+    <div :if="detail()" class="scroller selectable flex-1 flex flex-col-reverse pl-4 pr-5 pt-4 pb-3">
       <div :for="row in timeline()" :key="row.id" class="contents">
-        <div :if="row.type === 'day'" class="text-center text-[11px] muted font-medium pt-4 pb-1">{{ row.label }}</div>
+        <div :if="row.type === 'day'" class="text-center text-[11px] muted pt-5 pb-1.5"><span class="font-semibold">{{ row.day }}</span> {{ row.time }}</div>
         <div :if="row.type === 'kept'" class="flex items-center gap-2 py-3 text-[11px] muted">
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
           <span>Above: kept by Attic after {{ appName(detail()?.provider) }} removed it</span>
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
         </div>
-        <div :if="row.type === 'message' && row.m.kind === 'event'" class="text-center text-[11px] muted py-1">{{ eventText(row.m) }}</div>
-        <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex flex-col" :class="row.m.isFromMe ? 'items-end' : 'items-start'" :style="row.m.reactions.length ? 'margin-top: 12px' : ''">
-          <div :if="row.showSender" class="flex items-center gap-1.5 text-[11px] muted px-3 pt-1">
-            <span :if="showAvatar(row.m.senderAvatar)" class="avatar small relative shrink-0"><img class="photo" :src="row.m.senderAvatar" alt="" loading="lazy" @error="avatarFailed(row.m.senderAvatar)"></span>
-            <span>{{ row.m.senderName }}</span>
-          </div>
-          <div :for="a in row.m.attachments" class="mb-[3px]">
-            <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[16px]" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
-            <video :if="isVideo(a)" :src="a.url" controls preload="metadata" class="block max-w-[320px] max-h-[360px] rounded-[16px] bg-black"></video>
-            <audio :if="isAudio(a)" :src="a.url" controls preload="metadata" class="block w-[260px]"></audio>
-            <div :if="isFile(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
-              <span class="i-hugeicons-attachment-01 text-[15px]"></span>
-              <span>{{ a.name }}</span>
-              <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
+        <div :if="row.type === 'message' && row.m.kind === 'event'" class="text-center text-[11px] muted py-1.5">{{ eventText(row.m) }}</div>
+        <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex items-end gap-2" :class="row.m.isFromMe ? 'justify-end' : 'justify-start'" :style="`margin-top: ${row.m.reactions.length ? 16 : row.starts ? 8 : 2}px`">
+          <!-- In a group, the sender's picture beside the last bubble of their run. -->
+          <div :if="row.avatarSlot" class="w-[28px] shrink-0">
+            <div :if="row.showAvatar" class="avatar msg-avatar relative">
+              <span>{{ initialsOf(row.m.senderName) }}</span>
+              <img :if="showAvatar(row.m.senderAvatar)" class="photo" :src="row.m.senderAvatar" alt="" loading="lazy" @error="avatarFailed(row.m.senderAvatar)">
             </div>
           </div>
-          <div :if="quoted(row.m)" class="text-[11.5px] muted px-3 py-1 mb-[2px] max-w-[70%] truncate rounded-[10px]" style="border-left: 2.5px solid var(--separator); background: var(--chip)">{{ quoted(row.m) }}</div>
-          <div :if="row.m.text && !row.m.unsent" class="bubble" :class="bubbleClass(row.m)" :style="bubbleStyle(row.m)">
-            <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
-          <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
-          <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
+          <div class="flex flex-col min-w-0 max-w-[min(68%,520px)]" :class="row.m.isFromMe ? 'items-end' : 'items-start'">
+            <div :if="row.showSender" class="text-[11px] muted px-3 pb-[2px]">{{ row.m.senderName }}</div>
+            <div :if="quoted(row.m)" class="quote">{{ quoted(row.m) }}</div>
+            <div :for="a in row.m.attachments" class="mb-[2px]">
+              <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[18px]" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
+              <video :if="isVideo(a)" :src="a.url" controls preload="metadata" class="block max-w-[320px] max-h-[360px] rounded-[18px] bg-black"></video>
+              <audio :if="isAudio(a)" :src="a.url" controls preload="metadata" class="block w-[260px]"></audio>
+              <div :if="isFile(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
+                <span class="i-hugeicons-attachment-01 text-[15px]"></span>
+                <span>{{ a.name }}</span>
+                <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
+              </div>
+            </div>
+            <div :if="row.m.text && !row.m.unsent && isJumbo(row.m.text)" class="jumbo" :class="row.m.isFromMe ? 'out' : 'in'">
+              <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
+            <div :if="row.m.text && !row.m.unsent && !isJumbo(row.m.text)" class="bubble" :class="bubbleClass(row)" :style="bubbleStyle(row.m)">
+              <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
+            <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
+            <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
+          </div>
         </div>
       </div>
       <div :if="hasEarlier()" class="text-center py-3">
         <button class="toolbar-button muted" @click="loadEarlier()">Show earlier messages</button>
       </div>
+    </div>
+    <!-- Where Messages has its compose field. Attic keeps; the app itself replies. -->
+    <div :if="detail()" class="shrink-0 px-4 pt-1 pb-3">
+      <button class="composer" :title="showHint(detail())" :disabled="!detail()?.url && detail()?.state !== 'archived'" @click="compose()">
+        <span class="flex-1 truncate">{{ composerLabel(detail()) }}</span>
+        <span class="i-hugeicons-arrow-up-right-01 text-[15px]"></span>
+      </button>
     </div>
   </section>
 

@@ -100,6 +100,7 @@ function toStored(message: inbox.InboxMessage): Omit<StoredMessage, 'conversatio
     reaction: message.reaction,
     reactionRemoved: message.reactionRemoved,
     replyToGuid: message.replyToId,
+    service: message.service ?? null,
     editedAt: message.editedAt,
     unsent: message.unsent,
     cursor: message.cursor,

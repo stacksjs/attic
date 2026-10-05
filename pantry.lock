@@ -6,7 +6,7 @@
       "name": "attic",
       "dependencies": {
         "@stacksjs/actions": "^0.75.56",
-        "@stacksjs/chat": "^0.75.55",
+        "@stacksjs/chat": "^0.75.59",
         "@stacksjs/desktop": "^0.2.363",
         "@stacksjs/env": "^0.75.41",
         "@stacksjs/path": "^0.75.41",
@@ -97,14 +97,14 @@
       },
       "optionalPeers": ["craft-native", "pickier"]
     },
-    "@stacksjs/chat@0.75.55": {
+    "@stacksjs/chat@0.75.59": {
       "name": "@stacksjs/chat",
-      "version": "0.75.55",
+      "version": "0.75.59",
       "source": "npm",
-      "resolved": "https://registry.npmjs.org/@stacksjs/chat/-/chat-0.75.55.tgz",
-      "integrity": "sha512-2WjZfNqsCyLyu/hw9Ti/CvgsmlnYvkWayUeWR6xw7CMcdMntwazXGpi4FShFTL5L2PVvy31Win4qYGWmm5RTSQ==",
+      "resolved": "https://registry.npmjs.org/@stacksjs/chat/-/chat-0.75.59.tgz",
+      "integrity": "sha512-n0iUGOTR9g77p7LDqKvcL5xIBvm2XkEWkqo9i1sqrodSdgSJrn0oTWvvM9siD2spVYscr8/KbokOQkdhtiDl3w==",
       "dependencies": {
-        "@stacksjs/logging": "0.75.55"
+        "@stacksjs/logging": "0.75.59"
       }
     },
     "@stacksjs/desktop@0.2.363": {

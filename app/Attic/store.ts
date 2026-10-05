@@ -115,6 +115,8 @@ export interface StoredMessage {
   reaction: string | null
   reactionRemoved: boolean
   replyToGuid: string | null
+  /** Messages' `iMessage`, `SMS` or `RCS`: the bubble's colour. */
+  service: string | null
   editedAt: number | null
   unsent: boolean
   cursor: string | null
@@ -291,6 +293,7 @@ interface MessageDbRow {
   reaction_type: number
   reaction_removed: number
   reply_to_guid: string | null
+  service: string | null
   edited_at: number | null
   unsent: number
   group_title: string | null
@@ -409,6 +412,7 @@ export class ArchiveStore {
       UPDATE messages SET text = NULLIF(TRIM(REPLACE(text, char(65532), '')), '')
       WHERE text LIKE '%' || char(65532) || '%'
     `)
+    this.repairReplyLinks()
     const unprefixed = `key NOT LIKE 'imessage:%' AND key NOT LIKE 'whatsapp:%' AND key NOT LIKE 'slack:%' AND key NOT LIKE 'discord:%'`
     if ((this.db.query(`SELECT COUNT(*) AS n FROM conversations WHERE ${unprefixed}`).get() as { n: number }).n === 0)
       return
@@ -416,6 +420,36 @@ export class ArchiveStore {
       this.db.exec(`UPDATE conversations SET key = 'imessage:' || key WHERE ${unprefixed}`)
       for (const table of ['messages', 'attachments'])
         this.db.exec(`UPDATE ${table} SET conversation_key = 'imessage:' || conversation_key WHERE ${unprefixed.replaceAll('key', 'conversation_key')}`)
+    })
+  }
+
+  /**
+   * Until @stacksjs/chat 0.75.58 an iMessage "reply" was read from
+   * `reply_to_guid`, which Messages fills with the previous message in the
+   * chat for nearly every row; real replies are in `thread_originator_guid`.
+   * Archives copied before then hold a reply link on almost every message,
+   * each to the one just before it, and drew a quote above every bubble.
+   *
+   * Those links are dropped once: a link to the message directly before
+   * (nothing sent in between) is that column, not a reply. A reply to
+   * anything further back is kept. Messages still in Messages get their real
+   * link back the next time they are read.
+   */
+  private repairReplyLinks(): void {
+    if (this.db.query(`SELECT 1 FROM settings WHERE key = 'repair:imessage-reply-links'`).get())
+      return
+    this.transaction(() => {
+      this.db.exec(`
+        UPDATE messages SET reply_to_guid = NULL
+        WHERE conversation_key LIKE 'imessage:%' AND reply_to_guid IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM messages target, messages between_
+            WHERE target.guid = messages.reply_to_guid
+              AND between_.conversation_key = messages.conversation_key
+              AND between_.sent_at > target.sent_at AND between_.sent_at < messages.sent_at
+          )
+      `)
+      this.db.exec(`INSERT INTO settings (key, value) VALUES ('repair:imessage-reply-links', '1')`)
     })
   }
 
@@ -453,9 +487,11 @@ export class ArchiveStore {
   upsertMessages(conversationKey: string, messages: Omit<StoredMessage, 'conversationKey' | 'attachments'>[]): void {
     const insert = this.db.query(`
       INSERT INTO messages (guid, conversation_key, kind, text, is_from_me, sent_at, sender, sender_name,
-        target_guid, reaction, reaction_removed, reply_to_guid, edited_at, unsent, cursor, chat_guid)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, '')
+        target_guid, reaction, reaction_removed, reply_to_guid, edited_at, unsent, cursor, service, chat_guid)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, '')
       ON CONFLICT (guid) DO UPDATE SET
+        reply_to_guid = excluded.reply_to_guid,
+        service = COALESCE(excluded.service, messages.service),
         text = CASE WHEN excluded.unsent = 1 THEN messages.text ELSE COALESCE(excluded.text, messages.text) END,
         sender_name = COALESCE(excluded.sender_name, messages.sender_name),
         edited_at = COALESCE(excluded.edited_at, messages.edited_at),
@@ -465,7 +501,7 @@ export class ArchiveStore {
     this.transaction(() => {
       for (const m of messages) {
         insert.run(m.guid, conversationKey, m.kind, m.text, m.isFromMe ? 1 : 0, m.sentAt, m.sender, m.senderName,
-          m.targetGuid, m.reaction, m.reactionRemoved ? 1 : 0, m.replyToGuid, m.editedAt, m.unsent ? 1 : 0, m.cursor)
+          m.targetGuid, m.reaction, m.reactionRemoved ? 1 : 0, m.replyToGuid, m.editedAt, m.unsent ? 1 : 0, m.cursor, m.service ?? null)
       }
     })
   }
@@ -652,6 +688,7 @@ function toStoredMessage(row: MessageDbRow, attachments: StoredAttachment[]): St
     reaction: row.reaction ?? (row.reaction_type ? REACTION_EMOJI[legacyRemoved ? row.reaction_type - 1000 : row.reaction_type] ?? '•' : null),
     reactionRemoved: row.reaction_removed === 1 || legacyRemoved,
     replyToGuid: row.reply_to_guid,
+    service: row.service ?? null,
     editedAt: row.edited_at,
     unsent: row.unsent === 1,
     cursor: row.cursor ?? (row.source_rowid ? String(row.source_rowid) : null),
