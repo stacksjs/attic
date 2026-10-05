@@ -172,6 +172,11 @@
         "ts-css": "./dist/bin/cli.js"
       }
     },
+    "baileys@7.0.0-rc14": {
+      "name": "baileys",
+      "version": "7.0.0-rc14",
+      "source": "npm"
+    },
     "better-dx@0.2.36": {
       "name": "better-dx",
       "version": "0.2.36",

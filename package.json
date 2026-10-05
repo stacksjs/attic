@@ -106,7 +106,8 @@
     "pickier": "^0.1.65",
     "stacks": "^0.75.41",
     "ts-images": "^0.2.25",
-    "ts-qr-codes": "^0.1.8"
+    "ts-qr-codes": "^0.1.8",
+    "baileys": "^7.0.0-rc14"
   },
   "workspaces": [
     "storage/framework",

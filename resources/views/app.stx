@@ -225,6 +225,7 @@
       display: flex; gap: 10px; align-items: flex-start;
       padding: 10px 12px; border-radius: 10px; background: var(--chip);
     }
+    .qr svg { width: 100%; height: 100%; display: block; }
   </style>
 </head>
 <body>
@@ -240,6 +241,10 @@ const source = state('all')
 const sources = state([])
 const connecting = state('')
 const tokenDraft = state('')
+/** The Slack workspaces Attic is signed in to, by name. */
+const slackWorkspaces = state([])
+/** Attic's WhatsApp device: the code to scan while linking, the number once linked. */
+const whatsappLink = state(null)
 const userDraft = state('')
 const inbox = state([])
 const archived = state([])
@@ -1081,7 +1086,7 @@ function appName(provider) {
 
 /** Read from this Mac rather than through a token: set up in System Settings, not a sheet. */
 function isLocal(provider) {
-  return provider === 'imessage' || provider === 'whatsapp'
+  return provider === 'imessage'
 }
 
 function sourceDetail(provider) {
@@ -1137,6 +1142,52 @@ function openConnect(provider) {
   connecting.set(provider)
   tokenDraft.set('')
   userDraft.set('')
+  if (provider === 'whatsapp')
+    startWhatsAppLink()
+  if (provider === 'slack')
+    loadSlackWorkspaces()
+}
+
+async function loadSlackWorkspaces() {
+  try {
+    slackWorkspaces.set((await api('/api/slack/workspaces')).workspaces)
+  }
+  catch {
+    slackWorkspaces.set([])
+  }
+}
+
+async function removeSlackWorkspace(workspace) {
+  const result = await post('/api/sources/disconnect', { provider: 'slack', teamId: workspace.teamId })
+  sources.set(result.sources)
+  say(`Signed out of ${workspace.team}.`)
+  await loadSlackWorkspaces()
+  await loadLists()
+}
+
+/** Show a code to scan, unless Attic is linked already. */
+async function startWhatsAppLink() {
+  try {
+    const current = await api('/api/whatsapp')
+    whatsappLink.set(current)
+    if (current.available && current.phase === 'signed-out')
+      whatsappLink.set(await post('/api/whatsapp/link'))
+  }
+  catch (error) {
+    say(error.message)
+  }
+}
+
+/** Close the sheet; a code nobody scanned stops being offered. */
+function closeConnect() {
+  if (connecting() === 'whatsapp' && whatsappLink()?.phase === 'linking')
+    post('/api/whatsapp/cancel').catch(() => {})
+  connecting.set('')
+}
+
+function whatsappLinked() {
+  const phase = whatsappLink()?.phase
+  return phase === 'open' || phase === 'connecting'
 }
 
 /**
@@ -1180,8 +1231,19 @@ async function saveConnect() {
       : { provider, token: tokenDraft(), account: 'user' })
     sources.set(result.sources)
     const state = result.sources.find(s => s.provider === provider)
-    connecting.set('')
-    say(state?.status.connected ? `${state.label} is connected.` : (state?.status.detail ?? 'Saved.'))
+    if (provider === 'slack') {
+      // The sheet stays open, so the next workspace can follow.
+      const before = new Set(slackWorkspaces().map(w => w.teamId))
+      await loadSlackWorkspaces()
+      const added = slackWorkspaces().find(w => !before.has(w.teamId)) ?? slackWorkspaces().at(-1)
+      tokenDraft.set('')
+      userDraft.set('')
+      say(added ? `Signed in to ${added.team}.` : 'Slack is connected.')
+    }
+    else {
+      connecting.set('')
+      say(state?.status.connected ? `${state.label} is connected.` : (state?.status.detail ?? 'Saved.'))
+    }
     await loadLists()
   }
   catch (error) {
@@ -1427,6 +1489,16 @@ function listen() {
     }
     if (event.type === 'incoming')
       notifyIncoming(event)
+    if (event.type === 'sources')
+      await loadStatus().catch(() => {})
+    if (event.type === 'whatsapp') {
+      const was = whatsappLink()?.phase
+      whatsappLink.set(event.link)
+      if (event.link.phase === 'open' && was === 'linking') {
+        say('WhatsApp is linked. Your chats are on their way from the phone.')
+        await refresh()
+      }
+    }
     if (event.type === 'changed') {
       await loadLists()
       if (selectedKey())
@@ -1443,6 +1515,7 @@ const presenting = params.get('presentation') !== null
 
 onMount(async () => {
   await refresh()
+  api('/api/whatsapp').then(link => whatsappLink.set(link)).catch(() => {})
   loadRules()
   installNativeSidebar()
   // ?q= opens with a search filled in.
@@ -1505,9 +1578,10 @@ onMount(async () => {
     <div class="max-w-[460px] text-center px-6">
       <img src="/images/app-icon.png" alt="" class="w-[88px] h-[88px] mx-auto mb-4">
       <h1 class="text-[22px] font-semibold mb-2">Every conversation, one calm place</h1>
-      <p class="muted mb-5">Attic reads iMessage on this Mac, and Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Attic on in Privacy &amp; Security and this window carries on by itself.</p>
-      <div class="flex gap-2 justify-center">
+      <p class="muted mb-5">Attic reads iMessage on this Mac, links to WhatsApp as a device of its own, and brings in Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Attic on in Privacy &amp; Security and this window carries on by itself.</p>
+      <div class="flex flex-wrap gap-2 justify-center whitespace-nowrap">
         <button class="toolbar-button" style="background: var(--accent); color: #fff; height: 32px; padding: 0 16px" @click="grantAccess()">Open Privacy &amp; Security</button>
+        <button class="toolbar-button" style="height: 32px; padding: 0 14px; background: var(--chip)" @click="openConnect('whatsapp')">Link WhatsApp</button>
         <button class="toolbar-button" style="height: 32px; padding: 0 14px; background: var(--chip)" @click="openConnect('slack')">Connect Slack</button>
       </div>
     </div>
@@ -1533,6 +1607,11 @@ onMount(async () => {
       <button :if="needsAccess()" class="banner mt-2 w-full text-left border-0" @click="grantAccess()">
         <span class="i-hugeicons-lock-key text-[16px] mt-[1px]" style="color: var(--amber)"></span>
         <span class="text-[11.5px]"><span class="font-semibold">iMessage needs Full Disk Access.</span> <span class="muted">Switch Attic on in Privacy &amp; Security.</span></span>
+      </button>
+      <button :if="source() === 'slack' && connectedTo('slack')" class="mt-2 text-[11.5px] text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="openConnect('slack')">Add a Slack workspace…</button>
+      <button :if="source() === 'whatsapp' && whatsappLink()?.available && !whatsappLinked()" class="banner mt-2 w-full text-left border-0" @click="openConnect('whatsapp')">
+        <span class="i-hugeicons-whatsapp text-[16px] mt-[1px]" style="color: #25d366"></span>
+        <span class="text-[11.5px]"><span class="font-semibold">Link Attic to WhatsApp.</span> <span class="muted">Send, reply and get every message without WhatsApp for Mac.</span></span>
       </button>
     </div>
 
@@ -1762,15 +1841,21 @@ onMount(async () => {
     </div>
   </div>
 
-  <!-- Connecting a source: a token for Slack or Discord, what is missing for iMessage or WhatsApp. -->
-  <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="connecting.set('')">
+  <!-- Connecting a source: a token for Slack or Discord, a code to scan for WhatsApp, what is missing for iMessage. -->
+  <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="closeConnect()">
     <div class="w-[480px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
       <div class="flex items-center gap-3 mb-3">
         <span class="text-[26px]" :class="sourceIcon(connecting())" :style="colorStyle(connecting())"></span>
         <h2 class="text-[16px] font-semibold m-0">Connect {{ appName(connecting()) }}</h2>
       </div>
       <div :if="connecting() === 'slack'" class="muted text-[12px] leading-relaxed mb-3">
-        <p class="m-0 mb-2">Attic signs in to Slack through a small app of your own, in each workspace:</p>
+        <div :if="slackWorkspaces().length > 0" class="mb-3">
+          <div :for="w in slackWorkspaces()" :key="w.teamId" class="flex items-center justify-between py-1">
+            <span><span class="font-medium" style="color: var(--label)">{{ w.team }}</span><span :if="!w.live"> (no live messages: add an App-Level Token)</span></span>
+            <button class="text-[#ff453a] bg-transparent border-0 p-0 cursor-pointer" @click="removeSlackWorkspace(w)">Remove</button>
+          </div>
+        </div>
+        <p class="m-0 mb-2">{{ slackWorkspaces().length > 0 ? 'To add another workspace, make the same app there and paste its tokens:' : 'Attic signs in to Slack through a small app of your own, in each workspace:' }}</p>
         <ol class="m-0 pl-5 flex flex-col gap-1">
           <li><button class="text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="startSlackApp()">Copy the app manifest and open Slack</button>, choose <b>From an app manifest</b>, and paste.</li>
           <li><b>Install to Workspace</b>, then copy the <b>User OAuth Token</b> (xoxp-) below.</li>
@@ -1779,18 +1864,33 @@ onMount(async () => {
         <p class="m-0 mt-2">Both stay in your keychain.</p>
       </div>
       <p :if="connecting() === 'discord'" class="muted text-[12px] leading-relaxed mb-3">Paste your Discord token, the one the Discord app signs in with: Attic becomes your Discord client, with your DMs, group DMs and servers. Using your own account from another client is against Discord's terms, and Discord can ban accounts for it. Attic identifies itself to Discord as Attic. The token stays in your keychain.</p>
+      <div :if="connecting() === 'whatsapp'" class="muted text-[12px] leading-relaxed mb-3">
+        <div :if="!whatsappLinked()">
+          <p class="m-0 mb-2">Attic links to WhatsApp as a device of its own, the way WhatsApp Web does, so WhatsApp for Mac is not needed. On your phone, open WhatsApp, then <b>Settings</b>, <b>Linked Devices</b>, <b>Link a Device</b>, and scan this code.</p>
+          <div class="flex justify-center my-3">
+            <div :if="whatsappLink()?.qr" class="qr w-[220px] h-[220px] rounded-[10px] p-2 bg-white" :html="whatsappLink().qr"></div>
+            <div :if="!whatsappLink()?.qr" class="w-[220px] h-[220px] rounded-[10px] grid place-items-center" style="background: var(--chip)">{{ whatsappLink()?.error ? '' : 'Asking WhatsApp for a code…' }}</div>
+          </div>
+          <p :if="whatsappLink()?.error" class="m-0 mb-2" style="color: var(--amber)">{{ whatsappLink().error }}</p>
+          <button :if="whatsappLink()?.available && whatsappLink()?.phase === 'signed-out'" class="text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="startWhatsAppLink()">Show a new code</button>
+          <p class="m-0 mt-2">Your messages arrive, send and sync straight from WhatsApp. Keep WhatsApp signed in on the phone, and let the phone come online every couple of weeks, or WhatsApp unlinks its devices.</p>
+        </div>
+        <div :if="whatsappLinked()">
+          <p class="m-0">{{ whatsappLink()?.phase === 'open' ? 'Linked' : 'Linked, reconnecting' }}{{ whatsappLink()?.me ? ' as ' + whatsappLink().me : '' }}. Attic sends and receives WhatsApp by itself, so WhatsApp for Mac can be uninstalled. Disconnecting unlinks Attic on your phone too; what Attic has archived stays.</p>
+        </div>
+      </div>
       <p :if="isLocal(connecting())" class="muted text-[12px] leading-relaxed mb-3">Attic reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
-      <input :if="!isLocal(connecting())" class="search selectable mb-2" style="padding-left: 10px" type="password" :placeholder="connecting() === 'slack' ? 'User OAuth Token (xoxp-…)' : 'Discord token'" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
+      <input :if="connecting() === 'slack' || connecting() === 'discord'" class="search selectable mb-2" style="padding-left: 10px" type="password" :placeholder="connecting() === 'slack' ? 'User OAuth Token (xoxp-…)' : 'Discord token'" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
       <input :if="connecting() === 'slack'" class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="App-Level Token (xapp-…)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
       <div class="flex justify-between items-center mt-3">
-        <button :if="connectedTo(connecting()) && !isLocal(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">Disconnect</button>
-        <span :if="!connectedTo(connecting()) || isLocal(connecting())"></span>
-        <div :if="isLocal(connecting())" class="flex gap-2">
-          <button class="toolbar-button" style="background: var(--accent); color: #fff" @click="connecting.set('')">Done</button>
+        <button :if="connecting() === 'whatsapp' ? whatsappLinked() : connectedTo(connecting()) && !isLocal(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">{{ connecting() === 'slack' && slackWorkspaces().length > 1 ? 'Remove All' : 'Disconnect' }}</button>
+        <span :if="connecting() === 'whatsapp' ? !whatsappLinked() : !connectedTo(connecting()) || isLocal(connecting())"></span>
+        <div :if="isLocal(connecting()) || connecting() === 'whatsapp'" class="flex gap-2">
+          <button class="toolbar-button" :style="connecting() === 'whatsapp' && !whatsappLinked() ? 'background: var(--chip)' : 'background: var(--accent); color: #fff'" @click="closeConnect()">{{ connecting() === 'whatsapp' && !whatsappLinked() ? 'Cancel' : 'Done' }}</button>
         </div>
-        <div :if="!isLocal(connecting())" class="flex gap-2">
-          <button class="toolbar-button" style="background: var(--chip)" @click="connecting.set('')">Cancel</button>
-          <button class="toolbar-button" style="background: var(--accent); color: #fff" :disabled="!tokenDraft()" @click="saveConnect()">Connect</button>
+        <div :if="connecting() === 'slack' || connecting() === 'discord'" class="flex gap-2">
+          <button class="toolbar-button" style="background: var(--chip)" @click="closeConnect()">Cancel</button>
+          <button class="toolbar-button" style="background: var(--accent); color: #fff" :disabled="!tokenDraft()" @click="saveConnect()">{{ connecting() === 'slack' && slackWorkspaces().length > 0 ? 'Add Workspace' : 'Connect' }}</button>
         </div>
       </div>
     </div>

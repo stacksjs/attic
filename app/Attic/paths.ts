@@ -21,6 +21,8 @@ export const AVATARS_DIR = join(DATA_DIR, 'Avatars')
 export const PREVIEWS_DIR = join(DATA_DIR, 'Previews')
 /** Files picked in the compose field, held until they are sent. */
 export const OUTGOING_DIR = join(DATA_DIR, 'Outgoing')
+/** Attic's own WhatsApp device: its session, its copy of every chat, and media it has fetched. */
+export const WHATSAPP_LINK_DIR = join(DATA_DIR, 'WhatsApp')
 export const PORT_FILE = join(DATA_DIR, 'port')
 export const LOCK_FILE = join(DATA_DIR, 'attic.pid')
 export const LOG_FILE = join(homedir(), 'Library', 'Logs', 'Attic.log')

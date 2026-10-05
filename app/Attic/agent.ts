@@ -3,6 +3,7 @@ import type { Server } from 'bun'
 import type { ResurfaceMode, SyncReport, TranscriptMessage } from './archiver'
 import type { LiveEntry } from './sources'
 import type { Provider, StoredConversation } from './store'
+import type { LinkState } from './whatsapp-link'
 import { inbox } from '@stacksjs/chat'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -10,11 +11,13 @@ import { extname, join, normalize, sep } from 'node:path'
 import { hostname } from 'node:os'
 import process from 'node:process'
 import { decode, encode, resize } from 'ts-images'
+import { toSvg } from 'ts-qr-codes'
 import { Archiver, ruleFor, ruleValue } from './archiver'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
 import { PhoneLink } from './phone-link'
 import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, OUTGOING_DIR, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
+import { slackIdentity, upsertWorkspace } from './slack-workspaces'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
 
@@ -22,7 +25,7 @@ import { ArchiveStore, splitKey } from './store'
  * The process behind Attic's window: a loopback HTTP server that owns every
  * credential and permission - reading Messages and Contacts (Full Disk Access
  * is granted to Attic.app, whose executable this runs in), the Slack and
- * Discord tokens in the keychain, the archive - and serves the UI the Craft
+ * Discord tokens in the keychain, the WhatsApp device, the archive - and serves the UI the Craft
  * window renders.
  *
  * Only the page Attic itself served may call it. Every API request must carry
@@ -220,7 +223,10 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     return store.setting('resurface') === 'stay' ? 'stay' : 'inbox'
   }
 
-  const sources = new Sources({ confirmDeletes: () => removalMode() === 'auto', sample: usingSample })
+  // The WhatsApp link reports its progress before the event stream below
+  // exists; until it does, there is no window to tell.
+  let linkListener: ((state: LinkState) => void) | null = null
+  const sources = new Sources({ confirmDeletes: () => removalMode() === 'auto', sample: usingSample, onWhatsAppLink: state => linkListener?.(state) })
   await sources.load()
   const archiver = new Archiver({ store, sources, attachmentsDir: ATTACHMENTS_DIR })
 
@@ -388,6 +394,14 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       removed: report.removed,
     })
   }
+
+  /** The WhatsApp link as the Connect sheet draws it, with the code to scan as an SVG. */
+  function linkView(state: LinkState | null = sources.whatsappLink()?.linkState() ?? null): Record<string, unknown> {
+    if (!state)
+      return { available: false, phase: 'signed-out', qr: null, me: null, error: 'Sample data has no WhatsApp to link.' }
+    return { available: true, phase: state.phase, me: state.me, error: state.error, qr: state.qr ? toSvg(state.qr) : null }
+  }
+  linkListener = state => broadcast({ type: 'whatsapp', link: linkView(state) })
 
   // iMessage changes are noticed from chat.db's own files; the rest on a timer.
   let lastStamp = ''
@@ -924,13 +938,22 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const secret = typeof data.token === 'string' ? data.token.trim() : ''
           if ((provider !== 'slack' && provider !== 'discord') || !secret)
             return problem('A provider and a token are required')
-          await writeSecret(provider, secret)
           if (provider === 'slack') {
-            // Socket Mode's app-level token, for messages as they are sent.
-            if (typeof data.appToken === 'string' && data.appToken.trim())
-              await writeSecret('slack-app', data.appToken.trim())
-            else
-              await deleteSecret('slack-app')
+            // One more workspace, or new tokens for one already signed in.
+            // Socket Mode's app-level token brings messages as they are sent.
+            const identity = await slackIdentity(secret)
+            if ('error' in identity)
+              return problem(identity.error)
+            const appToken = typeof data.appToken === 'string' && data.appToken.trim() ? data.appToken.trim() : undefined
+            const list = upsertWorkspace(await sources.slackWorkspaces(), { ...identity, token: secret, appToken })
+            if (!(await writeSecret('slack-workspaces', JSON.stringify(list))))
+              return problem('Attic could not keep the Slack token in the keychain.', 500)
+            // The list now holds the workspace Attic used to keep on its own.
+            await deleteSecret('slack')
+            await deleteSecret('slack-app')
+          }
+          else {
+            await writeSecret(provider, secret)
           }
           if (provider === 'discord') {
             await writeSecret('discord-account', data.account === 'bot' ? 'bot' : 'user')
@@ -943,14 +966,46 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           broadcast({ type: 'sources' })
           return json({ sources: sources.statesList() })
         }
+        case 'GET /api/slack/workspaces': {
+          // Names only: tokens never leave the keychain for the page.
+          return json({ workspaces: (await sources.slackWorkspaces()).map(w => ({ teamId: w.teamId, team: w.team, live: !!w.appToken })) })
+        }
+        case 'GET /api/whatsapp': {
+          return json(linkView())
+        }
+        case 'POST /api/whatsapp/link': {
+          const link = sources.whatsappLink()
+          if (!link)
+            return problem('Sample data has no WhatsApp to link.')
+          return json(linkView(await link.link()))
+        }
+        case 'POST /api/whatsapp/cancel': {
+          sources.whatsappLink()?.cancelLink()
+          return json(linkView())
+        }
         case 'POST /api/sources/disconnect': {
           const data = await body(req)
+          if (data.provider === 'whatsapp') {
+            // Unlinks Attic in WhatsApp too; it leaves the phone's list of devices.
+            await sources.whatsappLink()?.logout()
+            await sources.load()
+            broadcast({ type: 'sources' })
+            return json({ sources: sources.statesList() })
+          }
           if (data.provider !== 'slack' && data.provider !== 'discord')
-            return problem('Only Slack and Discord can be disconnected')
-          await deleteSecret(data.provider)
-          if (data.provider === 'slack')
+            return problem('Only WhatsApp, Slack and Discord can be disconnected')
+          if (data.provider === 'slack') {
+            // One workspace when it is named, every one otherwise.
+            const remaining = typeof data.teamId === 'string' ? (await sources.slackWorkspaces()).filter(w => w.teamId !== data.teamId) : []
+            if (remaining.length > 0)
+              await writeSecret('slack-workspaces', JSON.stringify(remaining))
+            else
+              await deleteSecret('slack-workspaces')
+            await deleteSecret('slack')
             await deleteSecret('slack-app')
+          }
           if (data.provider === 'discord') {
+            await deleteSecret('discord')
             await deleteSecret('discord-user')
             await deleteSecret('discord-account')
           }
@@ -1080,6 +1135,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     stop() {
       clearInterval(timer)
       stopListening()
+      sources.close()
       for (const listener of listeners) {
         try {
           listener.close()

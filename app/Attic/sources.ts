@@ -1,16 +1,24 @@
 import type { Provider } from './store'
+import type { LinkState } from './whatsapp-link'
 import { inbox } from '@stacksjs/chat'
-import { readSecret as readKeychain } from './keychain'
+import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import type { SlackWorkspace } from './slack-workspaces'
+import { deleteSecret, readSecret as readKeychain, writeSecret as writeKeychain } from './keychain'
 import { archiveInWhatsApp, recoverInMessages, removeFromMessages, unarchiveInWhatsApp } from './messages-app'
-import { addressBookDir, messagesDbPath, whatsappDbPath } from './paths'
+import { addressBookDir, messagesDbPath, WHATSAPP_LINK_DIR, whatsappDbPath } from './paths'
 import { sampleDiscord, sampleSlack, sampleWhatsApp } from './sample-sources'
+import { parseWorkspaces, slackIdentity, slackSource } from './slack-workspaces'
+import { WhatsAppLink } from './whatsapp-link'
 
 /**
  * The apps Attic reads, through the inbox drivers in `@stacksjs/chat`.
  *
- * iMessage and WhatsApp are always present (they need only Full Disk Access
- * and, to archive, Accessibility). Slack and Discord join once their tokens
- * are in the keychain. Listing is cached: the
+ * iMessage is always present (it needs only Full Disk Access and, to
+ * archive, Accessibility). WhatsApp is Attic's own linked device once the
+ * person has linked it, and WhatsApp for Mac's database until then, so the
+ * Mac app can be uninstalled after linking. Slack and Discord join once their
+ * tokens are in the keychain. Listing is cached: the
  * iMessage list is a local query, but Slack and Discord cost an API call per
  * conversation, so they are re-read at most once a minute unless forced.
  */
@@ -51,14 +59,51 @@ export interface SourcesOptions {
   secrets?: (account: string) => Promise<string | null>
   /** Drivers to use instead of building them, for tests. */
   drivers?: Partial<Record<Provider, inbox.InboxDriver>>
+  /** Hears the WhatsApp link's progress: codes to scan, connected, unlinked. */
+  onWhatsAppLink?: (state: LinkState) => void
 }
 
 export class Sources {
   private drivers = new Map<Provider, inbox.InboxDriver>()
   private cache = new Map<Provider, { at: number, entries: LiveEntry[] }>()
   private states = new Map<Provider, SourceState>()
+  private link: WhatsAppLink | null = null
 
   constructor(private readonly options: SourcesOptions) {}
+
+  /**
+   * Attic's WhatsApp device. One for the life of the process, whatever
+   * load() rebuilds: it holds the connection to WhatsApp.
+   */
+  whatsappLink(): WhatsAppLink | null {
+    if (this.options.sample || this.options.drivers)
+      return null
+    if (!this.link) {
+      const readSecret = this.options.secrets ?? readKeychain
+      this.link = new WhatsAppLink({
+        dir: WHATSAPP_LINK_DIR,
+        sealKey: async () => {
+          const stored = await readSecret('whatsapp-key')
+          if (stored)
+            return new Uint8Array(Buffer.from(stored, 'base64'))
+          const key = new Uint8Array(randomBytes(32))
+          if (!(await writeKeychain('whatsapp-key', Buffer.from(key).toString('base64'))))
+            throw new Error('Attic could not keep the WhatsApp key in the keychain.')
+          return key
+        },
+        onState: state => this.options.onWhatsAppLink?.(state),
+        // Linking swaps WhatsApp for Mac's database for the device; unlinking
+        // swaps it back.
+        onLinked: (linked) => {
+          if (linked !== (this.drivers.get('whatsapp') === this.link))
+            void this.load()
+        },
+      })
+      // eslint-disable-next-line no-console
+      void this.link.start().catch(error => console.error(`[attic] whatsapp: ${error instanceof Error ? error.message : String(error)}`))
+    }
+    return this.link
+  }
 
   /** Build (or rebuild, after a token changes) every driver that can run. */
   async load(): Promise<void> {
@@ -95,14 +140,21 @@ export class Sources {
       return
     }
 
-    this.drivers.set('whatsapp', inbox.createInboxDriver('whatsapp', {
-      databasePath: whatsappDbPath(),
-      controller: { archive: names => archiveInWhatsApp(names), unarchive: names => unarchiveInWhatsApp(names) },
-    }))
+    const link = this.whatsappLink()!
+    if (link.linked || !existsSync(whatsappDbPath())) {
+      this.drivers.set('whatsapp', link)
+    }
+    else {
+      this.drivers.set('whatsapp', inbox.createInboxDriver('whatsapp', {
+        databasePath: whatsappDbPath(),
+        controller: { archive: names => archiveInWhatsApp(names), unarchive: names => unarchiveInWhatsApp(names) },
+      }))
+    }
 
-    const slack = await readSecret('slack')
+    ;(this.drivers.get('slack') as { close?: () => void } | undefined)?.close?.()
+    const slack = slackSource(await this.slackWorkspaces())
     if (slack)
-      this.drivers.set('slack', inbox.createInboxDriver('slack', { token: slack, appToken: (await readSecret('slack-app')) ?? undefined }))
+      this.drivers.set('slack', slack)
     else
       this.drivers.delete('slack')
 
@@ -120,6 +172,29 @@ export class Sources {
     this.cache.clear()
     await this.refreshStates()
     this.resubscribe()
+  }
+
+  /**
+   * Every signed-in Slack workspace. Attic used to keep one, as `slack` and
+   * `slack-app`; that one moves into the list the first time Slack can say
+   * which workspace it is.
+   */
+  async slackWorkspaces(): Promise<SlackWorkspace[]> {
+    const readSecret = this.options.secrets ?? readKeychain
+    const list = parseWorkspaces(await readSecret('slack-workspaces'))
+    const legacy = await readSecret('slack')
+    if (!legacy)
+      return list
+    const appToken = (await readSecret('slack-app')) ?? undefined
+    const identity = await slackIdentity(legacy)
+    if ('error' in identity)
+      return [...list, { teamId: 'legacy', team: 'Slack', token: legacy, appToken }]
+    const merged = [...list.filter(w => w.teamId !== identity.teamId), { ...identity, token: legacy, appToken }]
+    if (!this.options.secrets && await writeKeychain('slack-workspaces', JSON.stringify(merged))) {
+      await deleteSecret('slack')
+      await deleteSecret('slack-app')
+    }
+    return merged
   }
 
   // ── Live events ─────────────────────────────────────────────────────
@@ -155,6 +230,13 @@ export class Sources {
         subscriber({ provider, event })
       }))
     }
+  }
+
+  /** Hang up on the apps that hold a connection open. */
+  close(): void {
+    this.link?.close()
+    for (const provider of ['slack', 'discord'] as const)
+      (this.drivers.get(provider) as { close?: () => void } | undefined)?.close?.()
   }
 
   driver(provider: Provider): inbox.InboxDriver | undefined {
