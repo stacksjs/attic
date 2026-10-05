@@ -7,12 +7,12 @@
       "dependencies": {
         "@stacksjs/actions": "^0.75.56",
         "@stacksjs/chat": "^0.75.59",
-        "@stacksjs/desktop": "^0.2.363",
+        "@stacksjs/desktop": "^0.2.367",
         "@stacksjs/env": "^0.75.41",
         "@stacksjs/path": "^0.75.41",
-        "@stacksjs/stx": "^0.2.363",
+        "@stacksjs/stx": "^0.2.367",
         "@stacksjs/ts-css": "^0.3.8",
-        "craft-native": "^0.0.112",
+        "craft-native": "^0.0.113",
         "pickier": "^0.1.65",
         "stacks": "^0.75.41",
         "ts-images": "^0.2.25",
@@ -23,7 +23,7 @@
       },
       "system": {
         "bun.sh": "1.4.2",
-        "craft-native.org": "^0.0.112",
+        "craft-native.org": "^0.0.113",
         "curl.se": "^8.22.0",
         "git-scm.org": "^2.53.0",
         "sqlite.org": "^3.53.4"
@@ -107,12 +107,12 @@
         "@stacksjs/logging": "0.75.59"
       }
     },
-    "@stacksjs/desktop@0.2.363": {
+    "@stacksjs/desktop@0.2.367": {
       "name": "@stacksjs/desktop",
-      "version": "0.2.363",
+      "version": "0.2.367",
       "source": "npm",
-      "resolved": "https://registry.npmjs.org/@stacksjs/desktop/-/desktop-0.2.363.tgz",
-      "integrity": "sha512-qgXsL3Si712BCagNpOguAoUyFRK4kNx042wKtMz1f2dlpF8e6NWkB3sR3ceKkSOMU325RCaqeEa3bxTJt+rKUw==",
+      "resolved": "https://registry.npmjs.org/@stacksjs/desktop/-/desktop-0.2.367.tgz",
+      "integrity": "sha512-mqFgDDdhO7KGBgRSeNua8Gr1OpksEXXzFnRpr4oD+RdyoV1sjlX83FFbvEDCpwtrs2wBiCK4zKaAdiIrSahlOA==",
       "dependencies": {
         "craft-native": ">=0.0.104"
       }
@@ -134,21 +134,21 @@
       "resolved": "https://registry.npmjs.org/@stacksjs/path/-/path-0.75.41.tgz",
       "integrity": "sha512-9R3bRjp2b5uxH+x3d4LGKVZSk9i9XPmzz/RmE6vVU+htlaZXddGKMem4TEPvMBjVevqVJbYQheAvnqTutXY6VA=="
     },
-    "@stacksjs/stx@0.2.363": {
+    "@stacksjs/stx@0.2.367": {
       "name": "@stacksjs/stx",
-      "version": "0.2.363",
+      "version": "0.2.367",
       "source": "npm",
-      "resolved": "https://registry.npmjs.org/@stacksjs/stx/-/stx-0.2.363.tgz",
-      "integrity": "sha512-LIDCVuqvKqakTh0qWJgp4Dz7v0hKAdcxAJILYDKmQEqTEuYp3SYccOz6xQ29CmurkXvfXXb2VvCulOUrPRKhVQ==",
+      "resolved": "https://registry.npmjs.org/@stacksjs/stx/-/stx-0.2.367.tgz",
+      "integrity": "sha512-1NPFjShnSiGz1EtRZ6FH07VUjYEWfgOvg2W6gLhf5Mk99oQKt37asw6eMW0Qt7thasFSvR6jfkHf7l6dQ5bn7w==",
       "dependencies": {
         "@stacksjs/clapp": "^0.2.16",
-        "@stacksjs/desktop": "0.2.363",
-        "@stacksjs/sanitizer": "0.2.363",
+        "@stacksjs/desktop": "0.2.367",
+        "@stacksjs/sanitizer": "0.2.367",
         "@stacksjs/ts-css": "^0.3.2",
         "@stacksjs/ts-i18n": "^0.1.11",
-        "bun-plugin-stx": "0.2.363",
+        "bun-plugin-stx": "0.2.367",
         "bunfig": "^0.15.19",
-        "stx-router": "0.2.363",
+        "stx-router": "0.2.367",
         "ts-broadcasting": "^0.0.10",
         "ts-images": "^0.2.22",
         "ts-syntax-highlighter": "^0.2.1"
@@ -201,18 +201,18 @@
       "source": "pantry",
       "resolved": "registry:bun.sh@1.4.2"
     },
-    "craft-native.org@0.0.112": {
+    "craft-native.org@0.0.113": {
       "name": "craft-native.org",
-      "version": "0.0.112",
+      "version": "0.0.113",
       "source": "pantry",
-      "resolved": "registry:craft-native.org@0.0.112"
+      "resolved": "registry:craft-native.org@0.0.113"
     },
-    "craft-native@0.0.112": {
+    "craft-native@0.0.113": {
       "name": "craft-native",
-      "version": "0.0.112",
+      "version": "0.0.113",
       "source": "npm",
-      "resolved": "https://registry.npmjs.org/craft-native/-/craft-native-0.0.112.tgz",
-      "integrity": "sha512-O/10WMUfJEnI1dcf5i9ANroCibmtaUYg8IVKvxAiuHZ0s5JbF33MxW8Ns2Ks3FWGfN5S86loSIQGkGmyblEG+g==",
+      "resolved": "https://registry.npmjs.org/craft-native/-/craft-native-0.0.113.tgz",
+      "integrity": "sha512-owdDrZzT2C40tT8RsjdPO0qCJLYwLypLQ8lYLlWmxncDKY052Y7s8ip0zNxJ+fvoWBBbwjU7k+tfNMfq4F+Huw==",
       "bin": {
         "craft-sdk": "./dist/cli.js"
       }

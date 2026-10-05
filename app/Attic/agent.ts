@@ -701,7 +701,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const key = keyFrom(url.searchParams)
           if (!key)
             return problem('key is required')
-          const transcript = await archiver.transcript(key)
+          const before = Number(url.searchParams.get('before')) || undefined
+          const transcript = await archiver.transcript(key, { before })
           const avatars = await avatarsFor(key)
           return json({ ...transcript, messages: transcript.messages.map(m => presentMessage(m, avatars)) })
         }
@@ -885,6 +886,14 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           await sources.load()
           broadcast({ type: 'sources' })
           return json({ sources: sources.statesList() })
+        }
+        case 'POST /api/client-error': {
+          // The window's own errors, which WebKit keeps to itself in a build
+          // without devtools: a page that stops responding says why here.
+          const data = await body(req).catch(() => ({} as Record<string, unknown>))
+          const text = `${String(data.message ?? 'unknown').slice(0, 500)}${data.stack ? `\n${String(data.stack).slice(0, 2000)}` : ''}`
+          console.error(`[attic] window error (${String(data.source ?? 'page').slice(0, 40)}): ${text}`)
+          return json({ ok: true })
         }
         case 'POST /api/privacy': {
           openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')

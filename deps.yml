@@ -7,4 +7,4 @@ dependencies:
   sqlite: ^3.53.4
   # The native window runtime; 0.0.109 is the first with context menus that
   # answer the page and named-key menu shortcuts.
-  craft-native.org: ^0.0.112
+  craft-native.org: ^0.0.113

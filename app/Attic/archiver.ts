@@ -75,7 +75,12 @@ export interface TranscriptMessage extends Omit<StoredMessage, 'conversationKey'
 export interface Transcript {
   key: string
   messages: TranscriptMessage[]
+  /** Older messages exist than these: ask again with `before` for them. */
+  hasEarlier: boolean
 }
+
+/** Messages a transcript shows at a time; "Show earlier" pages back by this many. */
+export const TRANSCRIPT_PAGE = 150
 
 function shortHash(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16)
@@ -393,7 +398,17 @@ export class Archiver {
    * One conversation as a person reads it: what the app still has, plus what
    * only Attic remembers. Reactions are folded onto their messages.
    */
-  async transcript(key: string, limit = 300): Promise<Transcript> {
+  /**
+   * A conversation's messages, newest page first: Attic's copy merged with
+   * what the app still has. `before` (ms) pages back from an earlier page.
+   * Drawing a whole history at once - 386 messages for one archive - froze
+   * the window while it rendered.
+   */
+  async transcript(key: string, options: { before?: number, limit?: number } = {}): Promise<Transcript> {
+    const pageSize = options.limit ?? TRANSCRIPT_PAGE
+    // Reading back needs the app's older messages too; the drivers page by
+    // count, so ask for enough to reach past `before`.
+    const limit = options.before ? 5000 : 300
     const stored = this.store.conversation(key)
     const { provider, id } = splitKey(key)
     const driver = this.sources.driver(provider)
@@ -451,7 +466,9 @@ export class Archiver {
       }
       target.reactions.push({ reaction: reaction.reaction, fromMe: reaction.isFromMe, senderName: reaction.senderName })
     }
-    return { key, messages: visible.slice(-Math.max(limit, stored ? visible.length : 0)) }
+    const earlier = options.before ? visible.filter(m => m.sentAt < options.before!) : visible
+    const page = earlier.slice(-pageSize)
+    return { key, messages: page, hasEarlier: earlier.length > page.length }
   }
 
   /** An attachment's bytes: Attic's copy first, then the app's. */

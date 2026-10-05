@@ -165,6 +165,23 @@ describe('archiving iMessage', () => {
     expect(transcript.messages[0]!.reactions).toEqual([{ reaction: '👍', fromMe: true, senderName: null }])
   })
 
+  it('shows a long archive a page at a time, newest first, and pages back', async () => {
+    const alice = chat.direct(ALICE)
+    for (let i = 0; i < 160; i++)
+      chat.add(alice, { text: `m${i}` })
+    const key = `imessage:direct:${ALICE}`
+    await archiver.archive(key)
+
+    const latest = await archiver.transcript(key)
+    expect(latest.messages).toHaveLength(150)
+    expect(latest.messages.at(-1)!.text).toBe('m159')
+    expect(latest.hasEarlier).toBe(true)
+
+    const earlier = await archiver.transcript(key, { before: latest.messages[0]!.sentAt })
+    expect(earlier.messages.map(m => m.text)).toEqual(Array.from({ length: 10 }, (_, i) => `m${i}`))
+    expect(earlier.hasEarlier).toBe(false)
+  })
+
   it('brings an archived conversation back when someone writes again, history attached', async () => {
     const alice = chat.direct(ALICE)
     chat.add(alice, { text: 'old news' })

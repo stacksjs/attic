@@ -166,6 +166,16 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .msg-avatar { width: 28px; height: 28px; font-size: 11px; }
+    .media-tile {
+      position: relative; width: 240px; height: 160px; border: 0; border-radius: 18px; overflow: hidden;
+      background: linear-gradient(160deg, #3a3a3c, #1c1c1e); display: grid; place-items: center; cursor: pointer;
+    }
+    .media-play {
+      width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+      background: rgba(255, 255, 255, .22); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    .media-caption { position: absolute; right: 10px; bottom: 8px; color: rgba(255, 255, 255, .8); font-size: 11px; }
+    .voice-note { border: 0; cursor: pointer; }
     .header-avatar { width: 24px; height: 24px; font-size: 10px; }
     /* Where Messages has its compose field: replying happens in the app itself. */
     .composer {
@@ -203,6 +213,9 @@
 <body>
 <script client>
 import { app, contextMenu, menu, nativeWindow, notifications, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
+import { reportClientErrors } from '../functions/client-errors'
+
+reportClientErrors()
 
 /* ---------- state ---------- */
 const view = state('inbox')
@@ -414,6 +427,34 @@ function isFile(a) {
   return !isImage(a) && !isVideo(a) && !isAudio(a)
 }
 
+/*
+ * Media, the way Messages handles it: a photo opens full size, a video plays
+ * in a viewer, a voice message from its own pill. The transcript itself holds
+ * no <video> or <audio> - WebKit sets up a media player for every one it
+ * creates, and one per attachment row made switching to a long conversation
+ * take seconds. One viewer and one player serve the whole window.
+ */
+const viewer = state(null)
+const playingAudio = state('')
+
+function openViewer(a) {
+  viewer.set({ type: isVideo(a) ? 'video' : 'image', url: a.url, name: a.name })
+}
+
+function closeViewer() {
+  viewer.set(null)
+}
+
+function toggleAudio(a) {
+  playingAudio.set(playingAudio() === a.url ? '' : a.url)
+}
+
+// Escape closes the viewer wherever focus is, as it does in Messages.
+useEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && viewer())
+    closeViewer()
+})
+
 /** The transcript, newest first (the scroller is column-reverse), with a day header where the gap is large. */
 /** Messages starts a new run of bubbles, with its own tail, after this long. */
 const RUN_GAP_MS = 5 * 60_000
@@ -548,11 +589,15 @@ async function loadEarlier() {
 async function refresh() {
   await loadStatus().catch(() => {})
   await loadLists().catch(() => {})
-  if (selectedKey()) {
-    const stillThere = list().some(c => c.key === selectedKey())
-    if (stillThere)
-      await loadConversation(selectedKey())
+  const current = selectedKey()
+  if (current && list().some(c => c.key === current)) {
+    await loadConversation(current)
+    return
   }
+  // The open conversation left this list (archived, deleted, moved back):
+  // show what is there rather than a conversation the list no longer has.
+  const next = list()[0]
+  select(next ? next.key : '')
 }
 
 function say(text) {
@@ -564,7 +609,22 @@ function say(text) {
 }
 
 /* ---------- actions ---------- */
+/** The conversation last open in each mailbox, so going back returns to it. */
+const lastOpen = new Map()
+function mailbox() {
+  return `${view()}:${source()}`
+}
+
+/** Open what this mailbox had open, or its first conversation. */
+function selectInMailbox() {
+  const remembered = lastOpen.get(mailbox())
+  const row = list().find(c => c.key === remembered) ?? list()[0]
+  select(row ? row.key : '')
+}
+
 function select(key) {
+  if (key)
+    lastOpen.set(mailbox(), key)
   if (selectedKey() === key)
     return
   selectedKey.set(key)
@@ -579,8 +639,7 @@ function show(next) {
   listLimit.set(LIST_PAGE)
   view.set(next)
   query.set('')
-  const first = list()[0]
-  select(first ? first.key : '')
+  selectInMailbox()
 }
 
 async function pickSource(next) {
@@ -589,8 +648,7 @@ async function pickSource(next) {
   view.set('inbox')
   query.set('')
   await loadLists()
-  const first = list()[0]
-  select(first ? first.key : '')
+  selectInMailbox()
 }
 
 /** Attic > Settings… (Cmd+,): its own window, brought forward if already open. */
@@ -869,8 +927,7 @@ function selectNeighbour(key) {
   const rows = list()
   const at = rows.findIndex(c => c.key === key)
   const next = rows[at + 1] ?? rows[at - 1]
-  selectedKey.set(next ? next.key : '')
-  loadConversation(next ? next.key : '')
+  select(next ? next.key : '')
 }
 
 async function archive(key = selectedKey()) {
@@ -1006,6 +1063,7 @@ async function installMenus() {
         items: [
           { label: 'Inbox', shortcut: 'cmd+1', onClick: () => show('inbox') },
           { label: 'Archived', shortcut: 'cmd+2', onClick: () => show('archived') },
+          { label: 'Recently Deleted', shortcut: 'cmd+3', onClick: () => show('deleted') },
           { separator: true },
           { label: 'Find', shortcut: 'cmd+f', onClick: () => focusSearch() },
           { label: 'Next Conversation', shortcut: 'cmd+down', onClick: () => move(1) },
@@ -1302,9 +1360,16 @@ onMount(async () => {
             <div :if="row.showSender" class="text-[11px] muted px-3 pb-[2px]">{{ row.m.senderName }}</div>
             <div :if="quoted(row.m)" class="quote">{{ quoted(row.m) }}</div>
             <div :for="a in row.m.attachments" class="mb-[2px]">
-              <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[18px]" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'">
-              <video :if="isVideo(a)" :src="a.url" controls preload="metadata" class="block max-w-[320px] max-h-[360px] rounded-[18px] bg-black"></video>
-              <audio :if="isAudio(a)" :src="a.url" controls preload="metadata" class="block w-[260px]"></audio>
+              <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[18px] cursor-zoom-in" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'" @click="openViewer(a)">
+              <button :if="isVideo(a)" class="media-tile" :title="a.name" @click="openViewer(a)">
+                <span class="media-play"><span class="i-hugeicons-play text-[22px]"></span></span>
+                <span class="media-caption">{{ bytes(a.bytes) }}</span>
+              </button>
+              <button :if="isAudio(a)" class="bubble voice-note flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'" :title="a.name" @click="toggleAudio(a)">
+                <span class="text-[16px]" :class="playingAudio() === a.url ? 'i-hugeicons-pause' : 'i-hugeicons-play'"></span>
+                <span>{{ playingAudio() === a.url ? 'Playing…' : 'Voice message' }}</span>
+                <span class="opacity-70 text-[11px]">{{ bytes(a.bytes) }}</span>
+              </button>
               <div :if="isFile(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
                 <span class="i-hugeicons-attachment-01 text-[15px]"></span>
                 <span>{{ a.name }}</span>
@@ -1332,6 +1397,16 @@ onMount(async () => {
       </button>
     </div>
   </section>
+
+  <!-- One player for every voice message, out of the transcript. -->
+  <audio :if="playingAudio()" :src="playingAudio()" autoplay @ended="playingAudio.set('')" @error="playingAudio.set('')"></audio>
+
+  <!-- Photos and videos open here, full size, as Messages' viewer does. -->
+  <div :if="viewer()" class="fixed inset-0 z-50 grid place-items-center" style="background: rgba(0, 0, 0, .86)" @click="closeViewer()">
+    <video :if="viewer()?.type === 'video'" :src="viewer()?.url" controls autoplay class="max-w-[92vw] max-h-[86vh] rounded-[12px] bg-black" @click="$event.stopPropagation()"></video>
+    <img :if="viewer()?.type === 'image'" :src="viewer()?.url" :alt="viewer()?.name" class="max-w-[92vw] max-h-[88vh] rounded-[12px] object-contain">
+    <button class="icon-button absolute top-4 right-4" style="color: #fff" title="Close (Esc)" @click="closeViewer()"><span class="i-hugeicons-cancel-01 text-[20px]"></span></button>
+  </div>
 
   <!-- Clean up: archive everything quiet for longer than a cutoff. -->
   <div :if="bulkOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="bulkOpen.set(false)">
