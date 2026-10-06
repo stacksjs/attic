@@ -51,6 +51,7 @@
 <script client>
 import { haptics } from '@stacksjs/mobile'
 import { askMac, avatarFor, forgetPairing, lastSynced, loadPairing, localConversations, localMessages, onPairingLink, savePairing, scanPairingCode, syncArchive } from '../functions/phone-archive'
+import { foldFallbackReactions } from '../functions/fallback-reactions'
 import { isMine, pressAndHold, reactionsByMessage, TAPBACKS } from '../functions/tapbacks'
 
 const screen = state('loading')
@@ -83,13 +84,18 @@ const open = derived(() => [...archive(), ...inbox()].find(c => c.key === openKe
 const bubbles = derived(() => {
   const all = transcript()
   const sent = sentReactions().filter(r => r.conversationKey === openKey())
-  const reactions = reactionsByMessage([...all, ...sent].sort((a, b) => a.sentAt - b.sentAt))
+  // Tapbacks an SMS or RCS phone wrote out as sentences, read as the Mac reads them.
+  const folded = foldFallbackReactions(all.filter(m => m.kind !== 'reaction'))
+  const written = folded.reactions.map(r => ({ kind: 'reaction', targetGuid: r.targetGuid, reaction: r.reaction, reactionRemoved: r.removed, isFromMe: r.isFromMe, senderName: r.senderName, sentAt: r.sentAt }))
+  const reactions = reactionsByMessage([...all, ...sent, ...written].sort((a, b) => a.sentAt - b.sentAt))
   const byGuid = new Map(all.map(m => [m.guid, m]))
-  return all.filter(m => m.kind !== 'reaction' && (m.kind !== 'event' || m.text)).map(m => ({
-    ...m,
-    reactions: reactions.get(m.guid) ?? [],
-    quoted: m.replyToGuid && byGuid.get(m.replyToGuid) ? (byGuid.get(m.replyToGuid).text ?? 'Attachment') : null,
-  }))
+  return all.filter(m => m.kind !== 'reaction' && !folded.hidden.has(m.guid) && (m.kind !== 'event' || m.text)).map(m => folded.notes.has(m.guid)
+    ? { ...m, kind: 'event', text: folded.notes.get(m.guid), reactions: [], quoted: null }
+    : {
+        ...m,
+        reactions: reactions.get(m.guid) ?? [],
+        quoted: m.replyToGuid && byGuid.get(m.replyToGuid) ? (byGuid.get(m.replyToGuid).text ?? 'Attachment') : null,
+      })
 })
 
 /** Haptics where the phone has them; a browser tab has none, and nothing should fail for it. */

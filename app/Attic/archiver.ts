@@ -4,6 +4,7 @@ import type { ArchiveRule, ArchiveStore, Provider, StoredAttachment, StoredConve
 import { createHash } from 'node:crypto'
 import { constants, copyFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { foldFallbackReactions } from '../../resources/functions/fallback-reactions'
 import { conversationKey, splitKey } from './store'
 
 /**
@@ -487,19 +488,30 @@ export class Archiver {
     const all = [...byGuid.values()].sort((a, b) => a.sentAt - b.sentAt)
     const visible = all.filter(m => m.kind !== 'reaction')
     const index = new Map(visible.map(m => [m.guid, m]))
-    for (const reaction of all.filter(m => m.kind === 'reaction')) {
-      const target = reaction.targetGuid ? index.get(reaction.targetGuid) : undefined
-      if (!target || !reaction.reaction)
-        continue
-      if (reaction.reactionRemoved) {
-        const at = target.reactions.findIndex(r => r.reaction === reaction.reaction && r.fromMe === reaction.isFromMe)
+    const react = (targetGuid: string | null, reaction: string | null, removed: boolean, fromMe: boolean, senderName: string | null): void => {
+      const target = targetGuid ? index.get(targetGuid) : undefined
+      if (!target || !reaction)
+        return
+      if (removed) {
+        const at = target.reactions.findIndex(r => r.reaction === reaction && r.fromMe === fromMe)
         if (at !== -1)
           target.reactions.splice(at, 1)
-        continue
+        return
       }
-      target.reactions.push({ reaction: reaction.reaction, fromMe: reaction.isFromMe, senderName: reaction.senderName })
+      target.reactions.push({ reaction, fromMe, senderName })
     }
-    const earlier = options.before ? visible.filter(m => m.sentAt < options.before!) : visible
+    for (const reaction of all.filter(m => m.kind === 'reaction'))
+      react(reaction.targetGuid, reaction.reaction, reaction.reactionRemoved, reaction.isFromMe, reaction.senderName)
+
+    // Tapbacks an SMS or RCS phone wrote out as sentences ("Laughed at a
+    // movie"): on the message they name, or one line when it is not here.
+    const folded = foldFallbackReactions(visible)
+    for (const reaction of folded.reactions)
+      react(reaction.targetGuid, reaction.reaction, reaction.removed, reaction.isFromMe, reaction.senderName)
+    const shown = visible
+      .filter(m => !folded.hidden.has(m.guid))
+      .map(m => folded.notes.has(m.guid) ? { ...m, kind: 'event' as const, text: folded.notes.get(m.guid)! } : m)
+    const earlier = options.before ? shown.filter(m => m.sentAt < options.before!) : shown
     const page = earlier.slice(-pageSize)
     return { key, messages: page, hasEarlier: earlier.length > page.length }
   }

@@ -106,6 +106,9 @@
     .muted { color: var(--secondary); }
 
     .avatar {
+      /* Above the bubble tail, whose cutout is painted in the pane's colour
+         and reaches past the bubble: under it, the picture had a notch. */
+      position: relative; z-index: 1;
       width: 40px; height: 40px; border-radius: 50%;
       display: grid; place-items: center;
       background: linear-gradient(180deg, #a5abb8, #858994);
