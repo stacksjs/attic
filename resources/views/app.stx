@@ -671,7 +671,11 @@ useEventListener('resize', closeTapbacks)
 /* ---------- notifications ---------- */
 /** Whether this window is the one in front, so an open conversation is not announced. */
 const windowFocused = state(true)
-useEventListener('focus', () => windowFocused.set(true))
+useEventListener('focus', () => {
+  windowFocused.set(true)
+  if (!notificationsAllowed())
+    askForNotifications()
+})
 useEventListener('blur', () => windowFocused.set(false))
 
 /** Which conversation each notification is about, for its click and its reply. */
@@ -722,6 +726,26 @@ notifications.onReply(async (event) => {
     notifications.show({ title: 'Not sent', body: error.message })
   }
 })
+
+/**
+ * Whether macOS lets Attic notify. It answers "not allowed" without asking
+ * again once notifications were turned off for Attic, so the window says so
+ * and points at the switch, rather than staying silent about every message.
+ */
+const notificationsAllowed = state(true)
+
+async function askForNotifications() {
+  try {
+    notificationsAllowed.set((await notifications.requestPermission()) !== false)
+  }
+  catch {
+    notificationsAllowed.set(false)
+  }
+}
+
+async function openNotificationSettings() {
+  await shell.openExternal('x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.stacksjs.attic')
+}
 
 /** The Dock badge: unread conversations, as Messages counts them. */
 function updateBadge() {
@@ -1619,7 +1643,7 @@ onMount(async () => {
     select(start.key)
   listen()
   installMenus()
-  notifications.requestPermission()
+  askForNotifications()
 })
 </script>
 
@@ -1696,6 +1720,10 @@ onMount(async () => {
         <span class="text-[11.5px]"><span class="font-semibold">iMessage needs Full Disk Access.</span> <span class="muted">Switch Attic on in Privacy &amp; Security.</span></span>
       </button>
       <button :if="source() === 'slack' && connectedTo('slack')" class="mt-2 text-[11.5px] text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="openConnect('slack')">Add a Slack workspace…</button>
+      <button :if="!notificationsAllowed() && !presenting" class="banner mt-2 w-full text-left border-0" @click="openNotificationSettings()">
+        <span class="i-hugeicons-notification-off-01 text-[16px] mt-[1px]" style="color: var(--amber)"></span>
+        <span class="text-[11.5px]"><span class="font-semibold">Notifications are off for Attic.</span> <span class="muted">Turn on Allow Notifications in System Settings to hear new messages.</span></span>
+      </button>
       <button :if="source() === 'whatsapp' && whatsappLink()?.available && !whatsappLinked()" class="banner mt-2 w-full text-left border-0" @click="openConnect('whatsapp')">
         <span class="i-hugeicons-whatsapp text-[16px] mt-[1px]" style="color: #25d366"></span>
         <span class="text-[11.5px]"><span class="font-semibold">Link Attic to WhatsApp.</span> <span class="muted">Send, reply and get every message without WhatsApp for Mac.</span></span>
