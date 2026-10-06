@@ -6,5 +6,6 @@ dependencies:
   git: ^2.53.0
   sqlite: ^3.53.4
   # The native window runtime; 0.0.109 is the first with context menus that
-  # answer the page and named-key menu shortcuts.
-  craft-native.org: ^0.0.113
+  # answer the page and named-key menu shortcuts, 0.0.115 the first with
+  # haptics on the Mac's trackpad.
+  craft-native.org: ^0.0.115

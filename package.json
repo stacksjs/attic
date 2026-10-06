@@ -102,7 +102,7 @@
     "@stacksjs/path": "^0.75.41",
     "@stacksjs/stx": "^0.2.368",
     "@stacksjs/ts-css": "^0.3.8",
-    "craft-native": "^0.0.113",
+    "craft-native": "^0.0.115",
     "pickier": "^0.1.65",
     "stacks": "^0.75.41",
     "ts-images": "^0.2.25",
