@@ -12,14 +12,16 @@
  *                             with a stable identity or every rebuild voids the
  *                             Full Disk Access grant.
  *   DESKTOP_NOTARY_PROFILE    notarytool keychain profile, for a release.
- *   CRAFT_BIN                 Craft runtime; pantry's by default.
+ *   CRAFT_BIN                 Optional runtime override, matching the installed SDK.
  */
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { resolveCraftRuntime } from './craft-runtime'
 
 const root = join(import.meta.dir, '..')
 const version = (await Bun.file(join(root, 'package.json')).json()).version as string
+const craft = await resolveCraftRuntime(root)
 
 function step(args: string[], env: Record<string, string | undefined> = {}): void {
   console.log(`> ${args.join(' ')}`)
@@ -36,11 +38,6 @@ cpSync(join(root, 'storage', 'attic', 'web'), join(resources, 'web'), { recursiv
 
 step(['bun', 'run', 'build:helper'])
 
-const craft = process.env.CRAFT_BIN || join(root, 'pantry', '.bin', 'craft')
-if (!existsSync(craft)) {
-  console.error(`No Craft runtime at ${craft}: run \`pantry install\` or set CRAFT_BIN.`)
-  process.exit(1)
-}
 step(['./buddy', 'build:desktop'], { CRAFT_BIN: craft })
 cpSync(join(root, 'storage', 'attic', 'bin', 'attic-messages'), join(root, 'storage', 'framework', 'desktop-dist', 'attic-messages'))
 

@@ -63,5 +63,4 @@ export default {
       description: app.description || app.name,
     },
   },
-// `plugins` landed in stx after the pinned @stacksjs/stx types — widen until the dep updates.
-} satisfies UiOptions & { plugins?: string[], defaultViews?: boolean | string[] }
+} satisfies UiOptions

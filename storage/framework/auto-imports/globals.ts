@@ -10,6 +10,7 @@ Object.assign(globalThis, autoImports)
 
 // TypeScript declarations
 declare global {
+  const reportClientErrors: typeof autoImports.reportClientErrors
   const increment: typeof autoImports.increment
   const decrement: typeof autoImports.decrement
   const reset: typeof autoImports.reset
@@ -17,6 +18,34 @@ declare global {
   const toggleDark: typeof autoImports.toggleDark
   const isDark: typeof autoImports.isDark
   const preferredDark: typeof autoImports.preferredDark
+  const parseFallbackReaction: typeof autoImports.parseFallbackReaction
+  const foldFallbackReactions: typeof autoImports.foldFallbackReactions
+  const loadPairing: typeof autoImports.loadPairing
+  const savePairing: typeof autoImports.savePairing
+  const forgetPairing: typeof autoImports.forgetPairing
+  const scanPairingCode: typeof autoImports.scanPairingCode
+  const askMac: typeof autoImports.askMac
+  const syncArchive: typeof autoImports.syncArchive
+  const lastSynced: typeof autoImports.lastSynced
+  const localConversations: typeof autoImports.localConversations
+  const localMessages: typeof autoImports.localMessages
+  const avatarFor: typeof autoImports.avatarFor
+  const inPhoneApp: typeof autoImports.inPhoneApp
+  const onPairingLink: typeof autoImports.onPairingLink
+  const seal: typeof autoImports.seal
+  const unseal: typeof autoImports.unseal
+  const toBase64Url: typeof autoImports.toBase64Url
+  const fromBase64Url: typeof autoImports.fromBase64Url
+  const randomKey: typeof autoImports.randomKey
+  const encodePairing: typeof autoImports.encodePairing
+  const pairingLink: typeof autoImports.pairingLink
+  const decodePairing: typeof autoImports.decodePairing
+  const pressAndHold: typeof autoImports.pressAndHold
+  const reactionsByMessage: typeof autoImports.reactionsByMessage
+  const isMine: typeof autoImports.isMine
+  const TAPBACKS: typeof autoImports.TAPBACKS
+  const HOLD_MS: typeof autoImports.HOLD_MS
+  const HOLD_SLOP_PX: typeof autoImports.HOLD_SLOP_PX
 }
 
 export {}

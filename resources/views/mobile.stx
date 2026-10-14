@@ -323,11 +323,11 @@ onMount(async () => {
 
 <NativeAppShell>
   <!-- Pairing: scan the code the Mac shows under Phone > Pair a phone. -->
-  <main :if="screen() === 'pair'" class="min-h-screen flex flex-col justify-center gap-5 px-6" style="padding-top: env(safe-area-inset-top)">
+  <main :if="screen() === 'pair'" class="flex flex-col gap-5 justify-center px-6 min-h-screen" style="padding-top: env(safe-area-inset-top)">
     <div class="text-center">
-      <div class="i-hugeicons-archive-02 text-[56px] mx-auto mb-3" style="color: var(--accent)"></div>
-      <h1 class="text-[30px] font-bold m-0">Attic</h1>
-      <p class="muted mt-2 mb-0 leading-snug">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Attic and choose Pair a phone, then point this phone's camera at the code.</p>
+      <div class="mb-3 mx-auto text-[56px] i-hugeicons-archive-02" style="color: var(--accent)"></div>
+      <h1 class="m-0 font-bold text-[30px]">Attic</h1>
+      <p class="mb-0 mt-2 leading-snug muted">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Attic and choose Pair a phone, then point this phone's camera at the code.</p>
     </div>
     <button class="button" @click="scan()">Scan the code on your Mac</button>
     <textarea :if="true" rows="3" placeholder="Or paste the pairing code" x-model="pasted"></textarea>
@@ -338,29 +338,29 @@ onMount(async () => {
   <main :if="screen() === 'list'">
     <NativeNavBar title="Attic">
       <template #actions>
-        <button class="border-0 bg-transparent p-2" style="color: var(--accent)" aria-label="Settings" @click="settingsOpen.set(true)"><span class="i-hugeicons-settings-02 text-[22px]"></span></button>
+        <button class="p-2 bg-transparent border-0" style="color: var(--accent)" aria-label="Settings" @click="settingsOpen.set(true)"><span class="text-[22px] i-hugeicons-settings-02"></span></button>
       </template>
     </NativeNavBar>
     <NativePullToRefresh @refresh="refreshed($event)">
-      <div class="px-4 pb-2 flex flex-col gap-2">
+      <div class="flex flex-col gap-2 pb-2 px-4">
         <input class="search" type="search" placeholder="Search" x-model="query">
         <NativeSegmentedControl :options="[{ label: 'Archived', value: 'archived' }, { label: 'Inbox', value: 'inbox' }]" v-model:value="view" label="Show" />
-        <div class="muted text-[12px] px-1">{{ syncing() ? 'Syncing…' : reachable() ? `Synced with ${pairing()?.name ?? 'your Mac'}` : syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }}</div>
+        <div class="px-1 text-[12px] muted">{{ syncing() ? 'Syncing…' : reachable() ? `Synced with ${pairing()?.name ?? 'your Mac'}` : syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }}</div>
       </div>
-      <div :if="view() === 'inbox' && !reachable()" class="muted text-center px-8 py-12 text-[15px]">The Inbox lives on your Mac. Join the same Wi-Fi to see it; the archive below works anywhere.</div>
-      <div :if="conversations().length === 0 && (view() === 'archived' || reachable())" class="muted text-center px-8 py-12 text-[15px]">{{ query() ? 'Nothing matches.' : view() === 'archived' ? 'Nothing archived yet.' : 'All caught up.' }}</div>
-      <div class="rounded-[12px] overflow-hidden mx-4 mb-8">
+      <div :if="view() === 'inbox' && !reachable()" class="px-8 py-12 text-[15px] text-center muted">The Inbox lives on your Mac. Join the same Wi-Fi to see it; the archive below works anywhere.</div>
+      <div :if="conversations().length === 0 && (view() === 'archived' || reachable())" class="px-8 py-12 text-[15px] text-center muted">{{ query() ? 'Nothing matches.' : view() === 'archived' ? 'Nothing archived yet.' : 'All caught up.' }}</div>
+      <div class="overflow-hidden mb-8 mx-4 rounded-[12px]">
         <button :for="c in conversations().slice(0, 300)" :key="c.key" class="cell" @click="openConversation(c)">
           <span class="avatar">
             <img :if="avatars()[c.avatar]" :src="avatars()[c.avatar]" alt="">
             <span :if="!avatars()[c.avatar]">{{ c.initials || '#' }}</span>
           </span>
-          <span class="min-w-0 flex-1">
-            <span class="flex justify-between gap-2">
+          <span class="flex-1 min-w-0">
+            <span class="flex gap-2 justify-between">
               <span class="font-semibold truncate">{{ c.title }}</span>
-              <span class="muted text-[14px] shrink-0">{{ when(c.lastMessageAt) }}</span>
+              <span class="shrink-0 text-[14px] muted">{{ when(c.lastMessageAt) }}</span>
             </span>
-            <span class="block muted text-[15px] truncate">{{ c.preview || c.subtitle || `${c.savedMessages} messages kept` }}</span>
+            <span class="block text-[15px] truncate muted">{{ c.preview || c.subtitle || `${c.savedMessages} messages kept` }}</span>
           </span>
         </button>
       </div>
@@ -371,24 +371,24 @@ onMount(async () => {
   <main :if="screen() === 'chat' && open()">
     <NativeNavBar :title="open()?.title ?? ''" :large="false">
       <template #leading>
-        <button class="border-0 bg-transparent p-2 flex items-center gap-1" style="color: var(--accent); font: inherit" @click="back()"><span class="i-hugeicons-arrow-left-01 text-[22px]"></span>Attic</button>
+        <button class="flex gap-1 items-center p-2 bg-transparent border-0" style="color: var(--accent); font: inherit" @click="back()"><span class="text-[22px] i-hugeicons-arrow-left-01"></span>Attic</button>
       </template>
       <template #actions>
-        <button class="border-0 bg-transparent p-2" style="color: var(--accent)" :disabled="busy()" :aria-label="open()?.state === 'archived' ? 'Move to Inbox' : 'Archive'" @click="toggleArchive()">
+        <button class="p-2 bg-transparent border-0" style="color: var(--accent)" :disabled="busy()" :aria-label="open()?.state === 'archived' ? 'Move to Inbox' : 'Archive'" @click="toggleArchive()">
           <span class="text-[22px]" :class="open()?.state === 'archived' ? 'i-hugeicons-inbox-upload' : 'i-hugeicons-archive-02'"></span>
         </button>
       </template>
     </NativeNavBar>
-    <div class="flex flex-col gap-[3px] px-3 pt-2 pb-10">
-      <div :if="bubbles().length === 0" class="muted text-center py-12 text-[15px]">Only the Mac has this conversation's messages. Sync on the same Wi-Fi to keep a copy here.</div>
+    <div class="flex flex-col gap-[3px] pb-10 pt-2 px-3">
+      <div :if="bubbles().length === 0" class="py-12 text-[15px] text-center muted">Only the Mac has this conversation's messages. Sync on the same Wi-Fi to keep a copy here.</div>
       <div :for="m in bubbles()" :key="m.guid" class="flex flex-col" :class="m.isFromMe ? 'items-end' : 'items-start'" :style="m.reactions.length ? 'margin-top: 14px' : ''">
-        <div :if="m.kind === 'event'" class="self-center muted text-[12px] py-1">{{ m.text }}</div>
-        <div :if="m.quoted" class="muted text-[13px] px-3 py-1 mb-[2px] max-w-[70%] truncate rounded-[12px]" style="background: var(--chip); border-left: 3px solid var(--separator)">{{ m.quoted }}</div>
-        <div :for="a in m.attachments" class="bubble mb-[2px]" :class="m.isFromMe ? 'out' : 'in'"><span class="i-hugeicons-attachment-01"></span> {{ a.name }}</div>
+        <div :if="m.kind === 'event'" class="self-center py-1 text-[12px] muted">{{ m.text }}</div>
+        <div :if="m.quoted" class="mb-[2px] px-3 py-1 max-w-[70%] text-[13px] truncate rounded-[12px] muted" style="background: var(--chip); border-left: 3px solid var(--separator)">{{ m.quoted }}</div>
+        <div :for="a in m.attachments" class="mb-[2px] bubble" :class="m.isFromMe ? 'out' : 'in'"><span class="i-hugeicons-attachment-01"></span> {{ a.name }}</div>
         <div :if="m.kind === 'message' && m.text" class="bubble" :class="m.isFromMe ? 'out' : 'in'" @pointerdown="holdStart($event, m)" @pointermove="holdMove($event)" @pointerup="holdEnd()" @pointercancel="holdEnd()" @contextmenu="$event.preventDefault()">
           <span :if="m.reactions.length" class="reactions"><span :for="r in m.reactions">{{ r.reaction }}</span></span>{{ m.text }}
         </div>
-        <div :if="m.unsent" class="muted text-[12px] italic px-3">{{ m.isFromMe ? 'You unsent a message' : 'Unsent' }}</div>
+        <div :if="m.unsent" class="px-3 italic text-[12px] muted">{{ m.isFromMe ? 'You unsent a message' : 'Unsent' }}</div>
       </div>
     </div>
   </main>
@@ -403,15 +403,15 @@ onMount(async () => {
   </div>
 
   <NativeSheet v-model:open="settingsOpen" title="Attic">
-    <div class="flex flex-col gap-3 px-4 pb-6">
+    <div class="flex flex-col gap-3 pb-6 px-4">
       <div class="text-[15px]">Paired with <b>{{ pairing()?.name }}</b></div>
-      <div class="muted text-[14px]">{{ syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }} · {{ archive().length.toLocaleString() }} conversations kept here</div>
+      <div class="text-[14px] muted">{{ syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }} · {{ archive().length.toLocaleString() }} conversations kept here</div>
       <button class="button plain" @click="sync()">Sync now</button>
       <button class="button plain" style="color: #ff453a" @click="unpair()">Unpair and remove the archive from this phone</button>
     </div>
   </NativeSheet>
 
-  <div :if="note()" class="fixed left-4 right-4 text-center text-[14px] text-white rounded-[12px] px-4 py-3" style="bottom: calc(env(safe-area-inset-bottom) + 16px); background: rgba(40, 40, 40, .92)">{{ note() }}</div>
+  <div :if="note()" class="fixed left-4 right-4 px-4 py-3 text-[14px] text-center text-white rounded-[12px]" style="bottom: calc(env(safe-area-inset-bottom) + 16px); background: rgba(40, 40, 40, .92)">{{ note() }}</div>
 </NativeAppShell>
 </body>
 </html>

@@ -18,10 +18,10 @@ Comprehensive AI/LLM integration with 4 provider drivers, image generation, visi
 ```
 ai/src/
 ├── drivers/
-│   ├── anthropic.ts      # Claude driver
-│   ├── openai.ts         # GPT + DALL-E + Whisper + TTS
-│   ├── ollama.ts         # Local LLM driver
-│   └── bedrock.ts        # AWS Bedrock utilities
+│   ├── anthropic/index.ts # Claude driver
+│   ├── openai/index.ts    # GPT + image + transcription + TTS
+│   ├── ollama/index.ts    # Local LLM driver
+│   └── bedrock/          # Amazon Bedrock, through the Converse API
 ├── image.ts              # Image generation & vision
 ├── speech.ts             # Provider-neutral text-to-speech & speech-to-text
 ├── search.ts             # RAG, embeddings, vector index
@@ -30,7 +30,7 @@ ai/src/
 ├── buddy.ts              # AI coding assistant
 ├── claude-agent.ts       # Claude CLI agent (local & EC2)
 ├── claude-agent-sdk.ts   # Claude Agent SDK driver
-└── text.ts               # Bedrock text summarization
+└── text.ts               # ask() / summarize(), on the Bedrock driver
 ```
 
 ## Anthropic Driver
@@ -38,7 +38,7 @@ ai/src/
 ```typescript
 import { anthropic } from '@stacksjs/ai'
 
-anthropic.configure({ apiKey: '...', model: 'claude-sonnet-4-20250514', maxTokens: 4096 })
+anthropic.configure({ apiKey: '...', model: 'claude-sonnet-5-5', maxTokens: 4096 })
 const result = await anthropic.chat([{ role: 'user', content: 'Hello' }])
 const stream = await anthropic.streamChat(messages, options)
 const response = await anthropic.prompt('Summarize this text...')
@@ -59,10 +59,57 @@ const transcription = await openai.transcribe(audioFile)
 const speech = await openai.textToSpeech('Hello world')
 ```
 
+## Bedrock Driver
+
+```typescript
+import { bedrock } from '@stacksjs/ai'
+
+bedrock.configure({ model: 'global.anthropic.claude-sonnet-5-5', region: 'us-east-1' })
+const result = await bedrock.chat([{ role: 'user', content: 'Hello' }], { system: 'Be brief.' })
+```
+
+- Every request goes through Bedrock's Converse API, so one shape serves Nova,
+  Claude and Llama; the model is configuration. `bedrock.streamChat()` and
+  `streamChatEvents()` stream through `converse-stream` (ts-cloud >= 0.16.44).
+- Credentials come from the AWS credential chain, never config. Region:
+  `drivers.bedrock.region`, `AWS_REGION`, `AWS_DEFAULT_REGION`, us-east-1.
+- Default model `amazon.nova-lite-v1:0`: on demand, no profile, no agreement.
+- Claude and the newer Nova/Llama models are invoked by **inference profile**
+  id (`global.anthropic.claude-sonnet-5-5`, `us.meta.llama4-...`). The bare
+  `anthropic.claude-...` id is refused by Bedrock. `bedrockModels` in
+  `@stacksjs/types` lists the ids Bedrock serves, each in invocable form.
+- `buddy ai:access` (or `requestModelAccess()`) makes the models in
+  `config/ai.ts` invocable and reports each one.
+
+## Tool Calls
+
+```typescript
+import { assistantTurn, toolResultsTurn } from '@stacksjs/ai'
+
+const result = await client.generate(messages, { tools })
+// result.toolCalls: [{ id, name, arguments }] - same shape from every driver
+messages.push(assistantTurn(result), toolResultsTurn(
+  result.toolCalls!.map(call => ({ toolCallId: call.id, name: call.name, content: run(call) })),
+))
+```
+
+- `content` is the model's text, `''` when it only called tools.
+- The `responseFormat` structured-output tool is internal: its JSON is
+  `content`, never a tool call.
+- Ollama refuses `toolChoice: 'required'` / `{ name }`; it cannot force a call.
+- Streaming takes the same `tools`. `streamChat()` yields text and returns the
+  full `AIResult` (with `toolCalls`) when it ends; `streamChatEvents()` yields
+  `{ type: 'text' }`, `{ type: 'tool_call', call }` (whole, once its arguments
+  have streamed) and a final `{ type: 'done', result }`. Every driver,
+  Bedrock included.
+
 ## Provider-Neutral Client
 
 Use the config-driven client for application features that can run against
-Anthropic, OpenAI, or Ollama. Configuration inspection is safe to return from a
+Anthropic, OpenAI, Ollama, or Bedrock. `default` is a provider name or a model
+id that implies one: `claude-...` Anthropic, `gpt-...` OpenAI, any Bedrock
+model or profile id (`amazon.nova-lite-v1:0`, `global.anthropic.claude-...`)
+Bedrock. Configuration inspection is safe to return from a
 status endpoint because it never includes credentials.
 
 ```typescript
@@ -163,7 +210,7 @@ const index = await indexText(text, { chunkSize: 500 })
 const answer = await rag('What is X?', index, { model: 'claude-sonnet-4-20250514', maxTokens: 1000 })
 
 // VectorIndex class
-const idx = new VectorIndex({ dimensions: 1536 })
+const idx = new VectorIndex({ provider: 'openai', model: 'text-embedding-3-small' })
 await idx.add([{ id: '1', content: 'Hello', metadata: {} }])
 const results = await idx.search('greeting', 5)
 const results2 = await idx.searchByVector(queryEmbedding, 5)
@@ -192,9 +239,9 @@ const openaiTools = client.toOpenAITools()
 
 // Multiple servers
 const manager = new MCPManager()
-manager.addServer({ name: 'server1', transport: 'stdio', command: '...' })
-manager.addServer({ name: 'server2', transport: 'streamable-http', url: '...' })
-const allTools = await manager.getAllTools()
+await manager.addServer({ name: 'server1', transport: 'stdio', command: '...' })
+await manager.addServer({ name: 'server2', transport: 'streamable-http', url: '...' })
+const allTools = manager.getAllTools() // cached tools from connected servers
 await manager.callTool('server1/tool-name', args)
 await manager.disconnectAll()
 
@@ -216,7 +263,7 @@ const sentiment = await analyzeSentiment('I love this product!')
 const classification = await classifyText('Fix the login bug', ['bug', 'feature', 'question'])
 // { label: 'bug', confidence: 0.92, allLabels: [...] }
 
-const summary = await summarize(longText, { maxLength: 100, style: 'bullet' })
+const summary = await summarize(longText, { maxTokenCount: 100 })
 
 const profile = createProfile('user-123', ['tech', 'gaming'])
 recordInteraction(profile, { type: 'view', itemId: 'article-1', weight: 1.0 })
@@ -229,7 +276,7 @@ const interests = await extractUserInterests(profile, items)
 ```typescript
 import { processCommand, buddyProcessStreaming, buddyStreamSimple, getAvailableDrivers } from '@stacksjs/ai'
 
-const drivers = getAvailableDrivers()  // ['anthropic', 'openai', 'ollama']
+const drivers = getAvailableDrivers()  // ['claude-cli-local', 'claude-cli-ec2', 'claude', 'claude-sdk', 'openai', 'ollama', 'mock']
 const context = await getRepoContext('/path/to/repo')
 await processCommand('Add error handling to auth.ts', 'anthropic')
 // Streaming
@@ -298,21 +345,51 @@ await driver.resumeSession(sessionId, 'Add validation')
 
 ```typescript
 {
-  default: 'meta.llama2-70b-chat-v1',
-  models: ['meta.llama2-70b-chat-v1', ...],  // AWS Bedrock models
-  deploy: true
+  default: 'anthropic',                       // or 'openai', 'ollama', 'bedrock', a model id
+  models: ['amazon.nova-lite-v1:0'],          // Bedrock models `buddy ai:access` enables
+  deploy: false,
+  drivers: {
+    anthropic: { model: 'claude-sonnet-5-5' },
+    bedrock: { model: 'global.anthropic.claude-sonnet-5-5' },
+  },
 }
 ```
 
 ## Gotchas
-- API keys should be in `.env` — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
+- API keys should be in `.env` - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
 - Ollama requires a local server running on port 11434
 - Image generation uses OpenAI DALL-E by default
 - Vision supports both GPT-4V and Claude models
-- VectorIndex is in-memory — not persisted between restarts
+- VectorIndex is in-memory - not persisted between restarts
 - RAG combines chunking + embedding + vector search + LLM generation
 - MCP supports stdio (subprocess), SSE, and HTTP transports
 - The buddy assistant has git integration (commit, push, apply changes)
 - Claude Agent SDK wraps the Claude Code CLI for agentic workflows
-- Bedrock utilities are for AWS-hosted model invocation
-- Sentiment/classification use AI models — they're not rule-based
+- A Bedrock id as `default` selects the Bedrock driver; it never reaches api.anthropic.com
+- Sentiment/classification use AI models - they're not rule-based
+
+
+## Usage, retries and multimodal messages
+
+The public package also exposes `onUsage/recordUsage/listUsageReporters`
+(and clearUsageReporters for teardown), `estimateTokens/estimateMessageTokens`,
+`sanitizePrompt`, `fetchWithRetry`, and
+`buildMessageWithImages/normalizeMessagesForProvider`. Use the exported
+types and their `utils/` implementations before composing a provider-neutral
+message or reporting costs. Token estimates are heuristic, usage callback data
+comes from provider results, and sanitizing a prompt is not authorization for
+executing a suggested tool.
+
+Provider capabilities differ: embeddings currently use OpenAI/Ollama; RAG supports
+Anthropic/OpenAI/Ollama; speech uses OpenAI only. The shared chat client and
+tool-turn helpers support the four chat providers but do not imply those other
+features are implemented by Bedrock. VectorIndex is memory-only; its constructor
+accepts EmbeddingOptions (provider/model), not an arbitrary vector dimensions
+setting. Runtime credentials come from env/provider configuration, never a
+browser-exported config response.
+
+Tests: `storage/framework/core/ai/tests/usage-and-tokens.test.ts`,
+`vision.test.ts`, `retry.test.ts`, `driver-retry.test.ts`,
+`tool-calls.test.ts` and `client.test.ts`. Verify chosen model/provider
+capabilities from config and registry rather than assuming a marketing model name
+is usable for every API.

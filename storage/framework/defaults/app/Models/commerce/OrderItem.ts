@@ -1,5 +1,5 @@
 import { defineModel } from '@stacksjs/orm'
-import { schema } from '@stacksjs/validation'
+import { schema } from '@stacksjs/validation/runtime'
 
 export default defineModel({
   name: 'OrderItem',
@@ -8,6 +8,7 @@ export default defineModel({
   autoIncrement: true,
 
   traits: {
+    gdpr: { subject: { via: 'Order' }, erasure: 'anonymize', basis: 'legal_obligation', purpose: 'Order lines, kept for tax and accounting' },
     useTimestamps: true,
   },
 
@@ -41,6 +42,7 @@ export default defineModel({
     },
 
     special_instructions: {
+      personal: true,
       order: 5,
       fillable: true,
       validation: {

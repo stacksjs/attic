@@ -1,15 +1,15 @@
 {
   "name": "attic",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Archive iMessage conversations on your Mac, natively.",
   "license": "MIT",
   "engines": {
-    "bun": "1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
-    "build:reset": "rm -rf node_modules && pantry install && ./buddy generate:types && ./buddy lint:fix && cd storage/framework && bun run build && cd ../../",
+    "build:reset": "rm -rf node_modules pantry.lock && bun install && ./buddy generate:types && ./buddy lint:fix",
     "buddy": "./buddy",
     "stacks": "./buddy",
     "setup": "./bootstrap",
@@ -53,14 +53,14 @@
     "release:major": "./buddy release --bump major",
     "changelog": "./buddy changelog",
     "generate": "./buddy generate",
-    "typecheck": "bun run typecheck:app && bun run typecheck:framework",
+    "typecheck": "bun x --bun tsc --noEmit -p tsconfig.json --pretty false",
     "typecheck:framework": "bun x --bun tsc --noEmit -p storage/framework/tsconfig.framework.json --pretty false && bun x --bun tsc --noEmit -p storage/framework/tsconfig.defaults.json --pretty false",
     "typecheck:app": "bun x --bun tsc --noEmit -p tsconfig.json --pretty false",
     "typecheck:bench": "bun x --bun tsc --noEmit -p bench/tsconfig.json --pretty false",
     "test:bench": "bun test ./bench/memory/*.test.ts ./bench/routing/*.test.ts ./bench/startup/*.test.ts",
     "typecheck:views": "bun x --bun stx typecheck --lib storage/framework/types/request-context.d.ts 'resources/**/*.stx' 'storage/framework/defaults/views/**/*.stx' 'storage/framework/defaults/resources/**/*.stx' 'storage/framework/core/error-handling/src/views/**/*.stx' 'storage/framework/defaults/stores/*.stx' 'storage/framework/libs/examples/**/*.stx'",
     "typecheck:clean": "bunx --bun rimraf storage/framework/.cache/typescript",
-    "types:check": "bun run typecheck",
+    "types:check": "bun x --bun tsc --noEmit -p tsconfig.json --pretty false",
     "types:fix": "./buddy types:fix",
     "bench:memory": "bun bench/memory/run.ts",
     "bench:routing": "bun bench/routing/run.ts",
@@ -92,22 +92,23 @@
     "bud": "./buddy",
     "stx": "./buddy",
     "docs:agent-counts": "./buddy docs:agent-counts",
-    "docs:agent-counts:check": "./buddy docs:agent-counts:check"
+    "docs:agent-counts:check": "./buddy docs:agent-counts:check",
+    "test:desktop": "bun scripts/e2e-desktop.ts"
   },
   "dependencies": {
-    "@stacksjs/actions": "^0.75.56",
-    "@stacksjs/chat": "^0.75.66",
-    "@stacksjs/desktop": "^0.2.368",
-    "@stacksjs/env": "^0.75.41",
-    "@stacksjs/path": "^0.75.41",
-    "@stacksjs/stx": "^0.2.368",
+    "@stacksjs/actions": "^0.75.174",
+    "@stacksjs/chat": "^0.75.174",
+    "@stacksjs/desktop": "^0.2.515",
+    "@stacksjs/env": "^0.75.174",
+    "@stacksjs/path": "^0.75.174",
+    "@stacksjs/stx": "^0.2.515",
     "@stacksjs/ts-css": "^0.3.8",
-    "craft-native": "^0.0.115",
+    "baileys": "^7.0.0-rc14",
+    "craft-native": "^0.0.169",
     "pickier": "^0.1.65",
-    "stacks": "^0.75.41",
+    "stacks": "^0.75.174",
     "ts-images": "^0.2.25",
-    "ts-qr-codes": "^0.1.8",
-    "baileys": "^7.0.0-rc14"
+    "ts-qr-codes": "^0.1.8"
   },
   "workspaces": [
     "storage/framework",

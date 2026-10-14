@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Attic</title>
+  <link rel="icon" href="/images/app-icon.png" type="image/png">
   <!--
     Attic's window. Served by the Attic agent on 127.0.0.1 and rendered by the
     Craft runtime with the titlebar hidden over the system's window material,
@@ -138,6 +139,17 @@
     .toolbar-button:hover { background: var(--chip); }
     .toolbar-button:active { background: var(--sidebar-selected); }
     .toolbar-button[disabled] { opacity: .4; }
+    button:focus-visible, [role='option']:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      :root { --list-bg: #f5f5f5; }
+      body { background: #ececee; }
+    }
+    @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+      :root { --list-bg: #242426; }
+      body { background: #262628; }
+    }
 
     /* Messages' bubbles: 18pt corners, and a tail on the last bubble of each
        run, drawn as a curve cut out of the pane's own colour. */
@@ -252,6 +264,7 @@
 <script client>
 import { app, clipboard, contextMenu, menu, nativeWindow, notifications, shell, showMessageBox, sidebar, standardMenus } from '@stacksjs/desktop/browser'
 import { reportClientErrors } from '../functions/client-errors'
+import { openSettingsWindow } from '../functions/desktop-settings'
 import { haptics } from '@stacksjs/mobile'
 import { isMine, pressAndHold, TAPBACKS } from '../functions/tapbacks'
 
@@ -1031,7 +1044,7 @@ async function pickSource(next) {
 
 /** Attic > Settings… (Cmd+,): its own window, brought forward if already open. */
 function openSettings() {
-  nativeWindow.open({ name: 'settings', url: '/settings', title: 'Settings', width: 560, height: 620, minWidth: 480, minHeight: 420, minimizable: false })
+  openSettingsWindow().catch(error => say(error.message))
 }
 
 /*
@@ -1061,6 +1074,7 @@ function navSections() {
         badge: s.status.connected ? (source() === s.provider ? inboxCount() : null) : (isLocal(s.provider) ? 'Set up' : 'Connect'),
       })),
     },
+    { id: 'preferences', items: [{ id: 'settings', label: 'Settings…', icon: 'gearshape' }] },
   ]
 }
 
@@ -1071,7 +1085,11 @@ function navSelected() {
 }
 
 function onNavPick(id) {
-  if (id === 'all')
+  if (id === 'settings') {
+    openSettings()
+    nativeNav()?.select(navSelected())
+  }
+  else if (id === 'all')
     pickSource('all')
   else if (id === 'archived' || id === 'deleted')
     show(id)
@@ -1098,6 +1116,7 @@ function installNativeSidebar() {
   // Counts, sources and the current view flow into the native list.
   effect(() => nav.update(navSections()))
   effect(() => nav.select(navSelected()))
+  onDestroy(() => nav.destroy())
 }
 
 async function loadRules() {
@@ -1586,6 +1605,7 @@ function onListKey(event) {
 /* ---------- live updates ---------- */
 function listen() {
   const events = new EventSource('/api/events')
+  onDestroy(() => events.close())
   events.onmessage = async (message) => {
     const event = JSON.parse(message.data)
     if (event.type === 'settings')
@@ -1650,27 +1670,27 @@ onMount(async () => {
 })
 </script>
 
-<div data-stx-content class="flex h-screen">
+<div data-stx-content class="flex h-[100dvh]">
   <!-- Sidebar, on the window material. -->
-  <nav :if="!nativeNav()" class="w-[212px] shrink-0 flex flex-col" aria-label="Mailboxes">
+  <nav :if="!nativeNav()" class="flex flex-col shrink-0 w-[212px]" aria-label="Mailboxes">
     <div class="shrink-0" style="height: calc(var(--window-controls-height) + 24px)"></div>
     <button class="sidebar-item" :aria-current="view() === 'inbox' && source() === 'all' ? 'true' : 'false'" @click="pickSource('all')">
-      <span class="i-hugeicons-inbox text-[15px] text-[var(--accent)]"></span>
+      <span class="text-[15px] text-[var(--accent)] i-hugeicons-inbox"></span>
       <span>All Inboxes</span>
       <span class="count" :if="source() === 'all'">{{ inboxCount() }}</span>
     </button>
     <button class="sidebar-item" :aria-current="view() === 'archived' ? 'true' : 'false'" @click="show('archived')">
-      <span class="i-hugeicons-archive-02 text-[15px] text-[var(--accent)]"></span>
+      <span class="text-[15px] text-[var(--accent)] i-hugeicons-archive-02"></span>
       <span>Archived</span>
       <span class="count">{{ archivedCount() }}</span>
     </button>
     <button :if="deletedCount() > 0" class="sidebar-item" :aria-current="view() === 'deleted' ? 'true' : 'false'" @click="show('deleted')" title="Deleted in Messages, still recoverable there for now">
-      <span class="i-hugeicons-delete-02 text-[15px]" style="color: var(--amber)"></span>
+      <span class="text-[15px] i-hugeicons-delete-02" style="color: var(--amber)"></span>
       <span>Recently Deleted</span>
       <span class="count">{{ deletedCount() }}</span>
     </button>
 
-    <div class="px-[19px] pt-4 pb-1 text-[11px] font-semibold muted">Sources</div>
+    <div class="pb-1 pt-4 px-[19px] font-semibold text-[11px] muted">Sources</div>
     <div :for="s in sources()" :key="s.provider" class="contents">
       <button class="sidebar-item" :aria-current="view() === 'inbox' && source() === s.provider ? 'true' : 'false'" @click="s.status.connected ? pickSource(s.provider) : openConnect(s.provider)" :title="s.status.detail">
         <span class="text-[15px]" :class="sourceIcon(s.provider)" :style="colorStyle(s.provider)"></span>
@@ -1681,18 +1701,18 @@ onMount(async () => {
       </button>
     </div>
 
-    <div class="mt-auto px-4 pb-4">
+    <div class="mt-auto pb-4 px-4">
       <div :if="fixture() && !presenting" class="mb-2 tag">Sample data</div>
-      <button class="sidebar-item w-full" @click="openSettings()"><span class="i-hugeicons-settings-02 text-[15px] muted"></span><span>Settings…</span></button>
+      <button class="w-full sidebar-item" @click="openSettings()"><span class="text-[15px] i-hugeicons-settings-02 muted"></span><span>Settings…</span></button>
     </div>
   </nav>
 
   <!-- Nothing connected yet: the one thing to do first. -->
-  <main :if="!anyConnected() && needsAccess()" class="flex-1 grid place-items-center" style="background: var(--pane-bg)">
-    <div class="max-w-[460px] text-center px-6">
-      <img src="/images/app-icon.png" alt="" class="w-[88px] h-[88px] mx-auto mb-4">
-      <h1 class="text-[22px] font-semibold mb-2">Every conversation, one calm place</h1>
-      <p class="muted mb-5">Attic reads iMessage on this Mac, links to WhatsApp as a device of its own, and brings in Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Attic on in Privacy &amp; Security and this window carries on by itself.</p>
+  <main :if="!anyConnected() && needsAccess()" class="grid flex-1 place-items-center" style="background: var(--pane-bg)">
+    <div class="px-6 max-w-[460px] text-center">
+      <img src="/images/app-icon.png" alt="" class="mb-4 mx-auto h-[88px] w-[88px]">
+      <h1 class="mb-2 font-semibold text-[22px]">Every conversation, one calm place</h1>
+      <p class="mb-5 muted">Attic reads iMessage on this Mac, links to WhatsApp as a device of its own, and brings in Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Attic on in Privacy &amp; Security and this window carries on by itself.</p>
       <div class="flex flex-wrap gap-2 justify-center whitespace-nowrap">
         <button class="toolbar-button" style="background: var(--accent); color: #fff; height: 32px; padding: 0 16px" @click="grantAccess()">Open Privacy &amp; Security</button>
         <button class="toolbar-button" style="height: 32px; padding: 0 14px; background: var(--chip)" @click="openConnect('whatsapp')">Link WhatsApp</button>
@@ -1702,49 +1722,49 @@ onMount(async () => {
   </main>
 
   <!-- Conversation list. -->
-  <section :if="anyConnected() || !needsAccess()" class="w-[340px] shrink-0 flex flex-col border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
-    <div class="shrink-0 px-3 pb-2">
+  <section :if="anyConnected() || !needsAccess()" class="flex flex-col shrink-0 w-[340px] border-l border-r" style="background: var(--list-bg); border-color: var(--separator)" aria-label="Conversations">
+    <div class="shrink-0 pb-2 px-3">
       <!-- The title-bar row. With the sidebar collapsed the window buttons sit here, so it starts after them. -->
-      <div class="flex items-center gap-2" @mousedown="dragWindow($event)" style="height: var(--toolbar-height); padding-left: max(4px, calc(var(--craft-window-controls-inset-x, 0px) + var(--craft-window-controls-width, 0px) - 4px))">
-        <div class="min-w-0 flex-1">
-          <h2 class="text-[15px] font-bold leading-tight m-0 truncate">{{ listTitle() }}</h2>
-          <div class="muted text-[11px] leading-tight truncate">{{ bulkJob() && !bulkJob().finished ? `Archiving ${bulkJob().done.toLocaleString()} of ${bulkJob().total.toLocaleString()}…` : `${list().length.toLocaleString()} ${list().length === 1 ? 'conversation' : 'conversations'}` }}</div>
+      <div class="flex gap-2 items-center" @mousedown="dragWindow($event)" style="height: var(--toolbar-height); padding-left: max(4px, calc(var(--craft-window-controls-inset-x, 0px) + var(--craft-window-controls-width, 0px) - 4px))">
+        <div class="flex-1 min-w-0">
+          <h2 class="m-0 font-bold leading-tight text-[15px] truncate">{{ listTitle() }}</h2>
+          <div class="leading-tight text-[11px] truncate muted">{{ bulkJob() && !bulkJob().finished ? `Archiving ${bulkJob().done.toLocaleString()} of ${bulkJob().total.toLocaleString()}…` : `${list().length.toLocaleString()} ${list().length === 1 ? 'conversation' : 'conversations'}` }}</div>
         </div>
         <button :if="view() === 'inbox' && !showingResults()" class="icon-button" @click="openBulk()" title="Clean up: archive everything that has gone quiet">
-          <span class="i-hugeicons-clean text-[17px]"></span>
+          <span class="text-[17px] i-hugeicons-clean"></span>
         </button>
       </div>
       <div class="relative">
-        <span class="i-hugeicons-search-01 absolute left-2 top-[7px] text-[14px] muted"></span>
-        <input id="search" class="search selectable" type="search" placeholder="Search everything Attic kept" x-model="query" autocomplete="off" spellcheck="false">
+        <span class="absolute left-2 top-[7px] text-[14px] i-hugeicons-search-01 muted"></span>
+        <input id="search" class="selectable search" type="search" placeholder="Search everything Attic kept" x-model="query" autocomplete="off" spellcheck="false">
       </div>
-      <button :if="needsAccess()" class="banner mt-2 w-full text-left border-0" @click="grantAccess()">
-        <span class="i-hugeicons-lock-key text-[16px] mt-[1px]" style="color: var(--amber)"></span>
+      <button :if="needsAccess()" class="mt-2 w-full text-left border-0 banner" @click="grantAccess()">
+        <span class="mt-[1px] text-[16px] i-hugeicons-lock-key" style="color: var(--amber)"></span>
         <span class="text-[11.5px]"><span class="font-semibold">iMessage needs Full Disk Access.</span> <span class="muted">Switch Attic on in Privacy &amp; Security.</span></span>
       </button>
-      <button :if="source() === 'slack' && connectedTo('slack')" class="mt-2 text-[11.5px] text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="openConnect('slack')">Add a Slack workspace…</button>
-      <button :if="!notificationsAllowed() && !presenting" class="banner mt-2 w-full text-left border-0" @click="openNotificationSettings()">
-        <span class="i-hugeicons-notification-off-01 text-[16px] mt-[1px]" style="color: var(--amber)"></span>
+      <button :if="source() === 'slack' && connectedTo('slack')" class="mt-2 p-0 text-[11.5px] text-[var(--accent)] bg-transparent border-0 cursor-pointer" @click="openConnect('slack')">Add a Slack workspace…</button>
+      <button :if="!notificationsAllowed() && !presenting" class="mt-2 w-full text-left border-0 banner" @click="openNotificationSettings()">
+        <span class="mt-[1px] text-[16px] i-hugeicons-notification-off-01" style="color: var(--amber)"></span>
         <span class="text-[11.5px]"><span class="font-semibold">Notifications are off for Attic.</span> <span class="muted">Turn on Allow Notifications in System Settings to hear new messages.</span></span>
       </button>
-      <button :if="source() === 'whatsapp' && whatsappLink()?.available && !whatsappLinked()" class="banner mt-2 w-full text-left border-0" @click="openConnect('whatsapp')">
-        <span class="i-hugeicons-whatsapp text-[16px] mt-[1px]" style="color: #25d366"></span>
+      <button :if="source() === 'whatsapp' && whatsappLink()?.available && !whatsappLinked()" class="mt-2 w-full text-left border-0 banner" @click="openConnect('whatsapp')">
+        <span class="mt-[1px] text-[16px] i-hugeicons-whatsapp" style="color: #25d366"></span>
         <span class="text-[11.5px]"><span class="font-semibold">Link Attic to WhatsApp.</span> <span class="muted">Send, reply and get every message without WhatsApp for Mac.</span></span>
       </button>
     </div>
 
-    <div class="scroller flex-1 pb-3" tabindex="0" @keydown="onListKey($event)" @scroll="onListScroll($event)">
+    <div class="flex-1 pb-3 scroller" tabindex="0" @keydown="onListKey($event)" @scroll="onListScroll($event)">
       <!-- Search results. -->
       <div :if="showingResults()">
         <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">Nothing Attic kept matches.</div>
-        <button :for="hit in results()" :key="hit.guid" class="row w-[calc(100%-16px)] text-left border-0 bg-transparent" @click="openResult(hit)">
-          <div class="avatar large mt-0.5"><span :class="sourceIcon(hit.provider)"></span></div>
+        <button :for="hit in results()" :key="hit.guid" class="w-[calc(100%-16px)] text-left bg-transparent border-0 row" @click="openResult(hit)">
+          <div class="mt-0.5 avatar large"><span :class="sourceIcon(hit.provider)"></span></div>
           <div class="min-w-0">
-            <div class="flex justify-between gap-2">
+            <div class="flex gap-2 justify-between">
               <span class="font-semibold truncate">{{ hit.title }}</span>
-              <span class="muted text-[11.5px] shrink-0">{{ when(hit.sentAt) }}</span>
+              <span class="shrink-0 text-[11.5px] muted">{{ when(hit.sentAt) }}</span>
             </div>
-            <div class="muted text-[12px] line-clamp-2"><span class="font-medium mr-1">{{ hit.senderName }}:</span><span :html="snippetHtml(hit.snippet)"></span></div>
+            <div class="line-clamp-2 text-[12px] muted"><span class="mr-1 font-medium">{{ hit.senderName }}:</span><span :html="snippetHtml(hit.snippet)"></span></div>
           </div>
         </button>
       </div>
@@ -1753,33 +1773,33 @@ onMount(async () => {
       <div :if="!showingResults()">
         <div :if="list().length === 0" class="px-8 py-16 text-center muted">
           <div :if="view() === 'archived'">
-            <div class="i-hugeicons-archive-02 text-[34px] mx-auto mb-3"></div>
-            <div class="font-semibold mb-1" style="color: var(--label)">Nothing archived yet</div>
+            <div class="mb-3 mx-auto text-[34px] i-hugeicons-archive-02"></div>
+            <div class="mb-1 font-semibold" style="color: var(--label)">Nothing archived yet</div>
             <div class="text-[12px]">Archive a conversation to clear it out of the app without deleting a thing.</div>
           </div>
           <div :if="view() === 'inbox'">All caught up.</div>
         </div>
         <div :for="c in shownList()" :key="c.key" class="row" role="option" :aria-selected="c.key === selectedKey() ? 'true' : 'false'" @click="select(c.key)" @contextmenu="rowMenu($event, c)">
           <span :if="c.unread > 0" class="unread"></span>
-          <div class="avatar relative">
-            <span :if="c.kind === 'group'" class="i-hugeicons-user-group text-[19px]"></span>
-            <span :if="c.kind === 'channel'" class="text-[18px] font-bold">#</span>
-            <span :if="c.kind === 'thread'" class="i-hugeicons-message-multiple-02 text-[18px]"></span>
+          <div class="relative avatar">
+            <span :if="c.kind === 'group'" class="text-[19px] i-hugeicons-user-group"></span>
+            <span :if="c.kind === 'channel'" class="font-bold text-[18px]">#</span>
+            <span :if="c.kind === 'thread'" class="text-[18px] i-hugeicons-message-multiple-02"></span>
             <span :if="c.kind === 'direct' && c.initials !== '#'">{{ c.initials }}</span>
-            <span :if="c.kind === 'direct' && c.initials === '#'" class="i-hugeicons-user text-[19px]"></span>
+            <span :if="c.kind === 'direct' && c.initials === '#'" class="text-[19px] i-hugeicons-user"></span>
             <img :if="showAvatar(c.avatar)" class="photo" :src="c.avatar" alt="" loading="lazy" @error="avatarFailed(c.avatar)">
             <span class="source-badge" :style="badgeStyle(c.provider)"><span class="text-[9px] text-white" :class="sourceIcon(c.provider)"></span></span>
           </div>
           <div class="min-w-0">
-            <div class="flex justify-between gap-2">
+            <div class="flex gap-2 justify-between">
               <span class="font-semibold truncate">{{ c.title }}</span>
-              <span class="muted text-[11.5px] shrink-0">{{ when(c.lastMessageAt) }}</span>
+              <span class="shrink-0 text-[11.5px] muted">{{ when(c.lastMessageAt) }}</span>
             </div>
-            <div class="muted text-[12px] leading-[1.3] line-clamp-2 min-h-[31px]">{{ preview(c) }}</div>
+            <div class="min-h-[31px] leading-[1.3] line-clamp-2 text-[12px] muted">{{ preview(c) }}</div>
             <div :if="c.resurfacedAt || !c.inApp || busy() === c.key" class="flex gap-1 mt-1">
               <span :if="busy() === c.key" class="tag">Working…</span>
-              <span :if="c.resurfacedAt && c.state === 'inbox'" class="tag"><span class="i-hugeicons-arrow-turn-backward text-[11px]"></span>Wrote again</span>
-              <span :if="!c.inApp" class="tag"><span class="i-hugeicons-archive-02 text-[11px]"></span>Out of {{ appName(c.provider) }}</span>
+              <span :if="c.resurfacedAt && c.state === 'inbox'" class="tag"><span class="text-[11px] i-hugeicons-arrow-turn-backward"></span>Wrote again</span>
+              <span :if="!c.inApp" class="tag"><span class="text-[11px] i-hugeicons-archive-02"></span>Out of {{ appName(c.provider) }}</span>
             </div>
           </div>
         </div>
@@ -1788,42 +1808,42 @@ onMount(async () => {
   </section>
 
   <!-- Transcript. -->
-  <section :if="anyConnected() || !needsAccess()" class="flex-1 min-w-0 flex flex-col" style="background: var(--pane-bg)" aria-label="Transcript">
-    <div :if="!detail()" class="flex-1 grid place-items-center muted">
+  <section :if="anyConnected() || !needsAccess()" class="flex flex-1 flex-col min-w-0" style="background: var(--pane-bg)" aria-label="Transcript">
+    <div :if="!detail()" class="grid flex-1 place-items-center muted">
       <div class="text-center">
-        <div class="i-hugeicons-message-02 text-[40px] mx-auto mb-3"></div>
+        <div class="mb-3 mx-auto text-[40px] i-hugeicons-message-02"></div>
         <div>{{ list().length > 0 ? 'Select a conversation' : 'No conversations' }}</div>
       </div>
     </div>
 
     <!-- As Messages draws it: the picture and name centred under the title bar, actions at the right. -->
-    <header :if="detail()" @mousedown="dragWindow($event)" class="shrink-0 grid items-center gap-2 px-3 border-b" style="height: var(--toolbar-height); grid-template-columns: 1fr minmax(0, auto) 1fr; border-color: var(--separator)">
+    <header :if="detail()" @mousedown="dragWindow($event)" class="grid gap-2 items-center shrink-0 px-3 border-b" style="height: var(--toolbar-height); grid-template-columns: 1fr minmax(0, auto) 1fr; border-color: var(--separator)">
       <div></div>
-      <div class="flex flex-col items-center min-w-0 max-w-[380px]" :title="`${detail()?.subtitle ?? ''}${keptSummary(detail())}`">
-        <div class="avatar header-avatar relative shrink-0">
+      <div class="flex flex-col items-center max-w-[380px] min-w-0" :title="`${detail()?.subtitle ?? ''}${keptSummary(detail())}`">
+        <div class="relative shrink-0 avatar header-avatar">
           <span :if="detail()?.kind === 'direct' && detail()?.initials !== '#'">{{ detail()?.initials }}</span>
           <span :if="detail()?.kind !== 'direct' || detail()?.initials === '#'" class="text-[14px]" :class="detail()?.kind === 'direct' ? 'i-hugeicons-user' : detail()?.kind === 'group' ? 'i-hugeicons-user-group' : 'i-hugeicons-message-multiple-02'"></span>
           <img :if="showAvatar(detail()?.avatar)" class="photo" :src="detail()?.avatar" alt="" @error="avatarFailed(detail()?.avatar)">
         </div>
-        <div class="text-[11px] font-medium leading-tight mt-[3px] max-w-full truncate">{{ detail()?.title }}</div>
+        <div class="mt-[3px] max-w-full font-medium leading-tight text-[11px] truncate">{{ detail()?.title }}</div>
       </div>
-      <div class="flex items-center justify-end gap-0.5 min-w-0">
-        <span :if="detail()?.rule" class="tag mr-1.5 shrink-0" title="New messages reach you, then go into this archive">Always archived</span>
+      <div class="flex gap-0.5 items-center justify-end min-w-0">
+        <span :if="detail()?.rule" class="shrink-0 mr-1.5 tag" title="New messages reach you, then go into this archive">Always archived</span>
         <button :if="detail()?.state !== 'archived'" class="icon-button" :title="`${archiveLabel()}: ${archiveHint(detail())}`" :disabled="busy() !== ''" @click="archive()">
-          <span class="i-hugeicons-archive-02 text-[17px]"></span>
+          <span class="text-[17px] i-hugeicons-archive-02"></span>
         </button>
         <button :if="detail()?.state === 'archived'" class="icon-button" title="Move to Inbox (⇧⌘U)" @click="unarchive()">
-          <span class="i-hugeicons-inbox-upload text-[17px]"></span>
+          <span class="text-[17px] i-hugeicons-inbox-upload"></span>
         </button>
         <button class="icon-button" :title="showHint(detail())" :disabled="!detail()?.url" @click="openInMessages()">
-          <span class="i-hugeicons-share-08 text-[17px]"></span>
+          <span class="text-[17px] i-hugeicons-share-08"></span>
         </button>
       </div>
     </header>
 
-    <div :if="detail() && !detail()?.inApp" class="shrink-0 px-4 pt-3">
+    <div :if="detail() && !detail()?.inApp" class="shrink-0 pt-3 px-4">
       <div class="banner">
-        <span class="i-hugeicons-archive-02 text-[18px] mt-[1px]" style="color: var(--amber)"></span>
+        <span class="mt-[1px] text-[18px] i-hugeicons-archive-02" style="color: var(--amber)"></span>
         <div class="text-[12px]">
           <div class="font-semibold">Out of {{ appName(detail()?.provider) }}</div>
           <div class="muted">Attic kept every message and attachment it copied; what the app no longer holds is outlined.</div>
@@ -1832,83 +1852,83 @@ onMount(async () => {
     </div>
 
     <!-- column-reverse keeps the newest message in view without scripting the scroll. -->
-    <div :if="detail()" class="scroller selectable flex-1 flex flex-col-reverse pl-4 pr-5 pt-4 pb-3" @scroll="closeTapbacks()">
+    <div :if="detail()" class="flex flex-1 flex-col-reverse pb-3 pl-4 pr-5 pt-4 scroller selectable" @scroll="closeTapbacks()">
       <div :for="row in timeline()" :key="row.id" class="contents">
-        <div :if="row.type === 'day'" class="text-center text-[11px] muted pt-5 pb-1.5"><span class="font-semibold">{{ row.day }}</span> {{ row.time }}</div>
-        <div :if="row.type === 'kept'" class="flex items-center gap-2 py-3 text-[11px] muted">
+        <div :if="row.type === 'day'" class="pb-1.5 pt-5 text-[11px] text-center muted"><span class="font-semibold">{{ row.day }}</span> {{ row.time }}</div>
+        <div :if="row.type === 'kept'" class="flex gap-2 items-center py-3 text-[11px] muted">
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
           <span>Above: kept by Attic after {{ appName(detail()?.provider) }} removed it</span>
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
         </div>
-        <div :if="row.type === 'message' && row.m.kind === 'event'" class="text-center text-[11px] muted py-1.5">{{ eventText(row.m) }}</div>
-        <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex items-end gap-2" :class="row.m.isFromMe ? 'justify-end' : 'justify-start'" :style="`margin-top: ${row.m.reactions.length ? 16 : row.starts ? 8 : 2}px`">
+        <div :if="row.type === 'message' && row.m.kind === 'event'" class="py-1.5 text-[11px] text-center muted">{{ eventText(row.m) }}</div>
+        <div :if="row.type === 'message' && row.m.kind === 'message'" class="flex gap-2 items-end" :class="row.m.isFromMe ? 'justify-end' : 'justify-start'" :style="`margin-top: ${row.m.reactions.length ? 16 : row.starts ? 8 : 2}px`">
           <!-- In a group, the sender's picture beside the last bubble of their run. -->
-          <div :if="row.avatarSlot" class="w-[28px] shrink-0">
-            <div :if="row.showAvatar" class="avatar msg-avatar relative">
+          <div :if="row.avatarSlot" class="shrink-0 w-[28px]">
+            <div :if="row.showAvatar" class="relative avatar msg-avatar">
               <span>{{ initialsOf(row.m.senderName) }}</span>
               <img :if="showAvatar(row.m.senderAvatar)" class="photo" :src="row.m.senderAvatar" alt="" loading="lazy" @error="avatarFailed(row.m.senderAvatar)">
             </div>
           </div>
-          <div class="flex flex-col min-w-0 max-w-[min(68%,520px)]" :class="row.m.isFromMe ? 'items-end' : 'items-start'">
-            <div :if="row.showSender" class="text-[11px] muted px-3 pb-[2px]">{{ row.m.senderName }}</div>
+          <div class="flex flex-col max-w-[min(68%,520px)] min-w-0" :class="row.m.isFromMe ? 'items-end' : 'items-start'">
+            <div :if="row.showSender" class="pb-[2px] px-3 text-[11px] muted">{{ row.m.senderName }}</div>
             <div :if="quoted(row.m)" class="quote">{{ quoted(row.m) }}</div>
             <div :for="a in row.m.attachments" class="mb-[2px]">
-              <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-w-[280px] max-h-[320px] rounded-[18px] cursor-zoom-in" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'" @click="openViewer(a)">
+              <img :if="isImage(a)" :src="a.url" :alt="a.name" loading="lazy" class="block max-h-[320px] max-w-[280px] rounded-[18px] cursor-zoom-in" :style="row.m.inApp ? '' : 'outline: 1.5px solid var(--amber); outline-offset: 1px'" @click="openViewer(a)">
               <button :if="isVideo(a)" class="media-tile" :title="a.name" @click="openViewer(a)">
-                <span class="media-play"><span class="i-hugeicons-play text-[22px]"></span></span>
+                <span class="media-play"><span class="text-[22px] i-hugeicons-play"></span></span>
                 <span class="media-caption">{{ bytes(a.bytes) }}</span>
               </button>
-              <button :if="isAudio(a)" class="bubble voice-note flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'" :title="a.name" @click="toggleAudio(a)">
+              <button :if="isAudio(a)" class="flex gap-2 items-center bubble voice-note" :class="row.m.isFromMe ? 'out' : 'in'" :title="a.name" @click="toggleAudio(a)">
                 <span class="text-[16px]" :class="playingAudio() === a.url ? 'i-hugeicons-pause' : 'i-hugeicons-play'"></span>
                 <span>{{ playingAudio() === a.url ? 'Playing…' : 'Voice message' }}</span>
-                <span class="opacity-70 text-[11px]">{{ bytes(a.bytes) }}</span>
+                <span class="text-[11px] opacity-70">{{ bytes(a.bytes) }}</span>
               </button>
-              <div :if="isFile(a)" class="bubble flex items-center gap-2" :class="row.m.isFromMe ? 'out' : 'in'">
-                <span class="i-hugeicons-attachment-01 text-[15px]"></span>
+              <div :if="isFile(a)" class="flex gap-2 items-center bubble" :class="row.m.isFromMe ? 'out' : 'in'">
+                <span class="text-[15px] i-hugeicons-attachment-01"></span>
                 <span>{{ a.name }}</span>
-                <span class="opacity-70 text-[11px]">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
+                <span class="text-[11px] opacity-70">{{ a.available ? bytes(a.bytes) : 'Not downloaded' }}</span>
               </div>
             </div>
             <div :if="row.m.text && !row.m.unsent && isJumbo(row.m.text)" class="jumbo" :class="row.m.isFromMe ? 'out' : 'in'">
               <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
             <div :if="row.m.text && !row.m.unsent && !isJumbo(row.m.text)" class="bubble" :class="bubbleClass(row)" :style="bubbleStyle(row.m)" @contextmenu="messageMenu($event, row.m)" @pointerdown="holdStart($event, row.m)" @pointermove="holdMove($event)" @pointerup="holdEnd()" @pointerleave="holdEnd()" @pointercancel="holdEnd()">
               <div :if="row.m.reactions.length" class="reactions"><span :for="r in row.m.reactions" :title="r.senderName">{{ r.reaction }}</span></div>{{ row.m.text }}</div>
-            <div :if="row.m.unsent" class="text-[11px] muted italic px-3">{{ unsentText(row.m) }}</div>
-            <div :if="row.m.editedAt" class="text-[10.5px] muted px-3">Edited</div>
+            <div :if="row.m.unsent" class="px-3 italic text-[11px] muted">{{ unsentText(row.m) }}</div>
+            <div :if="row.m.editedAt" class="px-3 text-[10.5px] muted">Edited</div>
           </div>
         </div>
       </div>
-      <div :if="hasEarlier()" class="text-center py-3">
-        <button class="toolbar-button muted" @click="loadEarlier()">Show earlier messages</button>
+      <div :if="hasEarlier()" class="py-3 text-center">
+        <button class="muted toolbar-button" @click="loadEarlier()">Show earlier messages</button>
       </div>
     </div>
     <!-- The compose field, as Messages draws it. -->
-    <div :if="detail()" class="shrink-0 px-4 pt-1 pb-3">
-      <div :if="replyTo()" class="flex items-center gap-2 mb-1.5 px-3 py-1.5 rounded-[10px] text-[12px]" style="background: var(--chip)">
-        <span class="i-hugeicons-arrow-turn-backward text-[14px] muted"></span>
+    <div :if="detail()" class="shrink-0 pb-3 pt-1 px-4">
+      <div :if="replyTo()" class="flex gap-2 items-center mb-1.5 px-3 py-1.5 text-[12px] rounded-[10px]" style="background: var(--chip)">
+        <span class="text-[14px] i-hugeicons-arrow-turn-backward muted"></span>
         <span class="flex-1 min-w-0 truncate"><span class="muted">Replying to</span> {{ replyPreview(replyTo()) }}</span>
-        <button class="icon-button" title="Cancel reply (Esc)" @click="replyTo.set(null)"><span class="i-hugeicons-cancel-01 text-[14px]"></span></button>
+        <button class="icon-button" title="Cancel reply (Esc)" @click="replyTo.set(null)"><span class="text-[14px] i-hugeicons-cancel-01"></span></button>
       </div>
       <div :if="outgoingFiles().length > 0" class="flex flex-wrap gap-1.5 mb-1.5">
-        <span :for="f in outgoingFiles()" :key="f.path" class="tag !text-[11.5px] !py-1">
-          <span class="i-hugeicons-attachment-01 text-[12px]"></span>{{ f.name }}
+        <span :for="f in outgoingFiles()" :key="f.path" class="!py-1 !text-[11.5px] tag">
+          <span class="text-[12px] i-hugeicons-attachment-01"></span>{{ f.name }}
           <button class="ml-1 opacity-70 hover:opacity-100" title="Remove" @click="removeOutgoing(f)">×</button>
         </span>
       </div>
       <div :if="canSend()" class="compose-field">
-        <label :if="capabilitiesOf(detail()?.provider).attachments" class="icon-button cursor-pointer shrink-0" title="Attach files">
-          <span class="i-hugeicons-add-circle text-[19px]"></span>
+        <label :if="capabilitiesOf(detail()?.provider).attachments" class="shrink-0 cursor-pointer icon-button" title="Attach files">
+          <span class="text-[19px] i-hugeicons-add-circle"></span>
           <input type="file" multiple class="hidden" @change="attachFiles($event)">
         </label>
-        <textarea id="composer" rows="1" class="compose-input selectable" :placeholder="placeholderFor(detail())" x-model="draft" @keydown="onComposerKey($event)"></textarea>
+        <textarea id="composer" rows="1" class="selectable compose-input" :placeholder="placeholderFor(detail())" x-model="draft" @keydown="onComposerKey($event)"></textarea>
         <button class="send-button" :disabled="sending() || (!draft().trim() && outgoingFiles().length === 0)" title="Send (Return)" @click="sendDraft()">
-          <span class="i-hugeicons-arrow-up-02 text-[16px]"></span>
+          <span class="text-[16px] i-hugeicons-arrow-up-02"></span>
         </button>
       </div>
       <!-- An app Attic cannot write to yet: reply there. -->
       <button :if="!canSend()" class="composer" :title="showHint(detail())" :disabled="!detail()?.url && detail()?.state !== 'archived'" @click="compose()">
         <span class="flex-1 truncate">{{ composerLabel(detail()) }}</span>
-        <span class="i-hugeicons-arrow-up-right-01 text-[15px]"></span>
+        <span class="text-[15px] i-hugeicons-arrow-up-right-01"></span>
       </button>
     </div>
   </section>
@@ -1922,41 +1942,41 @@ onMount(async () => {
   </div>
 
   <!-- Photos and videos open here, full size, as Messages' viewer does. -->
-  <div :if="viewer()" class="fixed inset-0 z-50 grid place-items-center" style="background: rgba(0, 0, 0, .86)" @click="closeViewer()">
-    <video :if="viewer()?.type === 'video'" :src="viewer()?.url" controls autoplay class="max-w-[92vw] max-h-[86vh] rounded-[12px] bg-black" @click="$event.stopPropagation()"></video>
-    <img :if="viewer()?.type === 'image'" :src="viewer()?.url" :alt="viewer()?.name" class="max-w-[92vw] max-h-[88vh] rounded-[12px] object-contain">
-    <button class="icon-button absolute top-4 right-4" style="color: #fff" title="Close (Esc)" @click="closeViewer()"><span class="i-hugeicons-cancel-01 text-[20px]"></span></button>
+  <div :if="viewer()" class="grid fixed inset-0 z-50 place-items-center" style="background: rgba(0, 0, 0, .86)" @click="closeViewer()">
+    <video :if="viewer()?.type === 'video'" :src="viewer()?.url" controls autoplay class="max-h-[86vh] max-w-[92vw] bg-black rounded-[12px]" @click="$event.stopPropagation()"></video>
+    <img :if="viewer()?.type === 'image'" :src="viewer()?.url" :alt="viewer()?.name" class="object-contain max-h-[88vh] max-w-[92vw] rounded-[12px]">
+    <button class="absolute right-4 top-4 icon-button" style="color: #fff" title="Close (Esc)" @click="closeViewer()"><span class="text-[20px] i-hugeicons-cancel-01"></span></button>
   </div>
 
   <!-- Clean up: archive everything quiet for longer than a cutoff. -->
-  <div :if="bulkOpen()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="bulkOpen.set(false)">
-    <div class="w-[460px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
-      <div class="flex items-center gap-3 mb-3">
-        <span class="i-hugeicons-clean text-[24px]" style="color: var(--accent)"></span>
-        <h2 class="text-[16px] font-semibold m-0">Clean up the Inbox</h2>
+  <div :if="bulkOpen()" class="grid fixed inset-0 z-50 place-items-center" style="background: rgba(0, 0, 0, .28)" @click="bulkOpen.set(false)">
+    <div class="p-5 w-[460px] rounded-[14px] shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+      <div class="flex gap-3 items-center mb-3">
+        <span class="text-[24px] i-hugeicons-clean" style="color: var(--accent)"></span>
+        <h2 class="m-0 font-semibold text-[16px]">Clean up the Inbox</h2>
       </div>
       <div :if="!bulkJob() || bulkJob().finished">
-        <p class="muted text-[12px] leading-relaxed mb-3">Archive every conversation with no messages in the last:</p>
+        <p class="mb-3 leading-relaxed text-[12px] muted">Archive every conversation with no messages in the last:</p>
         <div class="flex gap-2 mb-3">
-          <button :for="o in BULK_AGES" class="toolbar-button flex-1 justify-center" :style="bulkDays() === o.days ? 'background: var(--accent); color: #fff' : 'background: var(--chip)'" @click="pickBulkAge(o.days)">{{ o.label }}</button>
+          <button :for="o in BULK_AGES" class="flex-1 justify-center toolbar-button" :style="bulkDays() === o.days ? 'background: var(--accent); color: #fff' : 'background: var(--chip)'" @click="pickBulkAge(o.days)">{{ o.label }}</button>
         </div>
-        <div class="text-[13px] mb-1">
+        <div class="mb-1 text-[13px]">
           <span :if="bulkPreview()" class="font-semibold">{{ bulkPreview().total.toLocaleString() }} conversations</span>
           <span :if="!bulkPreview()" class="muted">Counting…</span>
         </div>
-        <div :if="bulkPreview()" class="muted text-[11.5px] mb-3">{{ bulkBreakdown() }}</div>
-        <p class="muted text-[11.5px] leading-snug mb-1">{{ removal() === 'off' ? 'They are archived in Attic only, as set under When you archive.' : 'Each is copied and checked, then taken out of its app, as any archive is. Messages keeps deleted threads 30 days in Recently Deleted. With thousands this takes a while; it runs in the background.' }}</p>
-        <div :if="bulkJob() && bulkJob().finished" class="text-[12px] mt-3 muted">Last run: {{ bulkJob().archived.toLocaleString() }} archived{{ bulkJob().removed ? `, ${bulkJob().removed.toLocaleString()} taken out of the apps` : '' }}{{ bulkJob().failed ? `, ${bulkJob().failed} not copied completely and left in the Inbox` : '' }}{{ bulkJob().cancelled ? ' (stopped)' : '' }}.</div>
-        <div class="flex justify-end gap-2 mt-4">
+        <div :if="bulkPreview()" class="mb-3 text-[11.5px] muted">{{ bulkBreakdown() }}</div>
+        <p class="mb-1 leading-snug text-[11.5px] muted">{{ removal() === 'off' ? 'They are archived in Attic only, as set under When you archive.' : 'Each is copied and checked, then taken out of its app, as any archive is. Messages keeps deleted threads 30 days in Recently Deleted. With thousands this takes a while; it runs in the background.' }}</p>
+        <div :if="bulkJob() && bulkJob().finished" class="mt-3 text-[12px] muted">Last run: {{ bulkJob().archived.toLocaleString() }} archived{{ bulkJob().removed ? `, ${bulkJob().removed.toLocaleString()} taken out of the apps` : '' }}{{ bulkJob().failed ? `, ${bulkJob().failed} not copied completely and left in the Inbox` : '' }}{{ bulkJob().cancelled ? ' (stopped)' : '' }}.</div>
+        <div class="flex gap-2 justify-end mt-4">
           <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Cancel</button>
           <button class="toolbar-button" style="background: var(--accent); color: #fff" :disabled="!bulkPreview() || bulkPreview().total === 0" @click="startBulk()">{{ bulkPreview() && bulkPreview().total === 0 ? 'Nothing to archive' : `Archive ${bulkPreview() ? bulkPreview().total.toLocaleString() : ''}` }}</button>
         </div>
       </div>
       <div :if="bulkJob() && !bulkJob().finished">
-        <p class="text-[13px] mb-2">Archiving {{ bulkJob().done.toLocaleString() }} of {{ bulkJob().total.toLocaleString() }}…</p>
-        <div class="h-[6px] rounded-full overflow-hidden mb-2" style="background: var(--chip)"><div class="h-full rounded-full" :style="`width: ${Math.round(100 * bulkJob().done / Math.max(1, bulkJob().total))}%; background: var(--accent); transition: width .3s`"></div></div>
-        <p class="muted text-[11.5px] mb-4">Each one is copied and checked before anything leaves an app. You can close this; it keeps going.</p>
-        <div class="flex justify-end gap-2">
+        <p class="mb-2 text-[13px]">Archiving {{ bulkJob().done.toLocaleString() }} of {{ bulkJob().total.toLocaleString() }}…</p>
+        <div class="overflow-hidden mb-2 h-[6px] rounded-full" style="background: var(--chip)"><div class="h-full rounded-full" :style="`width: ${Math.round(100 * bulkJob().done / Math.max(1, bulkJob().total))}%; background: var(--accent); transition: width .3s`"></div></div>
+        <p class="mb-4 text-[11.5px] muted">Each one is copied and checked before anything leaves an app. You can close this; it keeps going.</p>
+        <div class="flex gap-2 justify-end">
           <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Hide</button>
           <button class="toolbar-button" style="color: #ff453a" @click="cancelBulk()">Stop</button>
         </div>
@@ -1965,47 +1985,47 @@ onMount(async () => {
   </div>
 
   <!-- Connecting a source: a token for Slack or Discord, a code to scan for WhatsApp, what is missing for iMessage. -->
-  <div :if="connecting()" class="fixed inset-0 grid place-items-center z-50" style="background: rgba(0, 0, 0, .28)" @click="closeConnect()">
-    <div class="w-[480px] rounded-[14px] p-5 shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
-      <div class="flex items-center gap-3 mb-3">
+  <div :if="connecting()" class="grid fixed inset-0 z-50 place-items-center" style="background: rgba(0, 0, 0, .28)" @click="closeConnect()">
+    <div class="p-5 w-[480px] rounded-[14px] shadow-2xl" style="background: var(--pane-bg)" @click="$event.stopPropagation()">
+      <div class="flex gap-3 items-center mb-3">
         <span class="text-[26px]" :class="sourceIcon(connecting())" :style="colorStyle(connecting())"></span>
-        <h2 class="text-[16px] font-semibold m-0">Connect {{ appName(connecting()) }}</h2>
+        <h2 class="m-0 font-semibold text-[16px]">Connect {{ appName(connecting()) }}</h2>
       </div>
-      <div :if="connecting() === 'slack'" class="muted text-[12px] leading-relaxed mb-3">
+      <div :if="connecting() === 'slack'" class="mb-3 leading-relaxed text-[12px] muted">
         <div :if="slackWorkspaces().length > 0" class="mb-3">
           <div :for="w in slackWorkspaces()" :key="w.teamId" class="flex items-center justify-between py-1">
             <span><span class="font-medium" style="color: var(--label)">{{ w.team }}</span><span :if="!w.live"> (no live messages: add an App-Level Token)</span></span>
-            <button class="text-[#ff453a] bg-transparent border-0 p-0 cursor-pointer" @click="removeSlackWorkspace(w)">Remove</button>
+            <button class="p-0 text-[#ff453a] bg-transparent border-0 cursor-pointer" @click="removeSlackWorkspace(w)">Remove</button>
           </div>
         </div>
         <p class="m-0 mb-2">{{ slackWorkspaces().length > 0 ? 'To add another workspace, make the same app there and paste its tokens:' : 'Attic signs in to Slack through a small app of your own, in each workspace:' }}</p>
-        <ol class="m-0 pl-5 flex flex-col gap-1">
-          <li><button class="text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="startSlackApp()">Copy the app manifest and open Slack</button>, choose <b>From an app manifest</b>, and paste.</li>
+        <ol class="flex flex-col gap-1 m-0 pl-5">
+          <li><button class="p-0 text-[var(--accent)] bg-transparent border-0 cursor-pointer" @click="startSlackApp()">Copy the app manifest and open Slack</button>, choose <b>From an app manifest</b>, and paste.</li>
           <li><b>Install to Workspace</b>, then copy the <b>User OAuth Token</b> (xoxp-) below.</li>
           <li>Under <b>Basic Information</b>, generate an <b>App-Level Token</b> with connections:write (xapp-), so messages arrive as they are sent.</li>
         </ol>
         <p class="m-0 mt-2">Both stay in your keychain.</p>
       </div>
-      <p :if="connecting() === 'discord'" class="muted text-[12px] leading-relaxed mb-3">Paste your Discord token, the one the Discord app signs in with: Attic becomes your Discord client, with your DMs, group DMs and servers. Using your own account from another client is against Discord's terms, and Discord can ban accounts for it. Attic identifies itself to Discord as Attic. The token stays in your keychain.</p>
-      <div :if="connecting() === 'whatsapp'" class="muted text-[12px] leading-relaxed mb-3">
+      <p :if="connecting() === 'discord'" class="mb-3 leading-relaxed text-[12px] muted">Paste your Discord token, the one the Discord app signs in with: Attic becomes your Discord client, with your DMs, group DMs and servers. Using your own account from another client is against Discord's terms, and Discord can ban accounts for it. Attic identifies itself to Discord as Attic. The token stays in your keychain.</p>
+      <div :if="connecting() === 'whatsapp'" class="mb-3 leading-relaxed text-[12px] muted">
         <div :if="!whatsappLinked()">
           <p class="m-0 mb-2">Attic links to WhatsApp as a device of its own, the way WhatsApp Web does, so WhatsApp for Mac is not needed. On your phone, open WhatsApp, then <b>Settings</b>, <b>Linked Devices</b>, <b>Link a Device</b>, and scan this code.</p>
           <div class="flex justify-center my-3">
-            <div :if="whatsappLink()?.qr" class="qr w-[220px] h-[220px] rounded-[10px] p-2 bg-white" :html="whatsappLink().qr"></div>
-            <div :if="!whatsappLink()?.qr" class="w-[220px] h-[220px] rounded-[10px] grid place-items-center" style="background: var(--chip)">{{ whatsappLink()?.error ? '' : 'Asking WhatsApp for a code…' }}</div>
+            <div :if="whatsappLink()?.qr" class="p-2 h-[220px] w-[220px] bg-white rounded-[10px] qr" :html="whatsappLink().qr"></div>
+            <div :if="!whatsappLink()?.qr" class="grid place-items-center h-[220px] w-[220px] rounded-[10px]" style="background: var(--chip)">{{ whatsappLink()?.error ? '' : 'Asking WhatsApp for a code…' }}</div>
           </div>
           <p :if="whatsappLink()?.error" class="m-0 mb-2" style="color: var(--amber)">{{ whatsappLink().error }}</p>
-          <button :if="whatsappLink()?.available && whatsappLink()?.phase === 'signed-out'" class="text-[var(--accent)] bg-transparent border-0 p-0 cursor-pointer" @click="startWhatsAppLink()">Show a new code</button>
+          <button :if="whatsappLink()?.available && whatsappLink()?.phase === 'signed-out'" class="p-0 text-[var(--accent)] bg-transparent border-0 cursor-pointer" @click="startWhatsAppLink()">Show a new code</button>
           <p class="m-0 mt-2">Your messages arrive, send and sync straight from WhatsApp. Keep WhatsApp signed in on the phone, and let the phone come online every couple of weeks, or WhatsApp unlinks its devices.</p>
         </div>
         <div :if="whatsappLinked()">
           <p class="m-0">{{ whatsappLink()?.phase === 'open' ? 'Linked' : 'Linked, reconnecting' }}{{ whatsappLink()?.me ? ' as ' + whatsappLink().me : '' }}. Attic sends and receives WhatsApp by itself, so WhatsApp for Mac can be uninstalled. Disconnecting unlinks Attic on your phone too; what Attic has archived stays.</p>
         </div>
       </div>
-      <p :if="isLocal(connecting())" class="muted text-[12px] leading-relaxed mb-3">Attic reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
-      <input :if="connecting() === 'slack' || connecting() === 'discord'" class="search selectable mb-2" style="padding-left: 10px" type="password" :placeholder="connecting() === 'slack' ? 'User OAuth Token (xoxp-…)' : 'Discord token'" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
-      <input :if="connecting() === 'slack'" class="search selectable mb-2" style="padding-left: 10px" type="password" placeholder="App-Level Token (xapp-…)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
-      <div class="flex justify-between items-center mt-3">
+      <p :if="isLocal(connecting())" class="mb-3 leading-relaxed text-[12px] muted">Attic reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
+      <input :if="connecting() === 'slack' || connecting() === 'discord'" class="mb-2 selectable search" style="padding-left: 10px" type="password" :placeholder="connecting() === 'slack' ? 'User OAuth Token (xoxp-…)' : 'Discord token'" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
+      <input :if="connecting() === 'slack'" class="mb-2 selectable search" style="padding-left: 10px" type="password" placeholder="App-Level Token (xapp-…)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
+      <div class="flex items-center justify-between mt-3">
         <button :if="connecting() === 'whatsapp' ? whatsappLinked() : connectedTo(connecting()) && !isLocal(connecting())" class="toolbar-button" style="color: #ff453a" @click="disconnect(connecting())">{{ connecting() === 'slack' && slackWorkspaces().length > 1 ? 'Remove All' : 'Disconnect' }}</button>
         <span :if="connecting() === 'whatsapp' ? !whatsappLinked() : !connectedTo(connecting()) || isLocal(connecting())"></span>
         <div :if="isLocal(connecting()) || connecting() === 'whatsapp'" class="flex gap-2">
@@ -2020,7 +2040,7 @@ onMount(async () => {
   </div>
 
   <!-- A quiet status line for confirmations, bottom centre like a Mail toast. -->
-  <div :if="flash()" class="fixed left-1/2 bottom-5 -translate-x-1/2 px-4 py-2 rounded-[10px] text-[12px] text-white shadow-lg max-w-[520px] text-center" style="background: rgba(40, 40, 40, .92)">{{ flash() }}</div>
+  <div :if="flash()" class="bottom-5 fixed left-1/2 px-4 py-2 max-w-[520px] text-[12px] text-center text-white rounded-[10px] shadow-lg -translate-x-1/2" style="background: rgba(40, 40, 40, .92)">{{ flash() }}</div>
 </div>
 </body>
 </html>

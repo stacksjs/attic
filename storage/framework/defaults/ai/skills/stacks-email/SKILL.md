@@ -105,7 +105,7 @@ import { template, renderHtml, templateExists, listTemplates } from '@stacksjs/e
 
 const { html, text } = await template('welcome', {
   variables: { name: 'John', url: 'https://app.com' },
-  layout: 'default',   // or false to skip layout
+  layout: 'base',   // HTML layout, or false; STX templates own their layout
   subject: 'Welcome'
 })
 
@@ -164,9 +164,11 @@ await deleteEmail('chris', messageId)
 - Configurable domain and endpoint
 
 ### Mailtrap Driver
-- Inbox-aware sending
-- Sandbox and production modes
-- Host default: `sandbox.api.mailtrap.io`
+- `MAILTRAP_INBOX_ID` picks the API: set, mail is captured in that sandbox
+  inbox (`sandbox.api.mailtrap.io/api/send/<inbox>`); unset, it is delivered
+  through the Sending API (`send.api.mailtrap.io/api/send`)
+- `MAILTRAP_HOST` overrides the host for either; blank means Mailtrap's own
+- A 4xx other than 429 is not retried
 
 ### SMTP Driver
 - Raw TCP/TLS socket connection
@@ -315,7 +317,7 @@ Reprocessing refreshes existing messages instead of skipping them, preserves the
 - Default driver is `ses` - requires AWS credentials
 - Template rendering supports both `.stx` and `.html` files
 - Variable interpolation uses `{{ }}` double-brace syntax
-- The `mail` singleton auto-registers all 5 drivers on initialization
+- The mail singleton registers smtp, ses, sendgrid, mailgun, mailtrap, log and capture; provider selection comes from config
 - SMTP driver handles TLS handshake manually (not via node:tls)
 - SendGrid/Mailgun retry with exponential backoff on failure
 - `mail.send()` returns structured failures; use `mail.sendOrFail()` when success is required
@@ -327,3 +329,19 @@ Reprocessing refreshes existing messages instead of skipping them, preserves the
 - `buddy email:reprocess` preserves existing read state and exits nonzero on failure
 - Email categorization auto-sorts incoming mail by domain/substring patterns
 - The `text` fallback is auto-generated from HTML via `htmlToText()`
+
+
+## Delivery controls and provider evidence
+
+The package exports native suppression, send idempotency, unsubscribe tokens,
+webhook deduplication/signature/processors, CSS inlining, typed Mailable and mail
+previews. Read [DELIVERY-CONTROLS.md](DELIVERY-CONTROLS.md) when sending campaigns,
+processing provider callbacks or building recipient unsubscribe flows.
+
+Log and capture have local test contracts. SMTP/SES/SendGrid/Mailgun/Mailtrap
+are partial in `core/config/src/capabilities.ts`: credentials and request
+behavior are retained, live inbox delivery assertions are not. A successful
+provider API result means accepted by that provider, not received by the user.
+The default email webhook bundle is subject to route selection and the email
+feature gate. A preview/scaffold workflow never needs a production transport;
+see `stacks-mail` for make:mail and mail:preview.

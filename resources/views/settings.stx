@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Settings</title>
+  <link rel="icon" href="/images/app-icon.png" type="image/png">
   <!--
     Attic > Settings… (Cmd+,): a window of its own, opened by name so a second
     Cmd+, brings it forward. Served by the agent like the main window and kept
@@ -119,32 +120,34 @@ onMount(async () => {
   await load()
   // Kept in step with the main window: a change in either shows in both.
   const events = new EventSource('/api/events')
+  onDestroy(() => events.close())
   events.onmessage = async (message) => {
     const event = JSON.parse(message.data)
     if (event.type === 'changed' || event.type === 'settings' || event.type === 'phones')
       await load()
   }
   // While a phone is pairing, watch for it to check in.
-  setInterval(async () => {
+  const polling = setInterval(async () => {
     if (pairing() && !pairedPhone())
       phones.set((await api('/api/phone/devices')).devices)
   }, 2000)
+  onDestroy(() => clearInterval(polling))
 })
 </script>
 
-<main class="px-5 pt-3 pb-6">
+<main class="pb-6 pt-3 px-5">
   <div class="heading">Archiving</div>
   <div class="group">
     <div class="row">
       <span class="flex-1">When someone writes again</span>
-      <select class="button" :value="resurface()" @change="setResurface($event.target.value)">
+      <select class="button" aria-label="When someone writes again" :value="resurface()" @change="setResurface($event.target.value)">
         <option value="inbox">Move it back to the Inbox</option>
         <option value="stay">Keep it archived</option>
       </select>
     </div>
     <div class="row">
       <span class="flex-1">When you archive</span>
-      <select class="button" :value="removal()" @change="setRemoval($event.target.value)">
+      <select class="button" aria-label="When you archive" :value="removal()" @change="setRemoval($event.target.value)">
         <option value="auto">Take it out of the app</option>
         <option value="confirm">Take it out, Messages asks first</option>
         <option value="off">Archive in Attic only</option>
@@ -158,11 +161,11 @@ onMount(async () => {
 
   <div class="heading">Always archive</div>
   <div class="group">
-    <div :if="rules().length === 0" class="row muted">Right-click a conversation and choose Always Archive. New messages from that person still reach you, then go into their archive and leave the app once the conversation is quiet.</div>
+    <div :if="rules().length === 0" class="muted row">Right-click a conversation and choose Always Archive. New messages from that person still reach you, then go into their archive and leave the app once the conversation is quiet.</div>
     <div :for="r in rules()" :key="r.id" class="row">
       <span class="flex-1 min-w-0">
         <span class="block truncate">{{ r.label || r.value }}</span>
-        <span class="block muted text-[11.5px]">{{ r.kind === 'person' ? 'Person' : 'Group' }} on {{ appLabel(r.provider) }}</span>
+        <span class="block text-[11.5px] muted">{{ r.kind === 'person' ? 'Person' : 'Group' }} on {{ appLabel(r.provider) }}</span>
       </span>
       <button class="button danger" @click="stopRule(r)">Stop</button>
     </div>
@@ -174,21 +177,21 @@ onMount(async () => {
       <span class="flex-1 muted">The phone keeps its own copy of the archive and syncs with this Mac on the same Wi-Fi, encrypted with a key only the two hold.</span>
       <button :if="!pairing() || pairedPhone()" class="button primary" @click="pairPhone()">Pair a phone</button>
     </div>
-    <div :if="pairing() && !pairedPhone()" class="row flex-col">
-      <div class="qr w-[200px] h-[200px] rounded-[10px] p-2 bg-white" :html="pairing().svg"></div>
-      <div class="muted text-center">Point the phone's camera at this code to open Attic there and pair. Waiting for it…</div>
+    <div :if="pairing() && !pairedPhone()" class="flex-col row">
+      <div class="p-2 h-[200px] w-[200px] bg-white rounded-[10px] qr" :html="pairing().svg"></div>
+      <div class="text-center muted">Point the phone's camera at this code to open Attic there and pair. Waiting for it…</div>
     </div>
     <div :if="pairedPhone()" class="row">Paired. The phone is copying the archive.</div>
     <div :for="p in phones()" :key="p.id" class="row">
       <span class="flex-1 min-w-0">
         <span class="block truncate">{{ p.name }}</span>
-        <span class="block muted text-[11.5px]">{{ since(p.lastSeenAt) }}</span>
+        <span class="block text-[11.5px] muted">{{ since(p.lastSeenAt) }}</span>
       </span>
       <button class="button danger" @click="forgetPhone(p)">Forget</button>
     </div>
   </div>
 
-  <div :if="note()" class="fixed left-5 right-5 bottom-4 text-center text-white rounded-[8px] px-3 py-2" style="background: rgba(40, 40, 40, .92)">{{ note() }}</div>
+  <div :if="note()" class="bottom-4 fixed left-5 right-5 px-3 py-2 text-center text-white rounded-[8px]" style="background: rgba(40, 40, 40, .92)">{{ note() }}</div>
 </main>
 </body>
 </html>

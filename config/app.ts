@@ -10,6 +10,8 @@ import { env } from '@stacksjs/env'
  */
 export default {
   name: env.APP_NAME ?? 'Attic',
+  appPath: '/app',
+  devLaunch: 'native',
   // Shown on the starter page, the coming-soon page, and any page that sets
   // no description of its own.
   description: '',

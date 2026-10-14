@@ -146,7 +146,7 @@ export async function buildSample(root = ROOT): Promise<{ chatDb: string, addres
 }
 
 if (import.meta.main) {
-  const sample = buildSample()
+  const sample = await buildSample()
   console.log(`ATTIC_MESSAGES_DB=${sample.chatDb}`)
   console.log(`ATTIC_ADDRESS_BOOK_DIR=${sample.addressBook}`)
   console.log(`ATTIC_DATA_DIR=${sample.data}`)

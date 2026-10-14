@@ -1,5 +1,5 @@
 import { customerOwnership, defineModel } from '@stacksjs/orm'
-import { schema } from '@stacksjs/validation'
+import { schema } from '@stacksjs/validation/runtime'
 
 export default defineModel({
   name: 'Cart',
@@ -13,6 +13,7 @@ export default defineModel({
   ownership: customerOwnership(),
 
   traits: {
+    gdpr: { subject: { via: 'Customer' }, erasure: 'anonymize', basis: 'contract', purpose: 'Shopping cart' },
     useUuid: true,
     useTimestamps: true,
     useSearch: {
@@ -122,6 +123,7 @@ export default defineModel({
     },
 
     notes: {
+      personal: true,
       order: 9,
       fillable: true,
       validation: {

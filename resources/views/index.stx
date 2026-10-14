@@ -169,49 +169,49 @@ const year = new Date().getFullYear()
   </style>
 </head>
 <body>
-  <header class="max-w-6xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between">
-    <a href="/" class="flex items-center gap-2.5 no-underline font-semibold text-[17px]">
+  <header class="flex items-center justify-between mx-auto px-5 md:px-8 h-16 max-w-6xl">
+    <a href="/" class="flex gap-2.5 items-center font-semibold no-underline text-[17px]">
       <img src="/images/app-icon.png" alt="" width="30" height="30">
       Attic
     </a>
-    <nav class="flex items-center gap-6 text-[14px]">
-      <a href="#how" class="hidden sm:inline no-underline soft hover:opacity-80">How it works</a>
-      <a href="#privacy" class="hidden sm:inline no-underline soft hover:opacity-80">Privacy</a>
-      <a href="#faq" class="hidden sm:inline no-underline soft hover:opacity-80">FAQ</a>
-      <a href="{{ download }}" class="btn btn-primary h-9 px-4 text-[14px]">Get Attic</a>
+    <nav class="flex gap-6 items-center text-[14px]">
+      <a href="#how" class="hidden sm:inline no-underline hover:opacity-80 soft">How it works</a>
+      <a href="#privacy" class="hidden sm:inline no-underline hover:opacity-80 soft">Privacy</a>
+      <a href="#faq" class="hidden sm:inline no-underline hover:opacity-80 soft">FAQ</a>
+      <a href="{{ download }}" class="px-4 h-9 text-[14px] btn btn-primary">Get Attic</a>
     </nav>
   </header>
 
   <main>
     <!-- Hero: the promise on the left, the real app on the right. -->
-    <section class="max-w-6xl mx-auto px-5 md:px-8 pt-10 md:pt-16 pb-16 grid md:grid-cols-[1fr_1.35fr] gap-10 md:gap-12 items-center">
+    <section class="grid gap-10 items-center md:gap-12 md:grid-cols-[1fr_1.35fr] mx-auto pb-16 pt-10 px-5 md:pt-16 md:px-8 max-w-6xl">
       <div>
-        <h1 class="text-4xl md:text-5xl lg:text-[56px] font-bold tracking-tight leading-[1.05] m-0">One calm inbox for every chat.</h1>
-        <p class="soft text-[17px] md:text-lg leading-relaxed mt-5 mb-8 max-w-[34ch]">Attic gathers iMessage, WhatsApp, Slack and Discord on your Mac. Archive a conversation and it leaves the real app too.</p>
+        <h1 class="m-0 font-bold leading-[1.05] text-4xl tracking-tight md:text-5xl lg:text-[56px]">One calm inbox for every chat.</h1>
+        <p class="mb-8 mt-5 max-w-[34ch] leading-relaxed text-[17px] md:text-lg soft">Attic gathers iMessage, WhatsApp, Slack and Discord on your Mac. Archive a conversation and it leaves the real app too.</p>
         <div class="flex flex-wrap gap-3">
-          <a href="{{ download }}" class="btn btn-primary"><span class="i-hugeicons-apple text-[18px]"></span>Get Attic</a>
+          <a href="{{ download }}" class="btn btn-primary"><span class="text-[18px] i-hugeicons-apple"></span>Get Attic</a>
           <a href="#how" class="btn btn-ghost">How it works</a>
         </div>
       </div>
       <picture>
         <source srcset="/images/screens/attic-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="/images/screens/attic-light.png" alt="Attic on a Mac: one inbox of WhatsApp, iMessage, Slack and Discord conversations, with contact photos" width="1440" height="900" class="shot w-full h-auto block">
+        <img src="/images/screens/attic-light.png" alt="Attic on a Mac: one inbox of WhatsApp, iMessage, Slack and Discord conversations, with contact photos" width="1440" height="900" class="block h-auto w-full shot">
       </picture>
     </section>
 
     <!-- How archiving works: one column of three moments. -->
-    <section id="how" class="max-w-6xl mx-auto px-5 md:px-8 py-16 md:py-24 grid md:grid-cols-[1fr_1.4fr] gap-10 md:gap-16">
+    <section id="how" class="grid gap-10 md:gap-16 md:grid-cols-[1fr_1.4fr] mx-auto px-5 py-16 md:px-8 md:py-24 max-w-6xl">
       <div class="md:sticky md:top-24 self-start">
-        <p class="text-[12px] font-semibold uppercase tracking-[0.16em] m-0 mb-3" style="color: var(--accent)">Archive, for real</p>
-        <h2 class="text-3xl md:text-4xl font-bold tracking-tight leading-tight m-0 max-w-[16ch]">The chat apps only let you delete. Attic archives.</h2>
+        <p class="m-0 mb-3 font-semibold text-[12px] tracking-[0.16em] uppercase" style="color: var(--accent)">Archive, for real</p>
+        <h2 class="m-0 max-w-[16ch] font-bold leading-tight text-3xl tracking-tight md:text-4xl">The chat apps only let you delete. Attic archives.</h2>
       </div>
-      <ol class="list-none m-0 p-0 flex flex-col gap-4">
+      <ol class="flex flex-col gap-4 m-0 p-0 list-none">
         @foreach (steps as step)
-          <li class="rise tile p-6 md:p-7 flex gap-5">
-            <span class="shrink-0 w-11 h-11 rounded-full grid place-items-center" style="background: var(--accent-wash); color: var(--accent)"><span class="{{ step.icon }} text-[20px]"></span></span>
+          <li class="flex gap-5 p-6 md:p-7 rise tile">
+            <span class="grid place-items-center shrink-0 h-11 w-11 rounded-full" style="background: var(--accent-wash); color: var(--accent)"><span class="{{ step.icon }} text-[20px]"></span></span>
             <div>
-              <h3 class="text-[18px] font-semibold m-0 mb-1.5">{{ step.title }}</h3>
-              <p class="soft m-0 leading-relaxed max-w-[52ch]">{{ step.body }}</p>
+              <h3 class="m-0 mb-1.5 font-semibold text-[18px]">{{ step.title }}</h3>
+              <p class="m-0 max-w-[52ch] leading-relaxed soft">{{ step.body }}</p>
             </div>
           </li>
         @endforeach
@@ -219,65 +219,65 @@ const year = new Date().getFullYear()
     </section>
 
     <!-- Sources: a bento of the four apps and the search across them. -->
-    <section class="max-w-6xl mx-auto px-5 md:px-8 py-16 md:py-20">
-      <h2 class="text-3xl md:text-4xl font-bold tracking-tight m-0 mb-10 max-w-[22ch]">Four apps, one list, honest about each.</h2>
-      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <section class="mx-auto px-5 py-16 md:px-8 md:py-20 max-w-6xl">
+      <h2 class="m-0 mb-10 max-w-[22ch] font-bold text-3xl tracking-tight md:text-4xl">Four apps, one list, honest about each.</h2>
+      <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         @foreach (sources as source)
           <article class="tile {{ source.tint }} p-6 md:p-7 flex flex-col gap-3">
             <span class="glyph {{ source.icon }} text-[30px]"></span>
-            <h3 class="text-[19px] font-semibold m-0">{{ source.name }}</h3>
-            <p class="soft m-0 leading-relaxed text-[15px]">{{ source.body }}</p>
+            <h3 class="m-0 font-semibold text-[19px]">{{ source.name }}</h3>
+            <p class="m-0 leading-relaxed text-[15px] soft">{{ source.body }}</p>
           </article>
         @endforeach
-        <article class="tile md:col-span-2 lg:col-span-4 p-6 md:p-8 grid md:grid-cols-[1fr_1.2fr] gap-8 items-center overflow-hidden">
+        <article class="grid overflow-hidden gap-8 items-center md:col-span-2 md:grid-cols-[1fr_1.2fr] lg:col-span-4 p-6 md:p-8 tile">
           <div>
-            <span class="i-hugeicons-search-01 text-[28px]" style="color: var(--accent)"></span>
-            <h3 class="text-[22px] font-semibold mt-3 mb-2">Search everything you kept</h3>
-            <p class="soft m-0 leading-relaxed max-w-[44ch]">Every archived message across all four apps is indexed on your Mac. Find the address from last spring without scrolling a single thread.</p>
+            <span class="text-[28px] i-hugeicons-search-01" style="color: var(--accent)"></span>
+            <h3 class="mb-2 mt-3 font-semibold text-[22px]">Search everything you kept</h3>
+            <p class="m-0 max-w-[44ch] leading-relaxed soft">Every archived message across all four apps is indexed on your Mac. Find the address from last spring without scrolling a single thread.</p>
           </div>
           <picture>
             <source srcset="/images/screens/attic-search-dark.png" media="(prefers-color-scheme: dark)">
-            <img src="/images/screens/attic-search-light.png" alt="Searching archived messages in Attic" width="1440" height="900" class="shot w-full h-auto block" loading="lazy">
+            <img src="/images/screens/attic-search-light.png" alt="Searching archived messages in Attic" width="1440" height="900" class="block h-auto w-full shot" loading="lazy">
           </picture>
         </article>
       </div>
     </section>
 
     <!-- Privacy: a single statement. -->
-    <section id="privacy" class="max-w-6xl mx-auto px-5 md:px-8 py-20 md:py-28 text-center">
-      <span class="i-hugeicons-laptop text-[34px] faint"></span>
-      <h2 class="text-3xl md:text-5xl font-bold tracking-tight leading-[1.1] mt-4 mb-5 mx-auto max-w-[18ch]">Your messages never leave your Mac.</h2>
-      <p class="soft text-lg leading-relaxed m-0 mx-auto max-w-[52ch]">No account, no server, no analytics. Attic reads your apps where they already are and keeps its copies in your Library folder.</p>
+    <section id="privacy" class="mx-auto px-5 py-20 md:px-8 md:py-28 max-w-6xl text-center">
+      <span class="text-[34px] faint i-hugeicons-laptop"></span>
+      <h2 class="mb-5 mt-4 mx-auto max-w-[18ch] font-bold leading-[1.1] text-3xl tracking-tight md:text-5xl">Your messages never leave your Mac.</h2>
+      <p class="m-0 mx-auto max-w-[52ch] leading-relaxed text-lg soft">No account, no server, no analytics. Attic reads your apps where they already are and keeps its copies in your Library folder.</p>
     </section>
 
     <!-- FAQ. -->
-    <section id="faq" class="max-w-3xl mx-auto px-5 md:px-8 py-16 md:py-20">
-      <h2 class="text-3xl md:text-4xl font-bold tracking-tight m-0 mb-8">Questions</h2>
+    <section id="faq" class="mx-auto px-5 py-16 md:px-8 md:py-20 max-w-3xl">
+      <h2 class="m-0 mb-8 font-bold text-3xl tracking-tight md:text-4xl">Questions</h2>
       <div class="flex flex-col gap-3">
         @foreach (faqs as item)
-          <details class="tile px-6 py-5">
-            <summary class="flex items-center justify-between gap-4 font-semibold text-[17px]">
+          <details class="px-6 py-5 tile">
+            <summary class="flex gap-4 items-center justify-between font-semibold text-[17px]">
               {{ item.q }}
-              <span class="chevron i-hugeicons-add-01 text-[18px] faint shrink-0"></span>
+              <span class="shrink-0 text-[18px] chevron faint i-hugeicons-add-01"></span>
             </summary>
-            <p class="soft leading-relaxed mt-3 mb-0">{{ item.a }}</p>
+            <p class="mb-0 mt-3 leading-relaxed soft">{{ item.a }}</p>
           </details>
         @endforeach
       </div>
     </section>
 
     <!-- The one call to action, once more at the end. -->
-    <section class="max-w-6xl mx-auto px-5 md:px-8 pb-20 md:pb-28">
-      <div class="rounded-[28px] px-6 py-14 md:py-16 text-center" style="background: var(--accent-wash)">
-        <img src="/images/app-icon.png" alt="" width="84" height="84" class="mx-auto block mb-5">
-        <h2 class="text-3xl md:text-4xl font-bold tracking-tight m-0 mb-3">Clear your chats without losing a word.</h2>
-        <p class="soft m-0 mb-7">For macOS 14 Sonoma and later.</p>
-        <a href="{{ download }}" class="btn btn-primary"><span class="i-hugeicons-apple text-[18px]"></span>Get Attic</a>
+    <section class="mx-auto pb-20 px-5 md:pb-28 md:px-8 max-w-6xl">
+      <div class="px-6 py-14 md:py-16 text-center rounded-[28px]" style="background: var(--accent-wash)">
+        <img src="/images/app-icon.png" alt="" width="84" height="84" class="block mb-5 mx-auto">
+        <h2 class="m-0 mb-3 font-bold text-3xl tracking-tight md:text-4xl">Clear your chats without losing a word.</h2>
+        <p class="m-0 mb-7 soft">For macOS 14 Sonoma and later.</p>
+        <a href="{{ download }}" class="btn btn-primary"><span class="text-[18px] i-hugeicons-apple"></span>Get Attic</a>
       </div>
     </section>
   </main>
 
-  <footer class="max-w-6xl mx-auto px-5 md:px-8 py-10 flex flex-col sm:flex-row gap-3 justify-between text-[13px] faint" style="border-top: 1px solid var(--line)">
+  <footer class="flex flex-col gap-3 justify-between sm:flex-row mx-auto px-5 py-10 md:px-8 max-w-6xl text-[13px] faint" style="border-top: 1px solid var(--line)">
     <span>© {{ year }} Attic. Built with Stacks.</span>
     <span>iMessage, WhatsApp, Slack and Discord are trademarks of their owners.</span>
   </footer>
