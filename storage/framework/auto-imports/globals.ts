@@ -18,8 +18,18 @@ declare global {
   const toggleDark: typeof autoImports.toggleDark
   const isDark: typeof autoImports.isDark
   const preferredDark: typeof autoImports.preferredDark
+  const openSettingsWindow: typeof autoImports.openSettingsWindow
   const parseFallbackReaction: typeof autoImports.parseFallbackReaction
   const foldFallbackReactions: typeof autoImports.foldFallbackReactions
+  const nativeApi: typeof autoImports.nativeApi
+  const nativeCraft: typeof autoImports.nativeCraft
+  const desktop: typeof autoImports.desktop
+  const nativePost: typeof autoImports.nativePost
+  const nativeEvents: typeof autoImports.nativeEvents
+  const nativeDate: typeof autoImports.nativeDate
+  const attachmentKind: typeof autoImports.attachmentKind
+  const SOURCE_SYMBOLS: typeof autoImports.SOURCE_SYMBOLS
+  const SOURCE_NAMES: typeof autoImports.SOURCE_NAMES
   const loadPairing: typeof autoImports.loadPairing
   const savePairing: typeof autoImports.savePairing
   const forgetPairing: typeof autoImports.forgetPairing

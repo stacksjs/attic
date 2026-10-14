@@ -1,0 +1,57 @@
+{
+  "zig": {
+    "version": "0.18.0-dev.252+86dc5ce25",
+    "sha256": "268555a90fc72e281882b2eba469fc88f0005aee26981451a9d61bc4bca3f302"
+  },
+  "sources": {
+    "stx": {
+      "url": "https://github.com/stacksjs/stx.git",
+      "revision": "ea81294a107a1dae80edbd66c388f2beecbf1e54",
+      "paths": [
+        "packages/stx",
+        "packages/components",
+        "packages/router",
+        "packages/test-utils",
+        "packages/bun-plugin",
+        "scripts",
+        ".config"
+      ]
+    },
+    "craft": {
+      "url": "https://github.com/craft-native/craft.git",
+      "revision": "ec386941c748002dc29923340d0917a80f7c74b6",
+      "paths": [
+        "packages/macos",
+        "packages/ios/templates",
+        "packages/zig/src"
+      ]
+    },
+    "zig-js": {
+      "url": "https://github.com/zig-utils/zig-js.git",
+      "revision": "f0072c95780712d1bb789280e08e7e390e83ab94",
+      "paths": [
+        "src",
+        "include",
+        "tests",
+        "tools",
+        "docs",
+        "bench",
+        "conformance"
+      ]
+    },
+    "zig-regex": {
+      "url": "https://github.com/zig-utils/zig-regex.git",
+      "revision": "fdd9c2e333ea6ac2fd06d080d939ef7f11d61b1b",
+      "paths": [
+        "src"
+      ]
+    },
+    "zig-gc": {
+      "url": "https://github.com/zig-utils/zig-gc.git",
+      "revision": "0285ef801dd221a4ae8e88b31a09ae31627657a3",
+      "paths": [
+        "src"
+      ]
+    }
+  }
+}

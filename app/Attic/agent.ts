@@ -742,6 +742,15 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   let port = 0
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
+    // AppKit uses a shared, ephemeral URLSession cookie store. Issue the same
+    // HttpOnly session as the web shell without loading or rendering HTML.
+    if (req.method === 'GET' && url.pathname === '/native/session') {
+      if (req.headers.get('host') !== `127.0.0.1:${port}` && req.headers.get('host') !== `localhost:${port}`)
+        return problem('Forbidden', 403)
+      const response = json({ version: options.version, renderer: 'appkit' })
+      response.headers.set('set-cookie', `attic=${token}; Path=/; HttpOnly; SameSite=Strict`)
+      return response
+    }
     if (!url.pathname.startsWith('/api/'))
       return serveStatic(url.pathname)
     if (!authorized(req, port))
@@ -772,7 +781,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           // The list shows two lines of preview and no archive hint (the
           // selected conversation's detail carries that): thousands of rows
           // otherwise ship megabytes nobody reads.
-          return json(listed.map(({ archiveDetail: _, ...c }) => ({ ...c, preview: c.preview && c.preview.length > 160 ? `${c.preview.slice(0, 160)}…` : c.preview })))
+          return json(listed.map(c => ({ ...c, archiveDetail: undefined, preview: c.preview && c.preview.length > 160 ? `${c.preview.slice(0, 160)}…` : c.preview })))
         }
         case 'GET /api/conversation': {
           const key = keyFrom(url.searchParams)

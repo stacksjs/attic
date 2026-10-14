@@ -66,9 +66,9 @@ function craftRuntime(): string {
   const bundled = join(dirname(process.execPath), 'craft-runtime')
   if (existsSync(bundled))
     return bundled
-  const found = process.env.CRAFT_BIN || Bun.which('craft')
-  if (!found)
-    throw new Error('Craft runtime not found: set CRAFT_BIN or run `pantry install`.')
+  const found = process.env.CRAFT_BIN || join(import.meta.dir, '../../storage/attic/native/craft-native-macos')
+  if (!existsSync(found))
+    throw new Error('Craft AppKit runtime not found: run `bun run build:native` or set CRAFT_BIN.')
   return found
 }
 
@@ -79,15 +79,6 @@ function webRoot(): string {
   if (IN_APP_BUNDLE)
     return join(dirname(dirname(process.execPath)), 'Resources', 'web')
   return join(import.meta.dir, '..', '..', 'storage', 'attic', 'web')
-}
-
-/**
- * Whether the runtime takes a flag, read from its option table rather than
- * from its version: an unsigned local build reports 0.0.0, and an older
- * runtime given an unknown flag ignores it silently anyway.
- */
-function supports(runtime: string, flag: string): boolean {
-  return Bun.spawnSync(['grep', '-qa', '--', flag, runtime]).exitCode === 0
 }
 
 if (!acquireSingleInstance()) {
@@ -110,33 +101,22 @@ const agent = await startAgent({ webRoot: root, version: pkg.version }).catch((e
 console.log(`[attic] ${pkg.version} serving on 127.0.0.1:${agent.port}`)
 
 const runtime = craftRuntime()
+const nativeBundle = IN_APP_BUNDLE
+  ? join(dirname(dirname(process.execPath)), 'Resources', 'native-screen.js')
+  : join(import.meta.dir, '../../storage/attic/native/native-screen.js')
+if (!existsSync(nativeBundle)) {
+  console.error('[attic] native UI is missing: run `bun run build:native` first.')
+  agent.stop(); releaseSingleInstance(); process.exit(1)
+}
 const flags = [
-  `http://127.0.0.1:${agent.port}/app`,
+  '--api-url', `http://127.0.0.1:${agent.port}`,
+  '--native-bundle', nativeBundle,
   '--title',
   'Attic',
-  '--width',
-  '1120',
-  '--height',
-  '740',
 ]
-// The sidebar look: the window buttons over the page's own sidebar, on the
-// system's translucent material, the way Mail and Notes are drawn.
-if (supports(runtime, '--titlebar-hidden'))
-  flags.push('--titlebar-hidden')
-if (supports(runtime, '--web-window-material'))
-  flags.push('--web-window-material')
-// Keep what the page stores (the last selected conversation) across launches.
-if (supports(runtime, '--persistent-storage'))
-  flags.push('--persistent-storage')
-if (supports(runtime, '--frame-autosave'))
-  flags.push('--frame-autosave', 'AtticMain')
-// A messaging app keeps running with its window closed, as Messages does:
-// the page stays alive to hear new messages and notify, and the Dock icon
-// brings the window back.
-if (supports(runtime, '--keep-running'))
-  flags.push('--keep-running')
-if (IN_APP_BUNDLE)
-  flags.push('--no-devtools')
+// Native control automation is available only for an explicitly isolated fixture.
+if (process.env.ATTIC_MESSAGES_DB && process.env.ATTIC_NATIVE_TEST_DIR)
+  flags.push('--test-dir', process.env.ATTIC_NATIVE_TEST_DIR)
 
 const craft = Bun.spawn([runtime, ...flags], { stdio: ['ignore', 'ignore', 'pipe'] })
 void new Response(craft.stderr).text().then((stderr) => {

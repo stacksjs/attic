@@ -196,12 +196,7 @@ async function tryLaunch(browser: string): Promise<Session | null> {
 
   // Chromium writes the chosen port to <user-data-dir>/DevToolsActivePort.
   const portFile = join(userDataDir, 'DevToolsActivePort')
-  // Signed Chromium startup can exceed four seconds on a busy desktop.
-  // Wait for readiness while still failing promptly if the process exits.
-  const startupDeadline = Date.now() + 30_000
-  while (Date.now() < startupDeadline) {
-    if (proc.exitCode !== null)
-      break
+  for (let i = 0; i < 80; i++) {
     if (existsSync(portFile)) {
       const line = readFileSync(portFile, 'utf8').split('\n')[0]?.trim()
       if (line)

@@ -1,0 +1,114 @@
+<script client>
+import { desktop, nativeApi, nativeCraft, nativeDate, nativeEvents, nativePost, SOURCE_NAMES } from '../functions/native-attic'
+import { pairingLink } from '../functions/sealed'
+
+const resurface = state('inbox')
+const removal = state('auto')
+const accessible = state(true)
+const rules = state([])
+const phones = state([])
+const pairing = state(null)
+const qr = state('')
+const note = state('')
+const loaded = state(false)
+const saving = state(false)
+const paired = derived(() => phones().find(p => p.id === pairing()?.pairing?.device && p.lastSeenAt))
+
+async function load() {
+  try {
+    const [status, currentRules, devices] = await Promise.all([nativeApi('/api/status'), nativeApi('/api/rules'), nativeApi('/api/phone/devices')])
+    resurface.set(status.settings.resurface); removal.set(status.settings.removal)
+    accessible.set(status.accessibility !== false); rules.set(currentRules); phones.set(devices.devices)
+    loaded.set(true)
+  }
+  catch (error) { note.set(error.message) }
+}
+
+async function save(key, value) {
+  saving.set(true)
+  try {
+    const result = await nativePost('/api/settings', { [key]: value })
+    resurface.set(result.resurface); removal.set(result.removal); note.set('Settings saved.')
+  }
+  catch (error) { note.set(error.message); await load() }
+  finally { saving.set(false) }
+}
+
+async function stop(rule) {
+  try { rules.set((await nativePost('/api/rules/delete', { id: rule.id })).rules); note.set(`Stopped always archiving ${rule.label}. Saved messages stay in Attic.`) }
+  catch (error) { note.set(error.message) }
+}
+
+async function pairPhone() {
+  try {
+    const result = await nativePost('/api/phone/pair')
+    if (result.error) { note.set(result.error); return }
+    pairing.set(result); qr.set(await desktop().qrCode(pairingLink(result.pairing)))
+    await load()
+  }
+  catch (error) { note.set(error.message) }
+}
+
+async function forget(phone) {
+  if (!await nativeCraft().dialog.confirm({ title: `Forget ${phone.name}?`, message: 'This phone will no longer be able to reach the archive on this Mac.', confirmLabel: 'Forget', cancelLabel: 'Cancel' })) return
+  try { await nativePost('/api/phone/forget', { id: phone.id }); await load(); note.set(`${phone.name} was disconnected.`) }
+  catch (error) { note.set(error.message) }
+}
+
+onMount(async () => {
+  await load()
+  onDestroy(nativeEvents(async event => { if (['changed','settings','phones'].includes(event.type)) await load() }))
+  const timer = setInterval(async () => { if (pairing() && !paired()) phones.set((await nativeApi('/api/phone/devices')).devices) }, 2000)
+  onDestroy(() => clearInterval(timer))
+})
+</script>
+
+<ScrollView class="flex-1" style="background-color: windowBackground" testID="settings-scroll">
+  <View class="gap-4 p-5" testID="settings-root">
+    <Text class="font-semibold text-[15px]" :text="'Archiving'" />
+    <View class="gap-3 p-4 rounded-[10px]" style="background-color: controlBackground">
+      <View class="flex-row gap-3 items-center">
+        <Text class="flex-1 text-[13px]" :text="'When someone writes again'" />
+        <Picker class="w-[240px]" :value="resurface()" :disabled="saving() || !loaded()" :options="[{value:'inbox',label:'Move it back to the Inbox'},{value:'stay',label:'Keep it archived'}]" @change="save('resurface', $event.nativeEvent.value)" testID="resurface" accessibilityLabel="When someone writes again" />
+      </View>
+      <View class="flex-row gap-3 items-center">
+        <Text class="flex-1 text-[13px]" :text="'When you archive'" />
+        <Picker class="w-[240px]" :value="removal()" :disabled="saving() || !loaded()" :options="[{value:'auto',label:'Take it out of the app'},{value:'confirm',label:'Messages asks first'},{value:'off',label:'Archive in Attic only'}]" @change="save('removal', $event.nativeEvent.value)" testID="removal" accessibilityLabel="When you archive" />
+      </View>
+      <View :if="removal() !== 'off' && !accessible()" class="gap-2">
+        <Text class="text-[12px]" style="color: secondaryLabel" :text="'Allow Accessibility so Attic can take conversations out of Messages and WhatsApp.'" />
+        <Button title="Allow Accessibility" @click="nativePost('/api/accessibility').then(result => accessible.set(result.trusted))" />
+      </View>
+    </View>
+    <Text class="font-semibold text-[15px]" :text="'Always archive'" />
+    <View class="gap-3 p-4 rounded-[10px]" style="background-color: controlBackground">
+      <Text :if="!rules().length" class="text-[12px]" style="color: secondaryLabel" :text="'Right-click a conversation and choose Always Archive. New messages reach you first, then Attic archives the conversation when it becomes quiet.'" />
+      <View :for="rule in rules()" :key="rule.id" class="flex-row gap-3 items-center">
+        <View class="flex-1 gap-1">
+          <Text class="text-[13px]" :text="rule.label || rule.value" />
+          <Text class="text-[11px]" style="color: secondaryLabel" :text="`${rule.kind === 'person' ? 'Person' : 'Group'} on ${SOURCE_NAMES[rule.provider] || rule.provider}`" />
+        </View>
+        <Button title="Stop" @click="stop(rule)" :testID="`stop-${rule.id}`" />
+      </View>
+    </View>
+    <Text class="font-semibold text-[15px]" :text="'Phone'" />
+    <View class="gap-3 p-4 rounded-[10px]" style="background-color: controlBackground">
+      <Text class="text-[12px]" style="color: secondaryLabel" :text="'Keep a copy of the archive on your phone. It syncs with this Mac over the same Wi-Fi using a key shared only by the two devices.'" />
+      <Button title="Pair a phone" @click="pairPhone()" testID="pair-phone" />
+      <View :if="pairing() && !paired()" class="gap-2 items-center">
+        <Image :source="qr()" class="h-[200px] w-[200px]" accessibilityLabel="Phone pairing code" />
+        <Text class="text-[12px]" :text="'Scan this code with your phone. Waiting for it to connect…'" />
+      </View>
+      <Text :if="paired()" :text="'Paired. The phone is copying the archive.'" />
+      <View :for="phone in phones()" :key="phone.id" class="flex-row gap-3 items-center">
+        <View class="flex-1 gap-1">
+          <Text :text="phone.name" />
+          <Text class="text-[11px]" style="color: secondaryLabel" :text="phone.lastSeenAt ? `Last synced ${nativeDate(phone.lastSeenAt)}` : 'Not synced yet'" />
+        </View>
+        <Button title="Forget" @click="forget(phone)" />
+      </View>
+    </View>
+    <Text :if="note()" class="text-[12px]" :text="note()" testID="settings-note" />
+    <Text class="text-[11px]" style="color: secondaryLabel" :text="`Attic ${nativeCraft().app.version}`" />
+  </View>
+</ScrollView>

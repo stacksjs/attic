@@ -1,0 +1,430 @@
+<script client>
+import type { ConversationSummary } from '../../app/Attic/agent'
+import { attachmentKind, desktop, nativeApi, nativeCraft, nativeDate, nativeEvents, nativePost, SOURCE_NAMES, SOURCE_SYMBOLS } from '../functions/native-attic'
+import { isMine, TAPBACKS } from '../functions/tapbacks'
+
+const view = state('inbox')
+const scheme = state(nativeCraft().appearance.colorScheme())
+const source = state('all')
+const sources = state([])
+const rows = state<ConversationSummary[]>([])
+const counts = state({ inbox: 0, archived: 0, deleted: 0 })
+const selectedKey = state('')
+const detail = state(null)
+const messages = state([])
+const hasEarlier = state(false)
+const loading = state(true)
+const access = state('granted')
+const fixture = state(false)
+const busy = state(false)
+const flash = state('')
+const query = state('')
+const results = state([])
+const draft = state('')
+const replyTo = state(null)
+const outgoing = state([])
+const connecting = state('')
+const token = state('')
+const appToken = state('')
+const account = state('user')
+const discordUser = state('')
+const whatsapp = state(null)
+const qrImage = state('')
+const workspaces = state([])
+const cleanup = state(false)
+const cutoff = state('365')
+const bulkPreview = state(null)
+const bulkJob = state(null)
+const rowLimit = state(120)
+const shownRows = derived(() => rows().slice(0, rowLimit()))
+const listTitle = derived(() => view() === 'archived' ? 'Archived' : view() === 'deleted' ? 'Recently Deleted' : source() === 'all' ? 'All Inboxes' : sources().find(s => s.provider === source())?.label ?? 'Inbox')
+const selectedNav = derived(() => view() !== 'inbox' ? view() : source() === 'all' ? 'all' : `source:${source()}`)
+const sidebarSections = derived(() => [
+  { id: 'mailboxes', items: [{ id: 'all', label: 'All Inboxes', icon: 'tray.2', badge: counts().inbox }, { id: 'archived', label: 'Archived', icon: 'archivebox', badge: counts().archived }, ...(counts().deleted ? [{ id: 'deleted', label: 'Recently Deleted', icon: 'trash', badge: counts().deleted }] : [])] },
+  { id: 'sources', header: 'Sources', items: sources().map(s => ({ id: `source:${s.provider}`, label: s.label, icon: SOURCE_SYMBOLS[s.provider], badge: s.status.connected ? null : 'Connect' })) },
+  { id: 'preferences', items: [{ id: 'settings', label: 'Settings…', icon: 'gearshape' }] },
+])
+const canSend = derived(() => !!detail() && !!sources().find(s => s.provider === detail().provider)?.capabilities?.send)
+const connected = derived(() => sources().some(s => s.status.connected))
+
+function say(text) {
+  flash.set(text)
+  setTimeout(() => flash() === text && flash.set(''), 5000)
+}
+
+async function loadStatus() {
+  const status = await nativeApi('/api/status')
+  sources.set(status.sources)
+  access.set(status.access)
+  fixture.set(status.fixture)
+}
+
+async function loadLists() {
+  const [inbox, archive, deleted] = await Promise.all(['inbox', 'archived', 'deleted'].map(v => nativeApi(`/api/conversations?view=${v}&source=${source()}`)))
+  counts.set({ inbox: inbox.length, archived: archive.length, deleted: deleted.length })
+  rows.set(view() === 'archived' ? archive : view() === 'deleted' ? deleted : inbox)
+  desktop().setBadge(inbox.filter(c => c.unread > 0).length)
+}
+
+async function select(key) {
+  if (selectedKey() !== key) {
+    draft.set('')
+    replyTo.set(null)
+    outgoing.set([])
+  }
+  selectedKey.set(key)
+  if (!key) {
+    detail.set(null)
+    messages.set([])
+    return
+  }
+  try {
+    const [info, transcript] = await Promise.all([nativeApi(`/api/conversation?key=${encodeURIComponent(key)}`), nativeApi(`/api/messages?key=${encodeURIComponent(key)}`)])
+    if (selectedKey() !== key)
+      return
+    detail.set(info)
+    messages.set(transcript.messages.filter(m => m.kind !== 'reaction'))
+    hasEarlier.set(transcript.hasEarlier)
+    await nativeCraft().storage.set('selected', key)
+    if (info.unread && sources().find(s => s.provider === info.provider)?.capabilities?.markRead)
+      await nativePost('/api/read', { key })
+  }
+  catch (error) { say(error.message) }
+}
+
+async function refresh() {
+  try {
+    await loadStatus()
+    await loadLists()
+    await select(rows().some(c => c.key === selectedKey()) ? selectedKey() : rows()[0]?.key ?? '')
+  }
+  catch (error) { say(error.message) }
+  finally { loading.set(false) }
+}
+
+async function show(next) {
+  view.set(next)
+  query.set('')
+  rowLimit.set(120)
+  await loadLists()
+  await select(rows()[0]?.key ?? '')
+}
+
+async function pickNav(id) {
+  if (id === 'settings') { openSettings(); return }
+  if (id === 'archived' || id === 'deleted') { await show(id); return }
+  const provider = id === 'all' ? 'all' : id.slice('source:'.length)
+  if (provider !== 'all' && !sources().find(s => s.provider === provider)?.status.connected) { await connect(provider); return }
+  source.set(provider)
+  await show('inbox')
+}
+
+function openSettings() {
+  desktop().openWindow({ name: 'settings', route: 'Settings', title: 'Settings', width: 600, height: 660, minWidth: 500, minHeight: 430 })
+}
+
+async function archive(key = selectedKey()) {
+  if (!key || busy()) return
+  busy.set(true)
+  try {
+    const result = await nativePost('/api/archive', { key })
+    if (!result.verified) { say('Not every message could be copied. The conversation stays in the Inbox.'); return }
+    await loadLists()
+    await select(rows()[0]?.key ?? '')
+    say(`${result.messages} messages kept. ${result.app?.detail ?? ''}`)
+  }
+  catch (error) { say(error.message) }
+  finally { busy.set(false) }
+}
+
+async function unarchive(key = selectedKey()) {
+  if (!key || busy()) return
+  busy.set(true)
+  try { await nativePost('/api/unarchive', { key }); await refresh(); say('Moved back to the Inbox.') }
+  catch (error) { say(error.message) }
+  finally { busy.set(false) }
+}
+
+async function openInApp(key = selectedKey()) {
+  try { await nativePost('/api/open', { key }) }
+  catch (error) { say(error.message) }
+}
+
+async function rowMenu(c) {
+  await select(c.key)
+  const choice = await desktop().contextMenu([
+    { id: c.state === 'archived' ? 'restore' : 'archive', title: c.state === 'archived' ? 'Move to Inbox' : 'Archive', icon: 'archivebox' },
+    { id: 'always', title: `Always Archive ${c.title}`, icon: 'archivebox.circle' },
+    { separator: true }, { id: 'open', title: `Show in ${SOURCE_NAMES[c.provider]}`, icon: 'arrow.up.forward.app', disabled: !c.url },
+    ...(c.saved ? [{ separator: true }, { id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'trash' }] : []),
+  ])
+  if (choice === 'archive') await archive(c.key)
+  if (choice === 'restore') await unarchive(c.key)
+  if (choice === 'open') await openInApp(c.key)
+  if (choice === 'always') { await nativePost('/api/rules/for-conversation', { key: c.key }); say('Always archive is on for this conversation.'); await refresh() }
+  if (choice === 'forget' && await nativeCraft().dialog.confirm({ title: 'Delete Attic\'s copy?', message: 'This removes the saved messages and attachments from Attic. It leaves the original app alone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', destructive: true })) {
+    await nativePost('/api/forget', { key: c.key }); await refresh()
+  }
+}
+
+async function loadEarlier() {
+  if (!messages().length) return
+  const key = selectedKey()
+  const transcript = await nativeApi(`/api/messages?key=${encodeURIComponent(key)}&before=${messages()[0].sentAt}`)
+  if (key === selectedKey()) { messages.set([...transcript.messages, ...messages()]); hasEarlier.set(transcript.hasEarlier) }
+}
+
+function bubbleStyle(m) {
+  return { flexDirection: 'column', gap: 4, padding: 10, borderRadius: 16, maxWidth: '82%',
+    alignSelf: m.isFromMe ? 'flex-end' : 'flex-start', backgroundColor: m.isFromMe ? '#006bd6' : scheme() === 'dark' ? '#363638' : '#e9e9eb' }
+}
+
+function messageColor(m) { return m.isFromMe ? '#ffffff' : 'label' }
+function reactionLabel(m) { return (m.reactions ?? []).map(r => r.emoji).join(' ') }
+
+async function messageMenu(m) {
+  const caps = sources().find(s => s.provider === detail()?.provider)?.capabilities ?? {}
+  const choice = await desktop().contextMenu([
+    ...(caps.replies ? [{ id: 'reply', title: 'Reply', icon: 'arrowshape.turn.up.left' }] : []),
+    ...(caps.reactions ? TAPBACKS.map(r => ({ id: `react:${r.emoji}`, title: `${r.emoji} ${r.label}`, checked: isMine(m.reactions, r.emoji) })) : []),
+    ...(m.text ? [{ id: 'copy', title: 'Copy', icon: 'doc.on.doc' }] : []),
+  ])
+  if (choice === 'copy') await nativeCraft().clipboard.write(m.text)
+  if (choice === 'reply') { replyTo.set(m); await desktop().focus('composer') }
+  if (choice?.startsWith('react:')) {
+    const reaction = choice.slice(6)
+    await nativePost('/api/react', { key: selectedKey(), messageId: m.guid, reaction, remove: isMine(m.reactions, reaction) })
+    await select(selectedKey())
+  }
+}
+
+async function previewAttachment(a) {
+  if (!a.available) { say('This attachment has not been downloaded.'); return }
+  const type = attachmentKind(a.mimeType)
+  if (type === 'file') await desktop().exportFile({ url: a.url, name: a.name })
+  else await desktop().preview({ url: a.url, title: a.name, type })
+}
+
+async function attachFiles() {
+  const files = await desktop().pickFiles()
+  if (!files.length) return
+  const uploaded = await desktop().uploadFiles(files, new URL('/api/upload', nativeCraft().app.url).href)
+  if (uploaded.error) { say(uploaded.error); return }
+  outgoing.set([...outgoing(), ...uploaded])
+}
+
+async function sendDraft() {
+  const text = draft().trim()
+  const files = outgoing()
+  if (!detail() || !canSend() || busy() || (!text && !files.length)) return
+  busy.set(true)
+  try {
+    await nativePost('/api/send', { key: selectedKey(), text, files, replyToId: replyTo()?.guid ?? null })
+    draft.set(''); outgoing.set([]); replyTo.set(null)
+    await select(selectedKey())
+    setTimeout(() => select(selectedKey()), 1000)
+  }
+  catch (error) { say(error.message) }
+  finally { busy.set(false) }
+}
+
+async function connect(provider) {
+  connecting.set(provider); token.set(''); appToken.set(''); discordUser.set(''); qrImage.set('')
+  if (provider === 'whatsapp') {
+    whatsapp.set(await nativePost('/api/whatsapp/link'))
+    await updateQR()
+  }
+  if (provider === 'slack') workspaces.set((await nativeApi('/api/slack/workspaces')).workspaces)
+}
+
+async function updateQR() {
+  const qr = whatsapp()?.qr
+  if (qr) qrImage.set(await desktop().qrCode(qr))
+}
+
+async function connectToken() {
+  try {
+    await nativePost('/api/sources/connect', { provider: connecting(), token: token(), appToken: appToken(), account: account(), userId: discordUser() })
+    connecting.set(''); token.set(''); appToken.set(''); await refresh()
+  }
+  catch (error) { say(error.message) }
+}
+
+async function disconnect(provider, teamId = null) {
+  await nativePost('/api/sources/disconnect', { provider, teamId }); await refresh()
+  if (provider === 'slack') workspaces.set((await nativeApi('/api/slack/workspaces')).workspaces)
+}
+
+async function previewCleanup() {
+  bulkPreview.set(await nativePost('/api/bulk/preview', { olderThanDays: Number(cutoff()), source: source() }))
+}
+
+async function openCleanup() { cleanup.set(true); await previewCleanup() }
+async function startCleanup() { bulkJob.set((await nativePost('/api/bulk/archive', { olderThanDays: Number(cutoff()), source: source() })).job) }
+function move(delta) { const index = rows().findIndex(c => c.key === selectedKey()); select(rows()[Math.max(0, Math.min(rows().length - 1, index + delta))]?.key ?? '') }
+
+let searchTimer
+effect(() => {
+  const text = query().trim()
+  clearTimeout(searchTimer)
+  if (!text) { results.set([]); return }
+  searchTimer = setTimeout(async () => {
+    try { const hits = await nativeApi(`/api/search?q=${encodeURIComponent(text)}`); if (query().trim() === text) results.set(hits) }
+    catch (error) { say(error.message) }
+  }, 180)
+})
+onDestroy(() => clearTimeout(searchTimer))
+
+async function openResult(hit) {
+  source.set('all'); query.set(''); await select(hit.conversationKey)
+  view.set(detail()?.state === 'archived' ? 'archived' : detail()?.state === 'deleted' ? 'deleted' : 'inbox')
+  await loadLists()
+}
+
+onMount(async () => {
+  await refresh()
+  const remembered = await nativeCraft().storage.get('selected')
+  if (rows().some(c => c.key === remembered)) await select(remembered)
+  onDestroy(nativeEvents(async event => {
+    if (event.type === 'bulk') { bulkJob.set(event.job); if (event.job.finished) await refresh() }
+    if (event.type === 'whatsapp') { whatsapp.set(event.link); await updateQR(); if (event.link.phase === 'open') { connecting.set(''); await refresh() } }
+    if (['changed', 'settings', 'sources', 'access'].includes(event.type)) await refresh()
+    if (event.type === 'incoming' && !nativeCraft().navigation.isFocused()) nativeCraft().notifications.show({ id: `attic-${event.key}-${event.at}`, title: event.title, body: event.text })
+  }))
+  onDestroy(desktop().onCommand(id => {
+    if (id === 'appearance') scheme.set(nativeCraft().appearance.colorScheme())
+    if (id === 'settings') openSettings()
+    if (id === 'archive') archive()
+    if (id === 'restore') unarchive()
+    if (id === 'inbox') show('inbox')
+    if (id === 'archived') show('archived')
+    if (id === 'deleted') show('deleted')
+    if (id === 'find') desktop().focus('search')
+    if (id === 'next') move(1)
+    if (id === 'previous') move(-1)
+    if (id === 'open') openInApp()
+    if (id === 'cleanup') openCleanup()
+  }))
+  await desktop().setMenus([
+    { label: 'Conversation', items: [{ id: 'archive', label: 'Archive', shortcut: 'ctrl+cmd+a' }, { id: 'restore', label: 'Move to Inbox', shortcut: 'shift+cmd+u' }, { id: 'open', label: 'Show in App', shortcut: 'cmd+o' }] },
+    { label: 'View', items: [{ id: 'inbox', label: 'Inbox', shortcut: 'cmd+1' }, { id: 'archived', label: 'Archived', shortcut: 'cmd+2' }, { id: 'deleted', label: 'Recently Deleted', shortcut: 'cmd+3' }, { separator: true }, { id: 'find', label: 'Find', shortcut: 'cmd+f' }, { id: 'next', label: 'Next Conversation', shortcut: 'cmd+down' }, { id: 'previous', label: 'Previous Conversation', shortcut: 'cmd+up' }, { id: 'cleanup', label: 'Clean Up…' }] },
+  ])
+})
+</script>
+
+<View class="flex-1 flex-row" testID="main-shell">
+  <aside data-native="Sidebar" class="h-full w-[220px]" testID="mailboxes" :sections="sidebarSections()" :selected="selectedNav()" @change="pickNav($event.nativeEvent.value)"></aside>
+  <View class="flex-col w-[320px] border-r" style="border-color: separator; background-color: controlBackground">
+    <View class="flex-row gap-2 items-center justify-between p-3">
+      <View class="flex-1 gap-1">
+        <Text class="font-semibold text-[15px]" :text="listTitle()" testID="mailbox-title" />
+        <Text class="text-[11px]" style="color: secondaryLabel" :text="rows().length + ' conversations'" />
+      </View>
+      <Button title="Clean Up…" symbol="sparkles" variant="toolbar" testID="cleanup" @click="openCleanup()" />
+    </View>
+    <View class="pb-2 px-3"><TextInput type="search" placeholder="Search everything Attic kept" x-model="query" testID="search" /></View>
+    <Text :if="loading()" class="p-4" :text="'Loading conversations…'" />
+    <Text :if="!loading() && !rows().length && !query()" class="p-4" :text="view() === 'archived' ? 'Nothing archived yet.' : 'All caught up.'" />
+    <ScrollView class="flex-1" testID="conversation-list">
+      <View :if="!query()" class="gap-1 p-2">
+        <Pressable :for="c in shownRows()" :key="c.key" class="flex-row gap-2 items-center p-2 rounded-[8px]" :style="{backgroundColor: c.key === selectedKey() ? 'accent' : 'transparent'}" :testID="`row-${c.key}`" @click="select(c.key)" @contextmenu="rowMenu(c)">
+          <Image :if="c.avatar" :source="c.avatar" class="h-[36px] w-[36px] rounded-[18px]" :accessibilityLabel="c.title" />
+          <Text :if="!c.avatar" class="w-[36px] font-semibold text-[15px] text-center" :text="c.initials || (c.kind === 'channel' ? '#' : '●')" :style="{color:c.key === selectedKey() ? 'white' : 'secondaryLabel'}" />
+          <View class="flex-1 gap-1">
+            <View class="flex-row gap-2 justify-between">
+              <Text class="flex-1 font-semibold text-[13px]" :numberOfLines="1" :text="c.title" :style="{color:c.key === selectedKey() ? 'white' : 'label'}" />
+              <Text class="text-[10px]" :text="nativeDate(c.lastMessageAt)" :style="{color:c.key === selectedKey() ? 'white' : 'secondaryLabel'}" />
+            </View>
+            <Text class="text-[12px]" :numberOfLines="2" :text="c.preview || (c.saved ? `${c.savedMessages} messages kept` : '')" :style="{color:c.key === selectedKey() ? 'white' : 'secondaryLabel'}" />
+            <Text :if="c.unread" class="text-[10px]" :text="`${c.unread} unread`" :style="{color:c.key === selectedKey() ? 'white' : 'accent'}" />
+          </View>
+        </Pressable>
+        <Button :if="rows().length > rowLimit()" title="More conversations" @click="rowLimit.set(rowLimit()+120)" />
+      </View>
+      <View :if="query()" class="gap-2 p-2">
+        <Text :if="!results().length" :text="'Nothing Attic kept matches.'" />
+        <Button :for="hit in results()" :key="hit.guid" :title="`${hit.title}: ${hit.snippet.replace(/<[^>]+>/g, '')}`" :testID="`result-${hit.guid}`" @click="openResult(hit)" />
+      </View>
+    </ScrollView>
+    <Text :if="fixture()" class="p-2 text-[10px]" style="color: secondaryLabel" :text="'Sample conversations'" />
+  </View>
+  <View class="flex-1 flex-col" style="background-color: textBackground" testID="transcript-pane">
+    <View :if="!detail()" class="flex-1 gap-3 items-center justify-center p-8">
+      <Icon symbol="bubble.left.and.bubble.right" class="h-[40px] w-[40px]" />
+      <Text class="font-semibold text-[20px]" :text="access() === 'needs-full-disk-access' && !connected() ? 'Connect your conversations' : 'Choose a conversation'" />
+      <Text :if="access() === 'needs-full-disk-access'" :text="'Allow Attic to read Messages in Privacy & Security.'" />
+      <Button :if="access() === 'needs-full-disk-access'" title="Open Privacy & Security" @click="nativeCraft().openURL('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')" />
+      <Button title="Link WhatsApp" @click="connect('whatsapp')" />
+      <Button title="Connect Slack" @click="connect('slack')" />
+      <Button title="Connect Discord" @click="connect('discord')" />
+    </View>
+    <View :if="detail()" class="flex-row gap-2 items-center p-3 border-b" style="border-color: separator">
+      <View class="flex-1 gap-1">
+        <Text class="font-semibold text-[15px]" :text="detail()?.title" testID="conversation-title" />
+        <Text class="text-[11px]" style="color: secondaryLabel" :text="detail()?.saved ? `${detail().savedMessages} messages kept` : SOURCE_NAMES[detail()?.provider]" />
+      </View>
+      <Button :if="detail()?.state !== 'archived'" title="Archive" symbol="archivebox" variant="toolbar" :disabled="busy()" @click="archive()" testID="archive" />
+      <Button :if="detail()?.state === 'archived'" title="Move to Inbox" symbol="tray.and.arrow.up" variant="toolbar" :disabled="busy()" @click="unarchive()" testID="restore" />
+      <Button title="Show in App" symbol="arrow.up.forward.app" variant="toolbar" :disabled="!detail()?.url" @click="openInApp()" />
+    </View>
+    <ScrollView :if="detail()" class="flex-1" :autoScrollBottom="true" :scrollKey="selectedKey()" testID="transcript">
+      <View class="gap-3 p-4">
+        <Button :if="hasEarlier()" title="Earlier messages" @click="loadEarlier()" testID="earlier" />
+        <View :for="m in messages()" :key="m.guid" class="gap-1" :testID="`message-${m.guid}`">
+          <Text class="text-[10px] text-center" style="color: secondaryLabel" :text="nativeDate(m.sentAt)" />
+          <Text :if="detail()?.kind === 'group' && !m.isFromMe" class="text-[11px]" style="color: secondaryLabel" :text="m.senderName || ''" />
+          <Pressable :style="bubbleStyle(m)" @contextmenu="messageMenu(m)" :testID="`bubble-${m.guid}`">
+            <Text :if="m.replyToGuid" class="text-[11px]" :style="{color:messageColor(m)}" :text="'Reply to an earlier message'" />
+            <Text :if="m.unsent" :style="{color:messageColor(m)}" :text="'Message unsent'" />
+            <Text :if="m.text && !m.unsent" class="text-[13px]" :style="{color:messageColor(m)}" :text="m.text" />
+            <Button :for="a in m.attachments" :key="a.guid" :title="a.name + (a.available ? '' : ' (not downloaded)')" @click="previewAttachment(a)" />
+            <Image :for="a in m.attachments.filter(a => a.available && attachmentKind(a.mimeType) === 'image')" :key="a.guid" :source="a.url" class="h-[180px] w-[260px] rounded-[10px]" :accessibilityLabel="a.name" />
+            <Text :if="reactionLabel(m)" class="text-[15px]" :text="reactionLabel(m)" />
+            <Text :if="m.editedAt" class="text-[10px]" :style="{color:messageColor(m)}" :text="'Edited'" />
+          </Pressable>
+        </View>
+      </View>
+    </ScrollView>
+    <View :if="detail()" class="gap-2 p-3 border-t" style="border-color: separator">
+      <Text :if="replyTo()" class="text-[11px]" :text="`Replying to: ${replyTo()?.text || 'Attachment'}`" />
+      <Button :if="replyTo()" title="Cancel reply" @click="replyTo.set(null)" />
+      <Button :for="file in outgoing()" :key="file.path" :title="`Remove ${file.name}`" @click="outgoing.set(outgoing().filter(f => f.path !== file.path))" />
+      <View :if="canSend()" class="flex-row gap-2 items-center">
+        <Button title="Attach" symbol="paperclip" variant="toolbar" @click="attachFiles()" />
+        <TextInput class="flex-1" :multiline="true" :placeholder="detail()?.provider === 'imessage' ? 'iMessage' : 'Message'" x-model="draft" @submit="sendDraft()" testID="composer" />
+        <Button title="Send" variant="primary" :disabled="busy() || (!draft().trim() && !outgoing().length)" @click="sendDraft()" testID="send" />
+      </View>
+      <Button :if="!canSend()" :title="`Reply in ${SOURCE_NAMES[detail()?.provider] || 'App'}`" :disabled="!detail()?.url" @click="openInApp()" />
+    </View>
+    <Text :if="flash()" class="p-3 text-[12px]" :text="flash()" testID="status-message" />
+  </View>
+  <Modal :if="connecting()" :visible="true" title="Connect a source" @close="connecting.set('')" testID="connect-dialog">
+    <View class="gap-3 p-6">
+      <Text class="font-semibold text-[20px]" :text="connecting() === 'whatsapp' ? 'Link WhatsApp' : `Connect ${SOURCE_NAMES[connecting()]}`" />
+      <Text :if="connecting() === 'whatsapp'" :text="'On your phone, open WhatsApp > Settings > Linked Devices and scan this code.'" />
+      <Image :if="connecting() === 'whatsapp' && qrImage()" :source="qrImage()" class="h-[240px] w-[240px]" accessibilityLabel="WhatsApp pairing code" />
+      <Text :if="connecting() === 'whatsapp' && !qrImage()" :text="whatsapp()?.phase === 'open' ? 'WhatsApp is linked.' : 'Preparing the pairing code…'" />
+      <Text :if="connecting() === 'slack'" :text="'Use a Slack User OAuth token. An optional App-Level token enables live updates. Tokens stay in the macOS keychain.'" />
+      <TextInput :if="connecting() === 'slack' || connecting() === 'discord'" type="password" placeholder="Token" x-model.trim="token" testID="source-token" />
+      <TextInput :if="connecting() === 'slack'" type="password" placeholder="App-Level Token (optional)" x-model.trim="appToken" />
+      <Picker :if="connecting() === 'discord'" x-model="account" :options="[{value:'user',label:'User account'},{value:'bot',label:'Bot account'}]" />
+      <TextInput :if="connecting() === 'discord'" placeholder="Discord User ID (optional)" x-model.trim="discordUser" />
+      <Button :for="workspace in workspaces()" :key="workspace.teamId" :title="`Sign out of ${workspace.team}`" @click="disconnect('slack', workspace.teamId)" />
+      <Button :if="connecting() === 'slack' || connecting() === 'discord'" title="Connect" variant="primary" :disabled="!token().trim()" @click="connectToken()" />
+      <Button title="Done" @click="connecting.set('')" />
+    </View>
+  </Modal>
+  <Modal :if="cleanup()" :visible="true" title="Clean Up" @close="cleanup.set(false)" testID="cleanup-dialog">
+    <View class="gap-3 p-6">
+      <Text class="font-semibold text-[20px]" :text="'Clean up the Inbox'" />
+      <Text :text="'Archive conversations with no messages in the last:'" />
+      <Picker x-model="cutoff" :options="[{value:'182',label:'6 months'},{value:'365',label:'1 year'},{value:'730',label:'2 years'}]" @change="previewCleanup()" />
+      <Text :text="bulkPreview() ? `${bulkPreview().total} conversations` : 'Counting…'" />
+      <Text :text="'Every message and attachment is copied and checked before a conversation leaves its app.'" />
+      <Text :if="bulkJob()" :text="`${bulkJob().done} of ${bulkJob().total} processed. ${bulkJob().archived} archived.`" />
+      <Button :if="!bulkJob() || bulkJob().finished" title="Archive" variant="primary" :disabled="!bulkPreview()?.total" @click="startCleanup()" />
+      <Button :if="bulkJob() && !bulkJob().finished" title="Stop" @click="nativePost('/api/bulk/cancel')" />
+      <Button title="Close" @click="cleanup.set(false)" />
+    </View>
+  </Modal>
+</View>
