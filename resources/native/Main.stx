@@ -327,7 +327,7 @@ onMount(async () => {
       </View>
       <View :if="query()" class="gap-1 p-2">
         <Text :if="!results().length" class="p-4 text-[12px]" style="color: secondaryLabel" :text="'Nothing Attic kept matches.'" />
-        <ConversationListItem :for="hit in results()" :key="hit.guid" :item="{title:hit.title,preview:hit.snippet.replace(/<[^>]+>|[\u0001\u0002]/g, ''),initials:hit.title.slice(0,2).toUpperCase()}" :palette="palette()" :testID="`result-${hit.guid}`" @choose="openResult(hit)" />
+        <ConversationListItem :for="hit in results()" :key="hit.guid" :item="{title:hit.title,preview:hit.snippet.replace(/[\u0001\u0002]/g, ''),initials:hit.title.slice(0,2).toUpperCase()}" :palette="palette()" :testID="`result-${hit.guid}`" @choose="openResult(hit)" />
       </View>
     </ScrollView>
   </View>
