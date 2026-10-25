@@ -114,6 +114,11 @@ const flags = [
   '--native-bundle', nativeBundle,
   '--title',
   'Attic',
+  '--titlebar-style', 'transparent',
+  '--width', '1280',
+  '--height', '800',
+  '--min-width', '900',
+  '--min-height', '560',
 ]
 // Native control automation is available only for an explicitly isolated fixture.
 if (process.env.ATTIC_MESSAGES_DB && process.env.ATTIC_NATIVE_TEST_DIR)

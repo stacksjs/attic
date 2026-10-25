@@ -34,15 +34,19 @@ export function nativeEvents(handler: (event: Record<string, any>) => void | Pro
   return () => stream.close()
 }
 
-export function nativeDate(timestamp: number | null): string {
+export function nativeDate(timestamp: number | null, now = Date.now()): string {
   if (!timestamp)
     return ''
   const date = new Date(timestamp)
-  const today = new Date()
+  const today = new Date(now)
   if (date.toDateString() === today.toDateString())
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.getMonth()]
-  return `${month} ${date.getDate()}${date.getFullYear() === today.getFullYear() ? '' : `, ${date.getFullYear()}`}`
+  const age = (Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())) / 86_400_000
+  if (age === 1)
+    return 'Yesterday'
+  if (age > 1 && age < 7)
+    return date.toLocaleDateString([], { weekday: 'short' })
+  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric', ...(date.getFullYear() === today.getFullYear() ? {} : { year: '2-digit' }) })
 }
 
 export const SOURCE_SYMBOLS = { imessage: 'message', whatsapp: 'phone.bubble', slack: 'number', discord: 'gamecontroller' }

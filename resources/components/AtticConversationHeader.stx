@@ -1,0 +1,17 @@
+<script client>
+const conversation = useReactiveProp('conversation', {})
+const busy = useReactiveProp('busy', false)
+const emit = defineEmits(['archive', 'restore', 'open'])
+</script>
+<View class="h-[70px] shrink-0 flex-row items-center px-3 border-b" style="border-color: separator" testID="conversation-header">
+  <View class="w-[96px] shrink-0" />
+  <View class="flex-1 flex-col items-center justify-center gap-[3px] min-w-0">
+    <Avatar :src="conversation().avatar || ''" :alt="conversation().title || ''" :initials="conversation().initials || ''" size="xs" />
+    <Text class="font-medium text-[11px]" :numberOfLines="1" :text="conversation().title || ''" testID="conversation-title" />
+  </View>
+  <View class="w-[96px] shrink-0 flex-row gap-1 items-center justify-end">
+    <ToolbarButton :if="conversation().state !== 'archived'" label="Archive" symbol="archivebox" :disabled="busy()" @click="emit('archive')" testID="archive" />
+    <ToolbarButton :if="conversation().state === 'archived'" label="Move to Inbox" symbol="tray.and.arrow.up" :disabled="busy()" @click="emit('restore')" testID="restore" />
+    <ToolbarButton label="Show in App" symbol="arrow.up.forward.app" :disabled="!conversation().url" @click="emit('open')" testID="show-in-app" />
+  </View>
+</View>

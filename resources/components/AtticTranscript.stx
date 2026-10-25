@@ -1,0 +1,34 @@
+<script client>
+import { attachmentKind } from '../functions/native-attic'
+import { messageTimeline, transcriptStamp } from '../functions/native-timeline'
+const messages = useReactiveProp('messages', [])
+const conversation = useReactiveProp('conversation', {})
+const earlier = useReactiveProp('earlier', false)
+const dark = useReactiveProp('dark', false)
+const timeline = derived(() => messageTimeline(messages()))
+const emit = defineEmits(['earlier', 'message-menu', 'attachment'])
+function background(message) {
+  if (!message.isFromMe) return dark() ? '#363638' : '#e9e9eb'
+  return conversation().provider === 'imessage' ? message.service === 'SMS' || message.service === 'RCS' ? '#24843a' : '#087bf5' : conversation().provider === 'whatsapp' ? '#0d887e' : '#087bf5'
+}
+function quote(message) {
+  return message.replyToGuid ? messages().find(m => m.guid === message.replyToGuid)?.text || 'Attachment' : ''
+}
+function reactions(message) { return (message.reactions || []).map(r => r.reaction || r.emoji).join(' ') }
+</script>
+<ScrollView class="flex-1 justify-end" :autoScrollBottom="true" :scrollKey="conversation().key" testID="transcript">
+  <View class="flex-col justify-end px-5 pt-4 pb-3" testID="message-history">
+    <Button :if="earlier()" title="Show earlier messages" variant="ghost" @click="emit('earlier')" testID="earlier" />
+    <View :for="row in timeline()" :key="row.message.guid" class="flex-col" :testID="`message-${row.message.guid}`">
+      <Text :if="row.timestamp" class="text-[10.5px] text-center pt-4 pb-2" style="color: secondaryLabel" :text="transcriptStamp(row.message.sentAt)" />
+      <Text :if="row.message.kind === 'event'" class="text-[11px] text-center py-2" style="color: secondaryLabel" :text="row.message.text || 'Conversation updated'" />
+      <Text :if="conversation().kind === 'group' && !row.message.isFromMe && !row.joined" class="text-[10.5px] px-3 pt-2" style="color: secondaryLabel" :text="row.sender" />
+      <MessageBubble :if="row.message.kind !== 'event'" :body="row.message.text" :outgoing="row.message.isFromMe" :joined="row.joined" :background="background(row.message)" :color="row.message.isFromMe ? '#ffffff' : dark() ? '#f5f5f7' : '#1d1d1f'" :metadataColor="dark() ? '#a0a0a5' : '#737377'" :quote="quote(row.message)" :reactions="reactions(row.message)" :edited="!!row.message.editedAt" :unsent="row.message.unsent" :retained="row.message.inApp === false" :testID="`bubble-${row.message.guid}`" @menu="emit('message-menu', row.message)">
+        <Pressable :for="a in row.message.attachments" :key="a.guid" @click="emit('attachment', a)">
+          <Image :if="a.available && attachmentKind(a.mimeType) === 'image'" :source="a.url" class="w-[250px] h-[180px] rounded-[12px]" :accessibilityLabel="a.name" />
+          <Button :if="!a.available || attachmentKind(a.mimeType) !== 'image'" :title="a.name + (a.available ? '' : ' (not downloaded)')" symbol="doc" variant="ghost" @click="emit('attachment', a)" />
+        </Pressable>
+      </MessageBubble>
+    </View>
+  </View>
+</ScrollView>
