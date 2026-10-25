@@ -116,11 +116,11 @@ try {
   await action('resize', '1120', '740')
   await action('appearance', undefined, 'light')
   await wait('Light inbox surfaces settle before capture', s => s.appearance === 'light' && node(s,'transcript-pane')?.style?.backgroundColor === '#ffffff')
-  await Bun.sleep(350)
+  await Bun.sleep(1000)
   await action('screenshot')
   await action('appearance', undefined, 'dark')
   await wait('Dark inbox surfaces settle before capture', s => s.appearance === 'dark' && node(s,'transcript-pane')?.style?.backgroundColor === '#1e1e20' && (node(s,'mailboxes')?.frame[3] ?? 0) > 500)
-  await Bun.sleep(350)
+  await Bun.sleep(1000)
   await action('screenshot')
   const final = await state()
   const artifacts = await Promise.all(['Contents/MacOS/Attic', 'Contents/MacOS/craft-runtime', 'Contents/Resources/native-screen.js'].map(async path => {
