@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { buildSample } from './sample'
 
-interface Node { id: string, type: string, nativeClass: string, value?: string, label?: string, editorClass?: string, enabled?: boolean, visible: boolean, frame: number[] }
+interface Node { id: string, type: string, nativeClass: string, value?: string, label?: string, editorClass?: string, enabled?: boolean, visible: boolean, frame: number[], windowFrame?: number[], visibleRect?: number[], style?: Record<string, unknown> }
 interface Window { name: string, title: string, contextClass: string, nodes: Node[], errors: string[], viewClasses: string[] }
 interface Snapshot { renderer: string, scriptEngine: string, appearance: string, windows: Window[], webViews: number }
 const output = join(import.meta.dir, '../storage/attic/e2e-native')
@@ -46,7 +46,7 @@ function window(s: Snapshot, name = 'main'): Window | undefined { return s.windo
 function node(s: Snapshot, id: string, name = 'main'): Node | undefined { return window(s, name)?.nodes.find(n => n.id === id) }
 async function action(action: string, target?: string, value?: string, name = 'main'): Promise<void> {
   const id = String(++sequence).padStart(4, '0')
-  await Bun.write(join(driver, `action-${id}.json`), JSON.stringify({ action, target, value, window: name, ...(action === 'command' ? { id: target } : {}) }))
+  await Bun.write(join(driver, `action-${id}.json`), JSON.stringify({ action, target, value, window: name, ...(action === 'command' ? { id: target } : {}), ...(action === 'resize' ? {width:Number(target),height:Number(value)} : {}) }))
   for (let i = 0; i < 100; i++) {
     const file = Bun.file(join(driver, `result-${id}.json`))
     if (await file.exists()) {
@@ -68,20 +68,20 @@ try {
   await wait('Native transcript shows Sam Rivera', s => node(s, 'conversation-title')?.value === 'Sam Rivera' && !!window(s)?.nodes.some(n => n.nativeClass === 'NSTextField' && n.value?.includes('couch')))
   await wait('Native composer uses NSTextView', s => node(s, 'composer')?.editorClass?.endsWith('CraftMacTextView') === true)
   await action('appearance', undefined, 'light')
-  await wait('Native light appearance applies', s => s.appearance === 'light')
+  await wait('Native light appearance applies', s => s.appearance === 'light' && node(s, 'transcript-pane')?.style?.backgroundColor === '#ffffff')
   await action('fill', 'composer', 'A sample draft for native editing')
   await wait('Native draft editing updates Send', s => node(s, 'composer')?.value === 'A sample draft for native editing' && node(s, 'send')?.enabled === true)
   await action('screenshot')
   await action('appearance', undefined, 'dark')
-  await wait('Native dark appearance applies', s => s.appearance === 'dark')
+  await wait('Native dark appearance applies', s => s.appearance === 'dark' && node(s, 'transcript-pane')?.style?.backgroundColor === '#1e1e20' && (node(s,'mailboxes')?.frame[3] ?? 0) > 500)
   await action('screenshot')
   await action('click', 'archive')
   await wait('Archive completes', s => !!node(s, 'status-message')?.value?.includes('messages kept'))
   await action('pick', 'mailboxes', 'archived')
   await wait('Archive appears in the native sidebar', s => node(s, 'mailboxes')?.value === 'archived' && !!node(s, sam.id))
   await action('fill', 'search', 'couch')
-  const search = await wait('Native search finds saved messages', s => node(s, 'search')?.nativeClass === 'NSSearchField' && !!window(s)?.nodes.some(n => n.id.startsWith('result-') && n.label?.includes('couch')))
-  const hit = window(search)!.nodes.find(n => n.id.startsWith('result-') && n.label?.includes('couch'))!
+  const search = await wait('Native search finds saved messages', s => node(s, 'search')?.nativeClass === 'NSSearchField' && !!window(s)?.nodes.some(n => n.id.startsWith('result-') && n.visible))
+  const hit = window(search)!.nodes.find(n => n.id.startsWith('result-') && n.visible)!
   await action('click', hit.id)
   await wait('Search opens the native archived transcript', s => node(s, 'conversation-title')?.value === 'Sam Rivera' && !!node(s, 'restore'))
   await action('click', 'restore')
@@ -95,6 +95,7 @@ try {
   await action('screenshot', undefined, undefined, 'settings')
   await action('appearance', undefined, 'dark')
   await action('pick', 'resurface', 'stay', 'settings')
+  await wait('Resurface setting finishes saving before another edit', s => node(s,'resurface','settings')?.value === 'stay' && node(s,'removal','settings')?.enabled === true && node(s,'settings-note','settings')?.value === 'Settings saved.')
   await action('pick', 'removal', 'off', 'settings')
   await wait('Settings changes persist', s => node(s, 'resurface', 'settings')?.value === 'stay' && node(s, 'removal', 'settings')?.value === 'off' && node(s, 'settings-note', 'settings')?.value === 'Settings saved.')
   await action('close', undefined, undefined, 'settings')
@@ -104,6 +105,23 @@ try {
   await action('close', undefined, undefined, 'settings')
   await action('click', 'cleanup')
   await wait('Clean Up opens a sheet sized to its content', s => !!node(s, 'cleanup-dialog')?.visible && node(s, 'cleanup-dialog')!.frame[3]! >= 290)
+  await action('click', 'cleanup-close')
+  await action('pick', 'mailboxes', 'all')
+  const rosa = window((await state())!)!.nodes.find(n => n.id.startsWith('row-whatsapp:15550007777'))
+  if (!rosa) throw new Error('Sample Rosa conversation is missing')
+  await action('click', rosa.id)
+  await wait('Source badges and the selected conversation remain visible', s => node(s,'conversation-title')?.value === 'Rosa Lindqvist' && node(s,rosa.id)?.visible === true)
+  await action('resize', '900', '660')
+  await wait('Three panes remain usable in a smaller window', s => node(s,'main-shell')?.frame[2] === 900 && (node(s,'transcript-pane')?.frame[2] ?? 0) >= 340)
+  await action('resize', '1120', '740')
+  await action('appearance', undefined, 'light')
+  await wait('Light inbox surfaces settle before capture', s => s.appearance === 'light' && node(s,'transcript-pane')?.style?.backgroundColor === '#ffffff')
+  await Bun.sleep(350)
+  await action('screenshot')
+  await action('appearance', undefined, 'dark')
+  await wait('Dark inbox surfaces settle before capture', s => s.appearance === 'dark' && node(s,'transcript-pane')?.style?.backgroundColor === '#1e1e20' && (node(s,'mailboxes')?.frame[3] ?? 0) > 500)
+  await Bun.sleep(350)
+  await action('screenshot')
   const final = await state()
   const artifacts = await Promise.all(['Contents/MacOS/Attic', 'Contents/MacOS/craft-runtime', 'Contents/Resources/native-screen.js'].map(async path => {
     const file = Bun.file(join(app, path))

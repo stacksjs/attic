@@ -53,15 +53,13 @@ if (!zig) {
     await run(['tar', '-xJf', archive, '-C', toolchain])
   }
 }
-const stx = await source('stx', process.env.STX_NATIVE_SOURCE)
-const craft = await source('craft', process.env.CRAFT_NATIVE_SOURCE)
-// Pinned sources live underneath this app, so Node/Bun resolve their external
-// dependencies from the app's lockfile instead of installing whole monorepos.
 const engine = await source('zig-js', process.env.ZIG_JS_SOURCE)
 if (!process.env.ZIG_JS_SOURCE) { await source('zig-regex'); await source('zig-gc') }
 await run([zig, 'build', 'home-tool-bootstrap', '-Doptimize=ReleaseFast'], engine)
-const { compileNativeBundle } = await import(join(stx, 'packages/stx/src/native/compiler/bundle.ts'))
-const { buildMacOSNative } = await import(join(craft, 'packages/macos/src/index.ts'))
+// Bun links select local checkouts during development. The same imports use
+// the registry packages after release, so validation and shipping share a path.
+const { compileNativeBundle } = await import('@stacksjs/stx/native')
+const { buildMacOSNative } = await import('craft-native/macos')
 const compiled = await compileNativeBundle({
   screens: { Main: 'resources/native/Main.stx', Settings: 'resources/native/Settings.stx' },
   initialScreen: 'Main', root, minify: true, outFile: 'storage/attic/native/native-screen.js',
@@ -72,5 +70,9 @@ await buildMacOSNative({ outdir, nativeBundle: compiled.outFile, zig, zigJS: { s
 const links = Bun.spawnSync(['otool', '-L', join(outdir, 'craft-native-macos')]).stdout.toString()
 if (links.includes('JavaScriptCore.framework') || links.includes('WebKit.framework'))
   throw new Error('The native renderer linked a system browser or script engine.')
-await Bun.write(join(outdir, 'provenance.json'), JSON.stringify({ renderer: 'appkit', scriptEngine: 'zig-js', ...lock }, null, 2))
+const packages = await Promise.all(['@stacksjs/stx', '@stacksjs/components', 'craft-native'].map(async name => {
+  const { version } = await Bun.file(join(root, 'node_modules', name, 'package.json')).json()
+  return { name, version }
+}))
+await Bun.write(join(outdir, 'provenance.json'), JSON.stringify({ renderer: 'appkit', scriptEngine: 'zig-js', packages, ...lock }, null, 2))
 console.log('Built native STX UI with Craft AppKit and zig-js.')

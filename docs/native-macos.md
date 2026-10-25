@@ -21,11 +21,23 @@ DESKTOP_SIGNING_IDENTITY='<Developer ID identity>' bun run build:app
 bun run test:native
 ```
 
-`scripts/native-lock.json` pins the framework and engine commits and the Zig
-download checksum. Builds fetch sparse source snapshots into `storage/attic`
-and resolve external TypeScript dependencies through the app's Bun lockfile.
-For local framework development, use `STX_NATIVE_SOURCE`, `CRAFT_NATIVE_SOURCE`,
-and `ZIG_JS_SOURCE`; `CRAFT_ZIG` can select an explicit compiler.
+The compiler, shared components, and AppKit host come from the installed
+`@stacksjs/stx`, `@stacksjs/components`, and `craft-native` packages. Bun's
+lockfile fixes their registry versions. For framework development, register
+those packages with `bun link` in their source directories, then run
+`bun link --no-save @stacksjs/stx @stacksjs/components craft-native` here.
+Build the source packages before building Attic. Once validated, release the
+patches and install their registry versions to repeat the same build path.
+
+`scripts/native-lock.json` pins the Zig engine commits and compiler checksum.
+Builds fetch sparse engine snapshots into `storage/attic`. `ZIG_JS_SOURCE`
+and `CRAFT_ZIG` can select an explicit engine checkout and compiler. Native
+build provenance records the installed package versions and engine pins.
+
+The main screen composes `AtticSidebar`, `AtticConversationHeader`,
+`AtticTranscript`, and `AtticComposer`. Conversation rows, avatars, and message
+bubbles use shared STX components. Keep framework rendering fixes in STX or
+Craft so every application receives them.
 
 The signed DMG is written to `storage/framework/desktop-dmg`. Install it before
 running `test:native`, or set `ATTIC_E2E_APP` to a built bundle. The test uses

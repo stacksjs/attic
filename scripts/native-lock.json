@@ -4,28 +4,6 @@
     "sha256": "268555a90fc72e281882b2eba469fc88f0005aee26981451a9d61bc4bca3f302"
   },
   "sources": {
-    "stx": {
-      "url": "https://github.com/stacksjs/stx.git",
-      "revision": "ea81294a107a1dae80edbd66c388f2beecbf1e54",
-      "paths": [
-        "packages/stx",
-        "packages/components",
-        "packages/router",
-        "packages/test-utils",
-        "packages/bun-plugin",
-        "scripts",
-        ".config"
-      ]
-    },
-    "craft": {
-      "url": "https://github.com/craft-native/craft.git",
-      "revision": "ec386941c748002dc29923340d0917a80f7c74b6",
-      "paths": [
-        "packages/macos",
-        "packages/ios/templates",
-        "packages/zig/src"
-      ]
-    },
     "zig-js": {
       "url": "https://github.com/zig-utils/zig-js.git",
       "revision": "f0072c95780712d1bb789280e08e7e390e83ab94",
