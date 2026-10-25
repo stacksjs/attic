@@ -17,6 +17,7 @@ import process from 'node:process'
 import { format } from 'node:util'
 import pkg from '../../package.json'
 import { startAgent } from '../Attic/agent'
+import { stopMessagesControl } from '../Attic/messages-app'
 import { DATA_DIR, LOCK_FILE, LOG_FILE } from '../Attic/paths'
 
 const IN_APP_BUNDLE = process.execPath.includes('.app/Contents/MacOS/')
@@ -129,6 +130,7 @@ let stopping = false
 function shutdown(code: number): never {
   if (!stopping) {
     stopping = true
+    stopMessagesControl()
     craft.kill()
     agent.stop()
     releaseSingleInstance()

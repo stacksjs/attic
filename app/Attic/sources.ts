@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { SlackWorkspace } from './slack-workspaces'
 import { deleteSecret, readSecret as readKeychain, writeSecret as writeKeychain } from './keychain'
-import { archiveInWhatsApp, recoverInMessages, removeFromMessages, unarchiveInWhatsApp } from './messages-app'
+import { archiveInWhatsApp, openMessagesUrl, recoverInMessages, removeFromMessages, unarchiveInWhatsApp } from './messages-app'
 import { addressBookDir, messagesDbPath, WHATSAPP_LINK_DIR, whatsappDbPath } from './paths'
 import { sampleDiscord, sampleSlack, sampleWhatsApp } from './sample-sources'
 import { parseWorkspaces, slackIdentity, slackSource } from './slack-workspaces'
@@ -119,6 +119,9 @@ export class Sources {
     this.drivers.set('imessage', inbox.createInboxDriver('imessage', {
       databasePath: messagesDbPath(),
       addressBookDir: addressBookDir() ?? false,
+      // Unnamed groups bypass the controller and fall back to a URL. Keep
+      // background rules and fixtures from opening the real app there too.
+      openUrl: url => { if (!options.sample) openMessagesUrl(url) },
       // Acting on the row by name, through the bundled helper. Never on sample
       // data: a sample "Maya Chen" must not delete a real one.
       controller: options.sample
@@ -147,6 +150,7 @@ export class Sources {
     else {
       this.drivers.set('whatsapp', inbox.createInboxDriver('whatsapp', {
         databasePath: whatsappDbPath(),
+        openUrl: openMessagesUrl,
         controller: { archive: names => archiveInWhatsApp(names), unarchive: names => unarchiveInWhatsApp(names) },
       }))
     }

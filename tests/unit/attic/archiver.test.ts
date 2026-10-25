@@ -1,12 +1,13 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inbox } from '@stacksjs/chat'
 import { Archiver, REMOVAL_ATTEMPTS, REMOVAL_RETRY_MS, RULE_QUIET_MS } from '../../../app/Attic/archiver'
 import { ALICE, BOB, FakeChatDb } from '../../../app/Attic/sample-db'
 import { Sources } from '../../../app/Attic/sources'
+import { MessagesControlDeferred, openMessagesUrl, removeFromMessages } from '../../../app/Attic/messages-app'
 import { ArchiveStore, ftsQuery, splitKey } from '../../../app/Attic/store'
 import { DANA, FakeChatStorage } from './whatsapp-fixture'
 
@@ -225,6 +226,114 @@ describe('archiving iMessage', () => {
 })
 
 describe('always archive', () => {
+  it('defers unnamed group URL fallbacks in the background and preserves an explicit Archive click', async () => {
+    chat.add(chat.group('unnamed', [ALICE, BOB]), { text: 'group without a name' })
+    const opened: unknown[] = []
+    const spawn = Bun.spawn.bind(Bun)
+    const spy = spyOn(Bun, 'spawn').mockImplementation(((...args: unknown[]) => {
+      opened.push(args)
+      return spawn(['/usr/bin/true'])
+    }) as typeof Bun.spawn)
+    try {
+      const imessage = inbox.createInboxDriver('imessage', {
+        databasePath: chat.path,
+        addressBookDir: false,
+        openUrl: openMessagesUrl,
+        controller: {
+          remove: async () => { throw new Error('Unnamed groups cannot use the helper') },
+          recover: async () => ({ ok: true, detail: '' }),
+        },
+      })
+      const sources = new Sources({ sample: true, confirmDeletes: () => true, drivers: { imessage } })
+      await sources.load()
+      const entry = (await sources.live())[0]!
+      store.addRule({ provider: 'imessage', kind: 'conversation', value: entry.key, label: 'Group' })
+      const automatic = new Archiver({ store, sources, attachmentsDir })
+      await automatic.sync()
+      expect(opened).toEqual([])
+      await automatic.removeFromApp(entry.key)
+      expect(opened).toHaveLength(1)
+      expect(opened[0]).toEqual([['/usr/bin/open', 'sms://open?groupid=GROUP-unnamed'], { stdio: ['ignore', 'ignore', 'ignore'] }])
+    }
+    finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('never opens real apps for an unnamed sample group', async () => {
+    chat.add(chat.group('unnamed', [ALICE, BOB]), { text: 'group without a name' })
+    const previous = process.env.ATTIC_MESSAGES_DB
+    process.env.ATTIC_MESSAGES_DB = chat.path
+    const opened: unknown[] = []
+    const spawn = Bun.spawn.bind(Bun)
+    const spy = spyOn(Bun, 'spawn').mockImplementation(((...args: unknown[]) => {
+      opened.push(args)
+      return spawn(['/usr/bin/true'])
+    }) as typeof Bun.spawn)
+    try {
+      const sources = new Sources({ sample: true, confirmDeletes: () => true })
+      await sources.load()
+      const entry = (await sources.live()).find(e => e.provider === 'imessage')!
+      store.addRule({ provider: 'imessage', kind: 'conversation', value: entry.key, label: 'Group' })
+      const automatic = new Archiver({ store, sources, attachmentsDir })
+      await automatic.sync()
+      await automatic.removeFromApp(entry.key)
+      expect(opened).toEqual([])
+    }
+    finally {
+      spy.mockRestore()
+      if (previous === undefined)
+        delete process.env.ATTIC_MESSAGES_DB
+      else
+        process.env.ATTIC_MESSAGES_DB = previous
+    }
+  })
+
+  it('does not ask the helper to reopen Messages during automatic archive or retries', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'attic-helper-'))
+    const helper = join(dir, 'helper')
+    writeFileSync(helper, '#!/bin/sh\nprintf \'%s\\n\' "$@"\n')
+    chmodSync(helper, 0o755)
+    const previous = process.env.ATTIC_MESSAGES_HELPER
+    process.env.ATTIC_MESSAGES_HELPER = helper
+    const calls: string[][] = []
+    try {
+      const imessage = inbox.createInboxDriver('imessage', {
+        databasePath: chat.path,
+        addressBookDir: false,
+        confirmDeletes: true,
+        controller: {
+          remove: async (names, url, confirm) => {
+            const result = await removeFromMessages(names, url, confirm)
+            calls.push(result.detail.split('\n'))
+            return result
+          },
+          recover: async () => ({ ok: true, detail: '' }),
+        },
+      })
+      const sources = new Sources({ sample: true, confirmDeletes: () => true, drivers: { imessage } })
+      await sources.load()
+      const automatic = new Archiver({ store, sources, attachmentsDir })
+      const now = Date.now()
+      chat.add(chat.direct(BOB), { text: 'quiet thread', at: now - RULE_QUIET_MS - 1000 })
+      store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
+      await automatic.sync('inbox', now)
+      await automatic.sync('inbox', now + REMOVAL_RETRY_MS + 1000)
+      expect(calls).toHaveLength(2)
+      expect(calls.every(args => args.includes('--background'))).toBe(true)
+      // An explicit Archive click still has permission to open the source app.
+      await automatic.removeFromApp(`imessage:direct:${BOB}`)
+      expect(calls.at(-1)).not.toContain('--background')
+    }
+    finally {
+      if (previous === undefined)
+        delete process.env.ATTIC_MESSAGES_HELPER
+      else
+        process.env.ATTIC_MESSAGES_HELPER = previous
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('adds what a person sends to the archive they already have, then takes the thread out of Messages again', async () => {
     const alice = chat.direct(ALICE)
     chat.add(alice, { text: 'old news' })
@@ -312,6 +421,47 @@ describe('always archive', () => {
     await archiver.sync('inbox', later + RULE_QUIET_MS + 1000)
     expect(controllerCalls).toHaveLength(REMOVAL_ATTEMPTS + 1)
     expect(store.messageCount(key)).toBe(2)
+  })
+
+  it('keeps the source conversation when copying new messages fails', async () => {
+    const now = Date.now()
+    const bob = chat.direct(BOB)
+    chat.add(bob, { text: 'already saved', at: now - RULE_QUIET_MS - 60_000 })
+    const key = `imessage:direct:${BOB}`
+    await archiver.archive(key)
+    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
+    chat.add(bob, { text: 'not saved yet', at: now - RULE_QUIET_MS - 1000 })
+    const driver = archiver.sources.driver('imessage')!
+    const messages = driver.messages.bind(driver)
+    driver.messages = async () => { throw new Error('Source temporarily unreadable') }
+    await archiver.sync('inbox', now)
+    expect(store.messageCount(key)).toBe(1)
+    expect(controllerCalls).toEqual([])
+    driver.messages = messages
+    await archiver.sync('inbox', now + 1000)
+    expect(store.messageCount(key)).toBe(2)
+    expect(controllerCalls).toHaveLength(1)
+  })
+
+  it('does not use up removal retries while the source app is closed', async () => {
+    const now = Date.now()
+    chat.add(chat.direct(BOB), { text: 'quiet thread', at: now - RULE_QUIET_MS - 1000 })
+    store.addRule({ provider: 'imessage', kind: 'person', value: BOB, label: 'Bob' })
+    const driver = archiver.sources.driver('imessage')!
+    const archive = driver.archive.bind(driver)
+    driver.archive = async () => { throw new MessagesControlDeferred('Messages is closed') }
+    const key = `imessage:direct:${BOB}`
+    await archiver.archive(key)
+    const archivedAt = now - 60_000
+    store.archive(key, archivedAt)
+    for (let i = 0; i <= REMOVAL_ATTEMPTS; i++)
+      await archiver.sync('inbox', now + i * (REMOVAL_RETRY_MS + 1000))
+    expect(controllerCalls).toEqual([])
+    expect(store.conversation(key)!.archivedAt).toBe(archivedAt)
+    driver.archive = archive
+    await archiver.sync('inbox', now + (REMOVAL_ATTEMPTS + 1) * (REMOVAL_RETRY_MS + 1000))
+    expect(controllerCalls).toHaveLength(1)
+    expect(store.conversation(key)!.archivedAt).toBe(archivedAt)
   })
 
   it('leaves it in the app when archiving is set to Attic only', async () => {

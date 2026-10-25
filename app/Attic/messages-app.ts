@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 /**
  * Messages' own Delete and Recover, and WhatsApp's own Archive and Unarchive,
@@ -11,10 +12,39 @@ import process from 'node:process'
 
 export interface ControlOutcome {
   ok: boolean
-  /** 0 ok, 2 not permitted, 3 not found, 4 the app did not respond, -1 no helper. */
+  /** 0 ok, 2 not permitted, 3 not found, 4 not responding, 5 deferred, -1 unavailable. */
   code: number
   detail: string
 }
+
+// Keep the policy with the async operation: a simultaneous Archive click
+// must not inherit a background sync's restrictions (or the other way round).
+const backgroundControl = new AsyncLocalStorage<boolean>()
+let pending: Promise<unknown> = Promise.resolve()
+let active: ReturnType<typeof Bun.spawn> | null = null
+let stopped = false
+
+export class MessagesControlDeferred extends Error {}
+
+export function withBackgroundMessages<T>(task: () => Promise<T>): Promise<T> {
+  return backgroundControl.run(true, task)
+}
+
+/** The driver's unnamed-group fallback must obey the same policy as the helper. */
+export function openMessagesUrl(url: string): void {
+  if (backgroundControl.getStore())
+    throw new MessagesControlDeferred('Opening a conversation waits for an explicit archive.')
+  if (!stopped)
+    Bun.spawn(['/usr/bin/open', url], { stdio: ['ignore', 'ignore', 'ignore'] })
+}
+
+/** Cancel native automation before closing the archive and exiting Attic. */
+export function stopMessagesControl(): void {
+  stopped = true
+  active?.kill()
+}
+
+process.once('exit', stopMessagesControl)
 
 export function helperPath(): string | null {
   const candidates = [
@@ -25,13 +55,34 @@ export function helperPath(): string | null {
   return candidates.find(path => !!path && existsSync(path)) ?? null
 }
 
-async function run(args: string[]): Promise<ControlOutcome> {
+async function execute(args: string[], background: boolean): Promise<ControlOutcome> {
+  if (stopped)
+    return { ok: false, code: -1, detail: 'Attic is closing.' }
   const helper = helperPath()
   if (!helper)
     return { ok: false, code: -1, detail: 'The Messages helper is missing from this build.' }
-  const child = Bun.spawn([helper, ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
-  const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
-  return { ok: code === 0, code, detail: (code === 0 ? out : err).trim() }
+  const child = Bun.spawn([helper, ...args, ...(background ? ['--background'] : [])], { stdio: ['ignore', 'pipe', 'pipe'] })
+  active = child
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 60_000)
+  try {
+    const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
+    if (background && code === 5)
+      throw new MessagesControlDeferred(err.trim())
+    return { ok: code === 0, code, detail: (code === 0 ? out : err).trim() }
+  }
+  finally {
+    clearTimeout(timeout)
+    active = null
+  }
+}
+
+function run(args: string[]): Promise<ControlOutcome> {
+  const background = !!backgroundControl.getStore()
+  // Accessibility actions change shared app state. Concurrent callers must
+  // never press each other's confirmation buttons or switch each other's view.
+  const result = pending.then(() => execute(args, background))
+  pending = result.catch(() => {})
+  return result
 }
 
 /** Whether Attic may drive Messages; `prompt` raises macOS' own request. */

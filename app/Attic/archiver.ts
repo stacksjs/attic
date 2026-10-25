@@ -6,6 +6,7 @@ import { constants, copyFileSync, existsSync, mkdirSync, rmSync, statSync } from
 import { basename, dirname, join } from 'node:path'
 import { foldFallbackReactions } from '../../resources/functions/fallback-reactions'
 import { conversationKey, splitKey } from './store'
+import { MessagesControlDeferred, withBackgroundMessages } from './messages-app'
 
 /**
  * Archiving, as the apps should have had it, for every source at once.
@@ -266,7 +267,7 @@ export class Archiver {
       const have = new Set(this.store.messages(key).map(m => m.guid))
       verified = all.every(m => have.has(m.id))
     }
-    if (verified)
+    if (verified && stored?.state !== 'archived')
       this.store.archive(key)
 
     const after = this.store.conversation(key)!
@@ -290,13 +291,22 @@ export class Archiver {
   private async tryRemoval(key: string, cursor: string, now: number): Promise<void> {
     const tried = this.removalTried.get(key)
     const attempts = tried?.cursor === cursor ? tried.attempts + 1 : 1
-    this.removalTried.set(key, { cursor, attempts, at: now })
     try {
-      const outcome = await this.removeFromApp(key)
+      // Rules and retries need the same copy verification as an Archive click.
+      if (!(await this.archive(key)).verified)
+        return
+      this.removalTried.set(key, { cursor, attempts, at: now })
+      const outcome = await withBackgroundMessages(() => this.removeFromApp(key))
       if (!outcome.removed && outcome.mode !== 'confirm')
         console.warn(`[attic] ${key} stays in its app (attempt ${attempts} of ${REMOVAL_ATTEMPTS}): ${outcome.detail}`)
     }
     catch (error) {
+      if (error instanceof MessagesControlDeferred) {
+        // A closed app is a deliberate choice, not a failed deletion. Wait
+        // before checking again, without using up a removal attempt.
+        this.removalTried.set(key, { cursor, attempts: attempts - 1, at: now })
+        return
+      }
       console.warn(`[attic] could not take ${key} out of its app (attempt ${attempts} of ${REMOVAL_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -376,7 +386,10 @@ export class Archiver {
             const { messages } = await this.copy(current, conversation.key)
             report.copiedMessages += messages.length
           }
-          catch {}
+          catch {
+            // Never delete a thread whose newest messages could not be saved.
+            continue
+          }
         }
         if (quiet && this.removalDue(conversation.key, current.conversation.cursor, now))
           await this.tryRemoval(conversation.key, current.conversation.cursor, now)

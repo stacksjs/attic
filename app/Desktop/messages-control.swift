@@ -20,7 +20,8 @@
 //   attic-messages whatsapp-find      --name "Jane Appleseed" [--archived]
 //
 // Exit 0 on success. On failure, one line on stderr saying why, and exit 2
-// (not permitted), 3 (conversation not found) or 4 (Messages did not respond).
+// (not permitted), 3 (conversation not found), 4 (Messages did not respond),
+// or 5 (background operation deferred). --background never opens or focuses apps.
 // Compiled by scripts/build-app.ts into Attic.app/Contents/MacOS, so the
 // Accessibility grant is Attic's.
 
@@ -81,6 +82,13 @@ func open(_ url: String) {
 }
 
 func appElement() -> AXUIElement {
+  if background {
+    // A timer is not permission to launch, reopen or focus another app.
+    guard let app = messagesApp(), app.isActive, !app.isHidden else {
+      fail(5, "Automatic removal waits until Messages is open and active.")
+    }
+    return AXUIElementCreateApplication(app.processIdentifier)
+  }
   if messagesApp() == nil {
     NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Messages.app"))
   }
@@ -151,6 +159,14 @@ func whatsappWindow(_ app: AXUIElement) -> AXUIElement? {
 /// WhatsApp's window, launching or reopening it if need be. It is driven
 /// where it is, in the background: its rows' actions do not need focus.
 func whatsappElement() -> (AXUIElement, AXUIElement) {
+  if background {
+    guard let running = whatsappApp(), running.isActive, !running.isHidden else {
+      fail(5, "Automatic archiving waits until WhatsApp is open and active.")
+    }
+    let app = AXUIElementCreateApplication(running.processIdentifier)
+    guard let window = whatsappWindow(app) else { fail(5, "WhatsApp's window is closed.") }
+    return (app, window)
+  }
   let bundle = URL(fileURLWithPath: "/Applications/WhatsApp.app")
   if whatsappApp() == nil { NSWorkspace.shared.open(bundle) }
   guard let running = poll(seconds: 15, { whatsappApp() }) else { fail(4, "WhatsApp did not start") }
@@ -217,6 +233,7 @@ func whatsappList(_ window: AXUIElement, archived: Bool) -> AXUIElement? {
 }
 
 let args = CommandLine.arguments.dropFirst()
+let background = args.contains("--background")
 func option(_ flag: String) -> String? {
   guard let at = args.firstIndex(of: flag), args.index(after: at) < args.endIndex else { return nil }
   return args[args.index(after: at)]
@@ -251,7 +268,10 @@ func row(in app: AXUIElement) -> AXUIElement? {
 
 switch command {
 case "delete":
-  if let url = option("--url") { open(url) }
+  if background && !args.contains("--confirm") {
+    fail(5, "Automatic removal waits for an explicit archive when Messages needs confirmation.")
+  }
+  if !background, let url = option("--url") { open(url) }
   let app = appElement()
   // The row's own action, never the menu's "Delete Conversation…", which acts
   // on whatever is selected.
