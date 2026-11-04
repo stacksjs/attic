@@ -9,7 +9,7 @@
     "bun": ">=1.4.3"
   },
   "scripts": {
-    "build:reset": "rm -rf node_modules pantry.lock && bun install && ./buddy generate:types && ./buddy lint:fix",
+    "build:reset": "rm -rf node_modules && bun install && ./buddy generate:types && ./buddy lint:fix",
     "buddy": "./buddy",
     "stacks": "./buddy",
     "setup": "./bootstrap",
@@ -98,18 +98,18 @@
     "test:native": "bun scripts/e2e-native.ts"
   },
   "dependencies": {
-    "@stacksjs/actions": "^0.75.176",
-    "@stacksjs/chat": "^0.75.176",
-    "@stacksjs/components": "^0.2.697",
-    "@stacksjs/desktop": "^0.2.697",
-    "@stacksjs/env": "^0.75.176",
-    "@stacksjs/path": "^0.75.176",
-    "@stacksjs/stx": "^0.2.697",
+    "@stacksjs/actions": "^0.75.463",
+    "@stacksjs/chat": "^0.75.463",
+    "@stacksjs/components": "^0.2.798",
+    "@stacksjs/desktop": "^0.2.798",
+    "@stacksjs/env": "^0.75.463",
+    "@stacksjs/path": "^0.75.463",
+    "@stacksjs/stx": "^0.2.798",
     "@stacksjs/ts-css": "^0.3.8",
     "baileys": "^7.0.0-rc14",
-    "craft-native": "0.0.348",
+    "craft-native": "0.0.443",
     "pickier": "^0.1.65",
-    "stacks": "^0.75.176",
+    "stacks": "^0.75.463",
     "ts-images": "^0.2.25",
     "ts-qr-codes": "^0.1.8"
   },

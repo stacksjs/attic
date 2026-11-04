@@ -24,10 +24,10 @@ team (and every agent) sees the same rules.
 - Use **stx** for templating. Never vanilla JS (`var`, `document.*`, `window.*`)
   inside stx templates - use signals (`state` / `derived` / `effect`) and
   composables.
-- Use **Crosswind** utility classes for styling.
+- Use **ts-css** utility classes for styling.
 - Icons are Iconify classes (`i-{collection}-{name}`). Never hand-roll SVG paths
   and never add an icon npm package.
-- Stacks ships no animation library. Use Crosswind transitions, CSS keyframes,
+- Stacks ships no animation library. Use ts-css transitions, CSS keyframes,
   scroll-driven animations, and the motion composables.
 
 ### Commits
@@ -78,6 +78,10 @@ review the generated SQL and snapshot, then apply with `./buddy migrate`.
 and `stacks-router` for selection, authentication, ownership, and mount behavior.
 Use `stacks-auto-imports` to distinguish browser bindings from declarations
 and explicit module imports.
+Before adding imports in app code, read the relevant section of
+`storage/framework/auto-imports/RUNTIME.md` and use its listed names directly
+in their stated context. `buddy generate`, `buddy generate:auto-imports` and
+`buddy setup:ai` refresh this inventory from the runtime registries.
 
 **Subsystem reference**, one per area (`stacks-orm`, `stacks-router`,
 `stacks-queue`, ...), each documenting it authoritatively. Read the relevant
@@ -111,7 +115,7 @@ and explicit module imports.
 its `CATALOG.md`. The framework bundles all 50 reviewed marketing playbooks,
 including copywriting, SEO, acquisition, conversion, retention, and measurement.
 They complement framework skills such as `stacks-analytics` and `stacks-email`.
-Use stx and Crosswind for implementation. A draft does not authorize sending,
+Use stx and ts-css for implementation. A draft does not authorize sending,
 spending, publishing, or scheduling; existing explicit authorization carries forward.
 
 Source revisions, hashes, native substitutes, and all 38 reviewed Matt Pocock

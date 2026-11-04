@@ -51,6 +51,19 @@ a versioned `STACKS_DEPLOY_PREVIEW_JSON=` line for API and tool consumers.
 
 ## Deployment Prerequisites
 
+Automated production deployments on GitHub Actions and ReviewOS require a full provider
+commit SHA and branch ref. Before prerequisite setup, Buddy verifies the checkout against
+that SHA and accepts an unchanged origin head directly. If the head moved, Buddy fetches
+the branch from `origin` (FETCH_HEAD only), completes shallow history and requires the
+commit to be on it. Unavailable or still-shallow history stops deployment. Before shipping over SSH it
+reads the release each site's `current` link serves and stops only when production
+already runs a commit that landed after this one, so a deploy never goes backwards. A
+verified commit newer than production deploys even when the head has moved on: requiring
+the exact head starved production whenever pushes outpaced CI. A commit off the branch
+(force-pushed away), a tag/PR ref, missing metadata, an unavailable remote or an
+unreadable box stops the deployment. Ordinary manual deployments and staging deployments
+keep their existing behavior; dry-run previews remain read-only.
+
 **AWS** (`provider: 'aws'`)
 
 1. **AWS credentials configured**: `buddy configure:aws`
@@ -199,6 +212,11 @@ buddy cloud:cleanup           # clean retained resources
 ```
 
 ## Gotchas
+- The API reachability guard recognises `serve:api`, source `serve/api.js`
+  entrypoints and compiled `storage/framework/runtime/production/api.js`
+  bundles, including wrapper commands and custom site names. Page sites still
+  need `API_URL` or `PORT_API` pointing to their API; a compiled API site does
+  not need a proxy back to itself.
 - Check `cloud.provider` before advising anything provider-specific. Half the AWS advice is wrong
   for a Hetzner or SSH box, and vice versa.
 - `buddy deploy --prod` from a non-interactive shell refuses without `--yes`, rather than hanging
@@ -209,8 +227,9 @@ buddy cloud:cleanup           # clean retained resources
 - On Hetzner and SSH, a project's `/etc/rpx/sites.d/<slug>.json` is replaced wholesale, so
   `project.slug` must be unique on a shared box and the config must declare every domain that
   fragment serves
-- `.env.<environment>` is decrypted at deploy time and shipped as every site's `.env`, so declare
-  `tenants` in `config/cloud.ts` on a shared box to strip other tenants' keys
+- `.env.<environment>` is decrypted at deploy time and shipped as every site's `.env`. Supply the
+  shared-box roster through `STACKS_CLOUD_TENANTS` or private tenant files so other tenants' keys
+  are stripped. See `stacks-env` for the private-source precedence.
 - A failover replica bucket (`infrastructure.storage.<name>.failover`) lives outside the stack, so
   `buddy cloud:remove` leaves it, and its data, behind on purpose
 - For infrastructure details, see the `stacks-cloud` skill

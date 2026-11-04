@@ -30,6 +30,8 @@ declare global {
   const attachmentKind: typeof autoImports.attachmentKind
   const SOURCE_SYMBOLS: typeof autoImports.SOURCE_SYMBOLS
   const SOURCE_NAMES: typeof autoImports.SOURCE_NAMES
+  const messageTimeline: typeof autoImports.messageTimeline
+  const transcriptStamp: typeof autoImports.transcriptStamp
   const loadPairing: typeof autoImports.loadPairing
   const savePairing: typeof autoImports.savePairing
   const forgetPairing: typeof autoImports.forgetPairing

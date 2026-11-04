@@ -12,7 +12,7 @@ allowed-tools: Read Edit Write Bash Grep Glob
 - Database package: `storage/framework/core/database/src/`
 - Configuration: `config/database.ts`
 - QB config: `config/query-builder.ts`
-- Migrations: `database/migrations/` (237 migration files, `.sql` format)
+- Migrations: `database/migrations/` (247 migration files, `.sql` format)
 - QB state: `.qb/`
 - ORM: `storage/framework/orm/`
 
@@ -287,9 +287,7 @@ SQLite's SQL on a Turso or `sqld` server. Configure `TURSO_DATABASE_URL`
   migrationLocks: 'migration_locks',
   queryLogging: {
     // Defaults on outside production and off in production. Production also
-    // skips query hooks unless persistent history is explicitly enabled,
-    // except one onQueryError hook on PostgreSQL and MySQL that reports a
-    // pool broken by oven-sh/bun#42804.
+    // skips query hooks unless persistent history is explicitly enabled.
     enabled: env.DB_QUERY_LOGGING_ENABLED ?? !['production', 'prod'].includes(env.APP_ENV || ''),
     captureAllTraces: false, // slow and failed queries always keep traces
     // Bound values in query_logs.bindings, credentials stored as `<redacted>`
@@ -371,6 +369,10 @@ or dialect-aware raw helpers. sql.as validates an alias; raw text remains a
 trusted-code operation. sqlDateTime/parseSqlDateTime provide the canonical
 application timestamp representation. Mixing SQLite datetime text with
 application ISO text in raw comparisons can give wrong expiry boundaries.
+parseSqlDate(value) reads a DATE column back as the YYYY-MM-DD it stores,
+whether the driver built the Date at UTC midnight (Bun's Postgres driver) or at
+the host's local midnight; toISOString().slice(0, 10) shifts the latter a day
+back east of UTC. Null for missing, invalid or impossible input.
 Source: core/database/src/types.ts and sql-helpers.ts; see stacks-query-builder
 for typed tables, raw binding, transaction handles and replica routing.
 
@@ -382,3 +384,13 @@ canonical numeric string value, so padded numeric inputs cannot reverse lock ord
 transaction handle and choose ownership filters; reads, writes and validation
 remain on that handle. This prevents opposite input order from creating a
 lock-order cycle during a transfer, merge or multi-item stock reservation.
+
+## Row leases for external operations
+
+`claimRowLease(table, ownerScope, { token, heartbeat }, ttlMs)` from
+`@stacksjs/database/runtime` claims model-owned nullable token and heartbeat
+columns atomically. It returns null when busy, or a lease with `renew()`,
+`release()`, `assertOwned()` and `commit(work)`. Renew periodically during I/O.
+Keep network work outside `commit`; commit locks and revalidates the token before
+writing one bounded batch. An expired worker cannot commit or release a successor.
+A lease's unique owner scope must include the resource binding where applicable.
