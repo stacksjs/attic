@@ -6,7 +6,7 @@
   "description": "Archive iMessage conversations on your Mac, natively.",
   "license": "MIT",
   "engines": {
-    "bun": ">=1.4.3"
+    "bun": ">=1.4.2"
   },
   "scripts": {
     "build:reset": "rm -rf node_modules && bun install && ./buddy generate:types && ./buddy lint:fix",
