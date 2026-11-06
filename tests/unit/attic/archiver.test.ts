@@ -73,8 +73,14 @@ beforeEach(async () => {
   store = new ArchiveStore(join(dir, 'attic.sqlite'))
   slack = new FakeSlack()
   controllerCalls = []
+  // Say darwin, as the WhatsApp fixture below already does. The driver's
+  // status() refuses off a Mac ("iMessage is only available on a Mac"), the
+  // source counts as disconnected, and every test here then fails with "No
+  // conversation" rather than anything it meant to assert. These tests read
+  // the chat.db this file builds, so the host's own OS is beside the point.
   const imessage = inbox.createInboxDriver('imessage', {
     databasePath: chat.path,
+    platform: 'darwin',
     addressBookDir: false,
     confirmDeletes: true,
     controller: {
@@ -237,6 +243,7 @@ describe('always archive', () => {
     try {
       const imessage = inbox.createInboxDriver('imessage', {
         databasePath: chat.path,
+        platform: 'darwin',
         addressBookDir: false,
         openUrl: openMessagesUrl,
         controller: {
@@ -300,6 +307,7 @@ describe('always archive', () => {
     try {
       const imessage = inbox.createInboxDriver('imessage', {
         databasePath: chat.path,
+        platform: 'darwin',
         addressBookDir: false,
         confirmDeletes: true,
         controller: {
