@@ -1,1 +1,90 @@
 # Attic Changelog
+
+## v0.3.2
+
+## ✨ Features
+
+- Export in the menus and on a conversation's own row ([2aec7ff](https://github.com/stacksjs/attic/commit/2aec7ff)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- write the archive out as pages anyone can read ([6f9377e](https://github.com/stacksjs/attic/commit/6f9377e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- render Attic natively with stx Craft and zig-js ([8ad4f7e](https://github.com/stacksjs/attic/commit/8ad4f7e)) _(by Chris <chrisbreuer93@gmail.com>)_
+- upgrade Stacks and polish native Attic desktop ([ef2fb0f](https://github.com/stacksjs/attic/commit/ef2fb0f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- reactions written out as text sit on the message they name ([4c40e7f](https://github.com/stacksjs/attic/commit/4c40e7f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- the trackpad taps when a held message offers its tapbacks ([29a24ce](https://github.com/stacksjs/attic/commit/29a24ce)) _(by Chris <chrisbreuer93@gmail.com>)_
+- react by long-pressing a message, on the phone and the Mac ([90e0350](https://github.com/stacksjs/attic/commit/90e0350)) _(by Chris <chrisbreuer93@gmail.com>)_
+- WhatsApp as Attic's own linked device, and every Slack workspace ([b8cea40](https://github.com/stacksjs/attic/commit/b8cea40)) _(by Chris <chrisbreuer93@gmail.com>)_
+- write from Attic, and hear every new message ([6b2e21d](https://github.com/stacksjs/attic/commit/6b2e21d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- the transcript looks like Messages ([e5cbb9f](https://github.com/stacksjs/attic/commit/e5cbb9f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- a Settings window and the native macOS sidebar ([017884a](https://github.com/stacksjs/attic/commit/017884a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **phone**: pair by pointing the camera at the Mac's QR code ([82e1627](https://github.com/stacksjs/attic/commit/82e1627)) _(by Chris <chrisbreuer93@gmail.com>)_
+- the phone app - Attic's archive on iOS and Android ([2d0fb99](https://github.com/stacksjs/attic/commit/2d0fb99)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ui**: Phone in the sidebar: pair with a QR code, see and forget phones ([f0c632a](https://github.com/stacksjs/attic/commit/f0c632a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- pair a phone that keeps its own copy of the archive ([dd7def1](https://github.com/stacksjs/attic/commit/dd7def1)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ui**: Always Archive from a conversation's menu, and a sheet of every rule ([1672f95](https://github.com/stacksjs/attic/commit/1672f95)) _(by Chris <chrisbreuer93@gmail.com>)_
+- always archive a person or group, keeping or removing it in the app ([9b97e42](https://github.com/stacksjs/attic/commit/9b97e42)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ui**: Clean up sheet for bulk archive, and quoted replies above bubbles ([c2533d9](https://github.com/stacksjs/attic/commit/c2533d9)) _(by Chris <chrisbreuer93@gmail.com>)_
+- bulk archive everything quiet for longer than a cutoff ([11200d3](https://github.com/stacksjs/attic/commit/11200d3)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ui**: photos in the list, header and beside group senders; draw the list a page at a time ([402e677](https://github.com/stacksjs/attic/commit/402e677)) _(by Chris <chrisbreuer93@gmail.com>)_
+- profile pictures for people and groups, cached for the archive ([2595b1c](https://github.com/stacksjs/attic/commit/2595b1c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ui**: WhatsApp source, badge and bubbles; marketing page covers it ([5025af1](https://github.com/stacksjs/attic/commit/5025af1)) _(by Chris <chrisbreuer93@gmail.com>)_
+- WhatsApp in the unified inbox ([18a6ea7](https://github.com/stacksjs/attic/commit/18a6ea7)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **helper**: press WhatsApp's own Archive and Unarchive by chat name ([65a68c9](https://github.com/stacksjs/attic/commit/65a68c9)) _(by Chris <chrisbreuer93@gmail.com>)_
+- serve HEIC photos as cached JPEG renderings via ts-images ([1ff0281](https://github.com/stacksjs/attic/commit/1ff0281)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ui**: Recently Deleted folder, and video and audio attachments ([8baa19a](https://github.com/stacksjs/attic/commit/8baa19a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- marketing page with real screenshots of the app ([0a155ef](https://github.com/stacksjs/attic/commit/0a155ef)) _(by Chris <chrisbreuer93@gmail.com>)_
+- one inbox for iMessage, Slack and Discord through the Stacks inbox drivers ([385c860](https://github.com/stacksjs/attic/commit/385c860)) _(by Chris <chrisbreuer93@gmail.com>)_
+- remove archived conversations from Messages, recover them on unarchive ([eec6917](https://github.com/stacksjs/attic/commit/eec6917)) _(by Chris <chrisbreuer93@gmail.com>)_
+- archive iMessage conversations natively ([ea9abd9](https://github.com/stacksjs/attic/commit/ea9abd9)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🐛 Bug Fixes
+
+- **tests**: re-stat the helper's file instead of polling a cached BunFile ([fec8529](https://github.com/stacksjs/attic/commit/fec8529)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **test**: boot auto-imports in tests ([0129cf2](https://github.com/stacksjs/attic/commit/0129cf2)) _(by Chris <chrisbreuer93@gmail.com>)_
+- preserve literal markup in native search previews ([330737c](https://github.com/stacksjs/attic/commit/330737c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- build native screens from installed framework packages ([de2afda](https://github.com/stacksjs/attic/commit/de2afda)) _(by Chris <chrisbreuer93@gmail.com>)_
+- restore familiar native conversation layout with shared stx components ([03ffee0](https://github.com/stacksjs/attic/commit/03ffee0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- prevent background archiving from reopening Messages ([e3ff87f](https://github.com/stacksjs/attic/commit/e3ff87f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- say when macOS has notifications off for Attic ([d0e9230](https://github.com/stacksjs/attic/commit/d0e9230)) _(by Chris <chrisbreuer93@gmail.com>)_
+- always-archive retries taking a conversation out of the app ([d04de20](https://github.com/stacksjs/attic/commit/d04de20)) _(by Chris <chrisbreuer93@gmail.com>)_
+- switching mailboxes and conversations responds at once ([e53e109](https://github.com/stacksjs/attic/commit/e53e109)) _(by Chris <chrisbreuer93@gmail.com>)_
+- always-archive waits for a conversation to go quiet before removing it ([ba767eb](https://github.com/stacksjs/attic/commit/ba767eb)) _(by Chris <chrisbreuer93@gmail.com>)_
+- archived means out of the app, for always-archive rules and bulk too ([9e96eac](https://github.com/stacksjs/attic/commit/9e96eac)) _(by Chris <chrisbreuer93@gmail.com>)_
+- no empty bubbles for photos, and rescue threads from Recently Deleted ([fb4857f](https://github.com/stacksjs/attic/commit/fb4857f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- unarchive recovers the conversation in Messages ([669db44](https://github.com/stacksjs/attic/commit/669db44)) _(by Chris <chrisbreuer93@gmail.com>)_
+- archiving into a 0.1 archive failed on its NOT NULL chat_guid ([171474a](https://github.com/stacksjs/attic/commit/171474a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## ⚡ Performance Improvements
+
+- answer list requests from the last list, refresh behind it ([67bbd35](https://github.com/stacksjs/attic/commit/67bbd35)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 📝 Documentation
+
+- **agents**: one project, one agent, and never a worktree ([4501fa2](https://github.com/stacksjs/attic/commit/4501fa2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+## ✅ Tests
+
+- let native appearance transitions settle before capture ([db00a74](https://github.com/stacksjs/attic/commit/db00a74)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🔧 Chores
+
+- regenerate bun.lock with the pinned toolchain ([ae29315](https://github.com/stacksjs/attic/commit/ae29315)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- declare the Bun the toolchain actually pins ([ae8da83](https://github.com/stacksjs/attic/commit/ae8da83)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- drop the framework-only scripts an app cannot run ([f765998](https://github.com/stacksjs/attic/commit/f765998)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **lint**: stop linting the vendored agent skills ([580dd2d](https://github.com/stacksjs/attic/commit/580dd2d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- install released native UI packages for Attic 0.3.1 ([3df7231](https://github.com/stacksjs/attic/commit/3df7231)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: Craft 0.0.115, for haptics on the Mac's trackpad ([17fbf56](https://github.com/stacksjs/attic/commit/17fbf56)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: stx 0.2.368, where a false :if builds nothing ([8396033](https://github.com/stacksjs/attic/commit/8396033)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: Craft 0.0.112 for the native sidebar, and craft-native for the phone build ([29d5892](https://github.com/stacksjs/attic/commit/29d5892)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: @stacksjs/actions 0.75.56 for the localNetwork capability ([7557df1](https://github.com/stacksjs/attic/commit/7557df1)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: @stacksjs/chat and actions 0.75.55 ([db77e80](https://github.com/stacksjs/attic/commit/db77e80)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: @stacksjs/chat 0.75.54 (avatars, fast conversation opens) ([15f581b](https://github.com/stacksjs/attic/commit/15f581b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- sample contacts get portraits; refresh the site screenshots ([f8052c9](https://github.com/stacksjs/attic/commit/f8052c9)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: ts-images 0.2.25, which decodes HEIC ([5e08456](https://github.com/stacksjs/attic/commit/5e08456)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: pin the Craft runtime, 0.0.109 ([dbc0ae5](https://github.com/stacksjs/attic/commit/dbc0ae5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- release 0.2.0, the unified inbox ([6a7437b](https://github.com/stacksjs/attic/commit/6a7437b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: @stacksjs/chat 0.75.43 for the inbox drivers, ts-css 0.3.8 ([11e5024](https://github.com/stacksjs/attic/commit/11e5024)) _(by Chris <chrisbreuer93@gmail.com>)_
+- scaffold Attic with buddy new --minimal ([aa04a7e](https://github.com/stacksjs/attic/commit/aa04a7e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
