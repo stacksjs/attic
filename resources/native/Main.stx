@@ -147,6 +147,24 @@ async function unarchive(key = selectedKey()) {
   finally { busy.set(false) }
 }
 
+/**
+ * Write the conversation, or everything Attic kept, out as pages anyone can
+ * read. The agent reveals the folder in the Finder when it is done, so the
+ * window only has to say what was written and where.
+ */
+async function exportKept(key = null) {
+  if (busy()) return
+  busy.set(true)
+  say(key ? 'Exporting this conversation…' : 'Exporting the archive…')
+  try {
+    const result = await nativePost('/api/export', key ? { key } : {})
+    const what = key ? `${result.messages} messages` : `${result.conversations.length} conversations`
+    say(`Exported ${what} to ${result.folder}.${result.missingAttachments ? ` ${result.missingAttachments} attachments were already gone.` : ''}`)
+  }
+  catch (error) { say(error.message) }
+  finally { busy.set(false) }
+}
+
 async function openInApp(key = selectedKey()) {
   try { await nativePost('/api/open', { key }) }
   catch (error) { say(error.message) }
@@ -158,11 +176,13 @@ async function rowMenu(c) {
     { id: c.state === 'archived' ? 'restore' : 'archive', title: c.state === 'archived' ? 'Move to Inbox' : 'Archive', icon: 'archivebox' },
     { id: 'always', title: `Always Archive ${c.title}`, icon: 'archivebox.circle' },
     { separator: true }, { id: 'open', title: `Show in ${SOURCE_NAMES[c.provider]}`, icon: 'arrow.up.forward.app', disabled: !c.url },
+    { id: 'export', title: 'Export…', icon: 'square.and.arrow.up', disabled: !c.saved },
     ...(c.saved ? [{ separator: true }, { id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'trash' }] : []),
   ])
   if (choice === 'archive') await archive(c.key)
   if (choice === 'restore') await unarchive(c.key)
   if (choice === 'open') await openInApp(c.key)
+  if (choice === 'export') await exportKept(c.key)
   if (choice === 'always') { await nativePost('/api/rules/for-conversation', { key: c.key }); say('Always archive is on for this conversation.'); await refresh() }
   if (choice === 'forget' && await nativeCraft().dialog.confirm({ title: 'Delete Attic\'s copy?', message: 'This removes the saved messages and attachments from Attic. It leaves the original app alone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', destructive: true })) {
     await nativePost('/api/forget', { key: c.key }); await refresh()
@@ -298,9 +318,11 @@ onMount(async () => {
     if (id === 'previous') move(-1)
     if (id === 'open') openInApp()
     if (id === 'cleanup') openCleanup()
+    if (id === 'export') exportKept(selectedKey())
+    if (id === 'export-all') exportKept()
   }))
   await desktop().setMenus([
-    { label: 'Conversation', items: [{ id: 'archive', label: 'Archive', shortcut: 'ctrl+cmd+a' }, { id: 'restore', label: 'Move to Inbox', shortcut: 'shift+cmd+u' }, { id: 'open', label: 'Show in App', shortcut: 'cmd+o' }] },
+    { label: 'Conversation', items: [{ id: 'archive', label: 'Archive', shortcut: 'ctrl+cmd+a' }, { id: 'restore', label: 'Move to Inbox', shortcut: 'shift+cmd+u' }, { id: 'open', label: 'Show in App', shortcut: 'cmd+o' }, { separator: true }, { id: 'export', label: 'Export…', shortcut: 'shift+cmd+e' }, { id: 'export-all', label: 'Export Everything…' }] },
     { label: 'View', items: [{ id: 'inbox', label: 'Inbox', shortcut: 'cmd+1' }, { id: 'archived', label: 'Archived', shortcut: 'cmd+2' }, { id: 'deleted', label: 'Recently Deleted', shortcut: 'cmd+3' }, { separator: true }, { id: 'find', label: 'Find', shortcut: 'cmd+f' }, { id: 'next', label: 'Next Conversation', shortcut: 'cmd+down' }, { id: 'previous', label: 'Previous Conversation', shortcut: 'cmd+up' }, { id: 'cleanup', label: 'Clean Up…' }] },
   ])
 })

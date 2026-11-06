@@ -1489,6 +1489,31 @@ async function forget(key = selectedKey()) {
   await loadLists()
 }
 
+/**
+ * Write what Attic kept out as pages anyone can read: one conversation, or
+ * the whole archive. The agent reveals the folder when it is done.
+ */
+async function exportKept(key = '') {
+  const target = key ? list().find(c => c.key === key) : null
+  if (key && !target?.saved) {
+    say('Attic has kept no copy of this conversation yet.')
+    return
+  }
+  busy.set(key || 'export')
+  say(target ? `Exporting ${target.title}…` : 'Exporting the archive…')
+  try {
+    const result = await post('/api/export', target ? { key } : {})
+    const what = target ? `${result.messages.toLocaleString()} messages` : `${result.conversations.length} conversations`
+    say(`Exported ${what} to ${result.folder}.${result.missingAttachments ? ` ${result.missingAttachments} attachments were already gone.` : ''}`)
+  }
+  catch (error) {
+    say(error.message)
+  }
+  finally {
+    busy.set('')
+  }
+}
+
 async function grantAccess() {
   await post('/api/privacy', {})
 }
@@ -1508,6 +1533,7 @@ async function rowMenu(event, c) {
     checked: !!c.rule,
   })
   items.push({ id: 'open', title: `Show in ${appName(c.provider)}`, icon: 'arrow.up.forward.app', shortcut: 'cmd+o', disabled: !c.url })
+  items.push({ id: 'export', title: 'Export…', icon: 'square.and.arrow.up', shortcut: 'cmd+shift+e', disabled: !c.saved })
   if (c.saved) {
     items.push({ separator: true })
     items.push({ id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'xmark.bin' })
@@ -1519,6 +1545,8 @@ async function rowMenu(event, c) {
     unarchive(c.key)
   else if (choice === 'open')
     openInMessages(c.key)
+  else if (choice === 'export')
+    exportKept(c.key)
   else if (choice === 'forget')
     forget(c.key)
   else if (choice === 'rule-start')
@@ -1543,6 +1571,9 @@ async function installMenus() {
           { label: 'Move to Inbox', shortcut: 'cmd+shift+u', onClick: () => unarchive() },
           { separator: true },
           { label: 'Show in App', shortcut: 'cmd+o', onClick: () => openInMessages() },
+          { separator: true },
+          { label: 'Export…', shortcut: 'cmd+shift+e', onClick: () => exportKept(selectedKey()) },
+          { label: 'Export Everything…', onClick: () => exportKept() },
           { separator: true },
           { label: 'Delete Attic\'s Copy…', onClick: () => forget() },
         ],
