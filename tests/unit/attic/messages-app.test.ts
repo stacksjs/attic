@@ -17,7 +17,22 @@ async function fixture(helperBody: string, task: string) {
   chmodSync(helper, 0o755)
   const script = join(dir, 'parent.ts')
   const module = resolve(import.meta.dir, '../../../app/Attic/messages-app.ts')
-  writeFileSync(script, `import { removeFromMessages, stopMessagesControl, withBackgroundMessages, MessagesControlDeferred } from ${JSON.stringify(module)}\n${task}\n`)
+  // `waitForHelper` re-stats the path on every poll. A `BunFile` holds on to
+  // the stat it took, including the one that found nothing, so a single
+  // instance polled in a loop never sees the helper's file appear.
+  writeFileSync(script, `import { removeFromMessages, stopMessagesControl, withBackgroundMessages, MessagesControlDeferred } from ${JSON.stringify(module)}
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+async function waitForHelper(name) {
+  const path = join(${JSON.stringify(dir)}, name)
+  const deadline = Date.now() + 5000
+  while (!existsSync(path)) {
+    if (Date.now() > deadline) throw new Error('Helper did not start')
+    await Bun.sleep(5)
+  }
+}
+${task}
+`)
   const child = Bun.spawn([process.execPath, script], {
     env: { ...process.env, ATTIC_MESSAGES_HELPER: helper },
     stdout: 'pipe', stderr: 'pipe',
@@ -41,12 +56,7 @@ it('does not leave a helper running after Attic exits', async () => {
   const { dir } = await fixture(
     'touch started\nsleep 0.3\ntouch orphaned',
     `void removeFromMessages(['Alice'], null, true)
-const started = Bun.file(new URL('./started', import.meta.url))
-const deadline = Date.now() + 2000
-while (!await started.exists()) {
-  if (Date.now() > deadline) throw new Error('Helper did not start')
-  await Bun.sleep(5)
-}
+await waitForHelper('started')
 process.exit(0)`,
   )
   await Bun.sleep(400)
@@ -58,12 +68,7 @@ it('cancels queued operations when Attic closes', async () => {
     'echo "$3" >> started\nsleep 0.3',
     `const first = removeFromMessages(['Alice'], null, true)
 const second = removeFromMessages(['Bob'], null, true)
-const started = Bun.file(new URL('./started', import.meta.url))
-const deadline = Date.now() + 2000
-while (!await started.exists()) {
-  if (Date.now() > deadline) throw new Error('Helper did not start')
-  await Bun.sleep(5)
-}
+await waitForHelper('started')
 stopMessagesControl()
 console.log(JSON.stringify((await Promise.all([first, second])).map(result => result.ok)))`,
   )
