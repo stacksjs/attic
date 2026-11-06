@@ -93,6 +93,41 @@ export interface Transcript {
 /** Messages a transcript shows at a time; "Show earlier" pages back by this many. */
 export const TRANSCRIPT_PAGE = 150
 
+/**
+ * The rows a reader sees, oldest first: reactions folded onto the messages
+ * they name and left out of the list themselves. The window and the exporter
+ * both call this, so a conversation reads the same on screen and in the file
+ * it is exported to.
+ */
+export function foldTranscript(rows: TranscriptMessage[]): TranscriptMessage[] {
+  const all = [...rows].sort((a, b) => a.sentAt - b.sentAt)
+  const visible = all.filter(m => m.kind !== 'reaction')
+  const index = new Map(visible.map(m => [m.guid, m]))
+  const react = (targetGuid: string | null, reaction: string | null, removed: boolean, fromMe: boolean, senderName: string | null): void => {
+    const target = targetGuid ? index.get(targetGuid) : undefined
+    if (!target || !reaction)
+      return
+    if (removed) {
+      const at = target.reactions.findIndex(r => r.reaction === reaction && r.fromMe === fromMe)
+      if (at !== -1)
+        target.reactions.splice(at, 1)
+      return
+    }
+    target.reactions.push({ reaction, fromMe, senderName })
+  }
+  for (const reaction of all.filter(m => m.kind === 'reaction'))
+    react(reaction.targetGuid, reaction.reaction, reaction.reactionRemoved, reaction.isFromMe, reaction.senderName)
+
+  // Tapbacks an SMS or RCS phone wrote out as sentences ("Laughed at a
+  // movie"): on the message they name, or one line when it is not here.
+  const folded = foldFallbackReactions(visible)
+  for (const reaction of folded.reactions)
+    react(reaction.targetGuid, reaction.reaction, reaction.removed, reaction.isFromMe, reaction.senderName)
+  return visible
+    .filter(m => !folded.hidden.has(m.guid))
+    .map(m => folded.notes.has(m.guid) ? { ...m, kind: 'event' as const, text: folded.notes.get(m.guid)! } : m)
+}
+
 function shortHash(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16)
 }
@@ -498,32 +533,7 @@ export class Archiver {
       })
     }
 
-    const all = [...byGuid.values()].sort((a, b) => a.sentAt - b.sentAt)
-    const visible = all.filter(m => m.kind !== 'reaction')
-    const index = new Map(visible.map(m => [m.guid, m]))
-    const react = (targetGuid: string | null, reaction: string | null, removed: boolean, fromMe: boolean, senderName: string | null): void => {
-      const target = targetGuid ? index.get(targetGuid) : undefined
-      if (!target || !reaction)
-        return
-      if (removed) {
-        const at = target.reactions.findIndex(r => r.reaction === reaction && r.fromMe === fromMe)
-        if (at !== -1)
-          target.reactions.splice(at, 1)
-        return
-      }
-      target.reactions.push({ reaction, fromMe, senderName })
-    }
-    for (const reaction of all.filter(m => m.kind === 'reaction'))
-      react(reaction.targetGuid, reaction.reaction, reaction.reactionRemoved, reaction.isFromMe, reaction.senderName)
-
-    // Tapbacks an SMS or RCS phone wrote out as sentences ("Laughed at a
-    // movie"): on the message they name, or one line when it is not here.
-    const folded = foldFallbackReactions(visible)
-    for (const reaction of folded.reactions)
-      react(reaction.targetGuid, reaction.reaction, reaction.removed, reaction.isFromMe, reaction.senderName)
-    const shown = visible
-      .filter(m => !folded.hidden.has(m.guid))
-      .map(m => folded.notes.has(m.guid) ? { ...m, kind: 'event' as const, text: folded.notes.get(m.guid)! } : m)
+    const shown = foldTranscript([...byGuid.values()])
     const earlier = options.before ? shown.filter(m => m.sentAt < options.before!) : shown
     const page = earlier.slice(-pageSize)
     return { key, messages: page, hasEarlier: earlier.length > page.length }

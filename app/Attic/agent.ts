@@ -13,10 +13,11 @@ import process from 'node:process'
 import { decode, encode, resize } from 'ts-images'
 import { toSvg } from 'ts-qr-codes'
 import { Archiver, ruleFor, ruleValue } from './archiver'
+import { exportArchive, exportFolder } from './export'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted } from './messages-app'
 import { PhoneLink } from './phone-link'
-import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, messagesDbPath, OUTGOING_DIR, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
+import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, EXPORTS_PARENT, messagesDbPath, OUTGOING_DIR, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
 import { slackIdentity, upsertWorkspace } from './slack-workspaces'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
@@ -602,6 +603,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     startedAt: number
   }
   let bulk: BulkJob | null = null
+  /** One export at a time: two at once would write into the same folder. */
+  let exporting = false
 
   async function bulkCandidates(olderThanDays: number, source: Provider | 'all'): Promise<ConversationSummary[]> {
     const cutoff = Date.now() - olderThanDays * 24 * 60 * 60_000
@@ -908,6 +911,36 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
             return problem('This app cannot open the conversation by link', 422)
           openUrl(summary.url)
           return json({ ok: true })
+        }
+        // One conversation, or the whole archive, written out as pages
+        // anyone can read. The folder is revealed in the Finder rather than
+        // handed back as a download: an export is a folder of files, and
+        // AppKit's save panel takes one file at a time.
+        case 'POST /api/export': {
+          if (exporting)
+            return problem('An export is already running', 409)
+          const data = await body(req)
+          const key = keyFrom(data)
+          if (key && !store.conversation(key))
+            return problem('Attic has kept no copy of this conversation yet', 422)
+          const keys = key ? [key] : undefined
+          if (!keys && store.conversations().length === 0)
+            return problem('There is nothing in the archive to export yet', 422)
+          exporting = true
+          try {
+            const result = await exportArchive({
+              store,
+              attachmentsDir: ATTACHMENTS_DIR,
+              destination: exportFolder(EXPORTS_PARENT),
+              keys,
+            })
+            if (data.reveal !== false)
+              openUrl(result.folder)
+            return json(result)
+          }
+          finally {
+            exporting = false
+          }
         }
         case 'GET /api/search': {
           const q = url.searchParams.get('q') ?? ''

@@ -23,6 +23,12 @@ export const PREVIEWS_DIR = join(DATA_DIR, 'Previews')
 export const OUTGOING_DIR = join(DATA_DIR, 'Outgoing')
 /** Attic's own WhatsApp device: its session, its copy of every chat, and media it has fetched. */
 export const WHATSAPP_LINK_DIR = join(DATA_DIR, 'WhatsApp')
+/**
+ * Where an export is written: a folder in Downloads, which is a place a
+ * person already looks and the sandbox a signed app may write to without
+ * asking. `ATTIC_EXPORT_DIR` keeps tests out of the real one.
+ */
+export const EXPORTS_PARENT = process.env.ATTIC_EXPORT_DIR || join(homedir(), 'Downloads')
 export const PORT_FILE = join(DATA_DIR, 'port')
 export const LOCK_FILE = join(DATA_DIR, 'attic.pid')
 export const LOG_FILE = join(homedir(), 'Library', 'Logs', 'Attic.log')
