@@ -118,6 +118,11 @@ export class Sources {
     const confirmDeletes = (): boolean => options.confirmDeletes()
     this.drivers.set('imessage', inbox.createInboxDriver('imessage', {
       databasePath: messagesDbPath(),
+      // Sample mode reads an invented chat.db, so the host's own OS settles
+      // nothing. Without this the driver answers "iMessage is only available
+      // on a Mac" anywhere else, and the sample inbox - and the suite that
+      // builds on it - sees no conversations at all.
+      ...(options.sample ? { platform: 'darwin' as const } : {}),
       addressBookDir: addressBookDir() ?? false,
       // Unnamed groups bypass the controller and fall back to a URL. Keep
       // background rules and fixtures from opening the real app there too.
