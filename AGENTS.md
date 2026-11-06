@@ -36,9 +36,25 @@ relevant `SKILL.md` before doing non-trivial work in that area rather than guess
 - Do not use Bun's `catalog:` protocol. Every dependency carries its version range in the
   `package.json` that declares it, so vendored apps and `buddy-bot` both see a resolvable range.
 
+### Sessions and worktrees
+- **One project, one agent. Never create a git worktree.** No `git worktree add`,
+  no worktree-backed session, no "enter worktree" command. Work in the checkout
+  you were given.
+- Harnesses that offer worktrees put them *inside* the repository (Claude Code's
+  app uses `<repo>/.claude/worktrees`), so one stray session leaves a full copy
+  of the project inside the project, and they accumulate. If you are asked to
+  start a session, start it in this same folder; if you find a worktree here,
+  say so rather than adding another.
+- There is no parallel-session workflow here, so nothing in this file should be
+  read as a reason to make one.
+
 ### Commits
 - Use conventional commit messages (`fix:`, `feat:`, `chore:`, ...).
 - Only commit or push when asked. If on the default branch, branch first.
+- No attribution trailers: no `Co-Authored-By: Claude ...`, no "generated with"
+  line, in commits or pull request descriptions.
+- Keep a commit to roughly 3-5 changed files. Split larger work into several
+  commits, each one a coherent step.
 
 ### Requirements
 - Bun >= 1.3.0, SQLite >= 3.47.2. TypeScript throughout.
