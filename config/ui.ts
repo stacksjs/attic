@@ -28,9 +28,12 @@ export default {
   componentsDir: 'components',
 
   // Expose @stacksjs/components' ui library (<Sidebar>, <Button>, ...)
-  // to tag resolution everywhere — the dashboard's macOS-style sidebar
-  // resolves through this. See the plugin file for the lookup order.
-  plugins: ['./storage/framework/defaults/stx-components-plugin.ts'],
+  // to tag resolution everywhere. Attic's own plugin replaces the scaffolded
+  // `storage/framework/defaults/stx-components-plugin.ts`, which answers
+  // `<Button>` and `<Avatar>` out of the framework's Dashboard components -
+  // web-only templates the native renderer cannot compile. The plugin file
+  // carries the lookup order and why it differs.
+  plugins: ['./app/Attic/components-plugin.ts'],
 
   layoutsDir: 'layouts',
 
