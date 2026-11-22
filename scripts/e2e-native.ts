@@ -16,13 +16,16 @@ const run = mkdtempSync(join(output, 'run-'))
 const sample = await buildSample(join(run, 'sample'), { olderSam: true })
 const driver = join(run, 'driver')
 mkdirSync(driver)
-const app = process.env.ATTIC_E2E_APP || join(homedir(), 'Applications/Attic.app')
+const app = process.env.ATTIC_E2E_APP || (existsSync('/Applications/Chatfold.app') ? '/Applications/Chatfold.app' : join(homedir(), 'Applications/Chatfold.app'))
 const updateFrom = process.env.ATTIC_E2E_UPDATE_FROM
 if (updateFrom && (!process.env.ATTIC_E2E_APP || !realpathSync(app).startsWith(`${realpathSync(join(import.meta.dir, '../storage'))}/`)))
   throw new Error('Use an isolated app in storage for the update installation test.')
 const runningVersion = updateFrom || pkg.version
-const executable = join(app, 'Contents/MacOS/Attic')
-if (!existsSync(executable)) throw new Error(`Install the DMG first: ${app}`)
+if (!existsSync(app)) throw new Error(`Install the DMG first: ${app}`)
+const plist = join(app, 'Contents/Info.plist')
+const readInfo = (key: string) => Bun.spawnSync(['/usr/libexec/PlistBuddy', '-c', `Print ${key}`, plist]).stdout.toString().trim()
+const executable = join(app, 'Contents/MacOS', readInfo('CFBundleExecutable'))
+const displayName = readInfo('CFBundleDisplayName')
 const child = Bun.spawn([executable], {
   env: { ...process.env, ATTIC_MESSAGES_DB: sample.chatDb, ATTIC_ADDRESS_BOOK_DIR: sample.addressBook, ATTIC_DATA_DIR: sample.data, ATTIC_NATIVE_TEST_DIR: driver },
   stdout: 'ignore', stderr: 'inherit',
@@ -115,7 +118,7 @@ try {
   await action('click', 'settings-item-updates', undefined, 'settings')
   const updatePane = await wait('Software Update shows the running version and a check button', s => {
     const nodes = window(s, 'settings')?.nodes.filter(n => n.visible) ?? []
-    return nodes.some(n => n.value === `Attic ${runningVersion}`) && nodes.some(n => n.label === 'Check Now' && n.enabled)
+    return nodes.some(n => n.value === `${displayName} ${runningVersion}`) && nodes.some(n => n.label === 'Check Now' && n.enabled)
   })
   if (updateFrom) {
     const check = window(updatePane, 'settings')!.nodes.find(n => n.label === 'Check Now' && n.visible)!
@@ -177,7 +180,7 @@ try {
   await Bun.sleep(1000)
   await action('screenshot')
   const final = await state()
-  const artifacts = await Promise.all(['Contents/MacOS/Attic', 'Contents/MacOS/craft-runtime', 'Contents/Resources/native-screen.js'].map(async path => {
+  const artifacts = await Promise.all([`Contents/MacOS/${readInfo('CFBundleExecutable')}`, 'Contents/MacOS/craft-runtime', 'Contents/Resources/native-screen.js'].map(async path => {
     const file = Bun.file(join(app, path))
     return { path, sha256: new Bun.CryptoHasher('sha256').update(await file.bytes()).digest('hex') }
   }))

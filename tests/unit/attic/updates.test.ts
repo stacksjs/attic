@@ -24,6 +24,6 @@ test('the updater only downloads archives from the public Attic repository', asy
   let fetched = false
   const fetcher = githubUpdateFetcher(async () => { fetched = true; return new Response() })
   const url = updateArchiveUrl('v0.3.5').replace(ATTIC_RELEASE_REPO, 'someone/else')
-  await expect(fetcher(url)).rejects.toThrow('does not point to an Attic release')
+  await expect(fetcher(url)).rejects.toThrow('does not point to a Chatfold release')
   expect(fetched).toBe(false)
 })

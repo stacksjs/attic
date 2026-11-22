@@ -24,6 +24,10 @@ async function version(): Promise<string> {
   return (await Bun.file(join(root, 'package.json')).json()).version
 }
 
+function diskImageName(tag: string): string {
+  return `Chatfold-${tag.slice(1)}.dmg`
+}
+
 function signingKey(): string {
   const file = process.env.ATTIC_UPDATE_KEY_FILE || join(homedir(), 'Library/Application Support/Attic Release/update-signing-key')
   const key = process.env.DESKTOP_UPDATE_PRIVATE_KEY?.trim() || (existsSync(file) ? readFileSync(file, 'utf8').trim() : '')
@@ -54,13 +58,13 @@ async function buildAssets(directory: string, tag: string, revision: string, key
   mkdirSync(releases, { recursive: true })
   const temporary = mkdtempSync(join(releases, 'pack-'))
   try {
-    const dmg = `Attic-${tag.slice(1)}.dmg`
+    const dmg = diskImageName(tag)
     const diskImage = join(root, 'storage/framework/desktop-dmg', dmg)
     await run(['xcrun', 'stapler', 'validate', diskImage])
     const mount = join(temporary, 'mount')
     mkdirSync(mount)
     await run(['hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, diskImage], { capture: true })
-    const bundle = join(mount, 'Attic.app')
+    const bundle = join(mount, 'Chatfold.app')
     const archive = join(temporary, updateArchive(tag))
     try {
       await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', bundle])
@@ -101,9 +105,9 @@ async function publicRelease(tag: string): Promise<PublicRelease> {
     capture: true,
     input: {
       tag_name: tag,
-      name: `Attic ${tag.slice(1)}`,
+      name: `Chatfold ${tag.slice(1)}`,
       draft: true,
-      body: `Download **Attic-${tag.slice(1)}.dmg** on an Apple silicon Mac. Open the disk image and drag Attic into Applications.\n\nUse **Settings → Software Update** in Attic to get future releases.`,
+      body: `Download **${diskImageName(tag)}** on an Apple silicon Mac. Open the disk image and drag Chatfold into Applications.\n\nAttic is now Chatfold. If Attic is installed, use **Settings → Software Update** to get Chatfold in place with your existing archive.`,
     },
   }))
 }
@@ -113,7 +117,7 @@ async function publish(directory: string, tag: string, revision: string, key: st
     await buildAssets(directory, tag, revision, key)
 
   const archive = join(directory, updateArchive(tag))
-  const diskImage = join(directory, `Attic-${tag.slice(1)}.dmg`)
+  const diskImage = join(directory, diskImageName(tag))
   const manifestFile = join(directory, manifestAsset())
   const manifest = validateUpdateManifest(await Bun.file(manifestFile).json())
   verifyUpdateManifestSignature(manifest, UPDATE_KEYS)
@@ -135,7 +139,7 @@ async function publish(directory: string, tag: string, revision: string, key: st
   }
   if (release.draft)
     await run(['gh', 'release', 'edit', tag, '--repo', ATTIC_RELEASE_REPO, '--draft=false', '--latest'])
-  console.log(`Published Attic ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
+  console.log(`Published Chatfold ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
 }
 
 const args = process.argv.slice(2)
