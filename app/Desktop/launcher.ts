@@ -16,10 +16,16 @@ import process from 'node:process'
 import { format } from 'node:util'
 import pkg from '../../package.json'
 import { startAgent } from '../Attic/agent'
+import { serveIMessageReads } from '../Attic/imessage-reader'
 import { stopMessagesControl } from '../Attic/messages-app'
 import { DATA_DIR, LOCK_FILE, LOG_FILE } from '../Attic/paths'
 
 const IN_APP_BUNDLE = process.execPath.includes('.app/Contents/MacOS/')
+
+if (process.argv.includes('--imessage-reader')) {
+  serveIMessageReads()
+  await new Promise<never>(() => {})
+}
 
 // The updater opens the new bundle before the old copy releases its lock.
 // Wait for that exact owner, then take the lock normally.

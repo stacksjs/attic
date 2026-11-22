@@ -4,9 +4,10 @@ import { inbox } from '@stacksjs/chat'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { SlackWorkspace } from './slack-workspaces'
+import { sendIMessage } from './imessage-local'
+import { IMessageReader } from './imessage-reader'
 import { deleteSecret, readSecret as readKeychain, writeSecret as writeKeychain } from './keychain'
 import { archiveInWhatsApp, openMessagesUrl, recoverInMessages, removeFromMessages, unarchiveInWhatsApp } from './messages-app'
-import { runMessagesScript } from './messages-script'
 import { addressBookDir, messagesDbPath, WHATSAPP_LINK_DIR, whatsappDbPath } from './paths'
 import { sampleDiscord, sampleSlack, sampleWhatsApp } from './sample-sources'
 import { parseWorkspaces, slackIdentity, slackSource } from './slack-workspaces'
@@ -69,6 +70,7 @@ export class Sources {
   private cache = new Map<Provider, { at: number, entries: LiveEntry[] }>()
   private states = new Map<Provider, SourceState>()
   private link: WhatsAppLink | null = null
+  private imessageReader: IMessageReader | null = null
 
   constructor(private readonly options: SourcesOptions) {}
 
@@ -117,7 +119,7 @@ export class Sources {
       return
     }
     const confirmDeletes = (): boolean => options.confirmDeletes()
-    this.drivers.set('imessage', inbox.createInboxDriver('imessage', {
+    const imessage = inbox.createInboxDriver('imessage', {
       databasePath: messagesDbPath(),
       // Sample mode reads an invented chat.db, so the host's own OS settles
       // nothing. Without this the driver answers "iMessage is only available
@@ -125,9 +127,7 @@ export class Sources {
       // builds on it - sees no conversations at all.
       ...(options.sample ? { platform: 'darwin' as const } : {}),
       addressBookDir: addressBookDir() ?? false,
-      runScript: options.sample
-        ? async () => ({ ok: false, output: 'Sample data: the real Messages app is not touched.' })
-        : runMessagesScript,
+      ...(options.sample ? { runScript: async () => ({ ok: false, output: 'Sample data cannot send through Messages.' }) } : {}),
       // Unnamed groups bypass the controller and fall back to a URL. Keep
       // background rules and fixtures from opening the real app there too.
       openUrl: url => { if (!options.sample) openMessagesUrl(url) },
@@ -138,7 +138,14 @@ export class Sources {
         : { remove: (names, url, confirm) => removeFromMessages(names, url, confirm), recover: names => recoverInMessages(names) },
       // Read once per driver; changing the setting calls load() again.
       confirmDeletes: confirmDeletes(),
-    }))
+    })
+    if (!options.sample) {
+      const reader = this.imessageReader ??= new IMessageReader()
+      imessage.conversations = () => reader.conversations()
+      imessage.messages = (id, query) => reader.messages(id, query)
+      imessage.send = (id, message) => sendIMessage(messagesDbPath(), id, message)
+    }
+    this.drivers.set('imessage', imessage)
 
     // Sample mode brings invented WhatsApp, Slack and Discord conversations
     // too, so the whole inbox works without anyone's tokens - and without
@@ -247,6 +254,7 @@ export class Sources {
 
   /** Hang up on the apps that hold a connection open. */
   close(): void {
+    this.imessageReader?.close()
     this.link?.close()
     for (const provider of ['slack', 'discord'] as const)
       (this.drivers.get(provider) as { close?: () => void } | undefined)?.close?.()

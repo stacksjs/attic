@@ -14,6 +14,7 @@ import { decode, encode, resize } from 'ts-images'
 import { toSvg } from 'ts-qr-codes'
 import { Archiver, ruleFor, ruleValue } from './archiver'
 import { exportArchive, exportFolder } from './export'
+import { IMessageNotices } from './imessage-local'
 import { deleteSecret, writeSecret } from './keychain'
 import { accessibilityTrusted, MessagesControlDeferred } from './messages-app'
 import { PhoneLink } from './phone-link'
@@ -99,6 +100,7 @@ const MIME: Record<string, string> = {
 
 /** iMessage is checked every tick (a local stat); Slack and Discord every minute. */
 const TICK_MS = 2_000
+const IMESSAGE_NOTICE_MS = 1_000
 const REMOTE_SYNC_MS = 60_000
 const LABELS: Record<Provider, string> = { imessage: 'iMessage', whatsapp: 'WhatsApp', slack: 'Slack', discord: 'Discord' }
 
@@ -469,6 +471,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   // announced for, so the two never announce one message twice.
   const announced = new Map<string, number>()
   let primed = false
+  const imessageNotices = new IMessageNotices(messagesDbPath())
 
   function announceIncoming(key: string, details: { title: string, sender: string | null, text: string, at: number, group: boolean }): void {
     if ((announced.get(key) ?? 0) >= details.at)
@@ -479,6 +482,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
 
   async function noticeIncoming(): Promise<void> {
     for (const entry of await sources.live()) {
+      if (entry.provider === 'imessage')
+        continue
       const conversation = entry.conversation
       const at = conversation.lastMessageAt ?? 0
       const seen = announced.get(entry.key) ?? 0
@@ -496,6 +501,18 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       })
     }
     primed = true
+  }
+
+  function noticeMessages(): void {
+    if (!sources.connected('imessage'))
+      return
+    try {
+      for (const { key, ...notice } of imessageNotices.read())
+        announceIncoming(key, notice)
+    }
+    catch {
+      // Messages may be syncing its database or Full Disk Access may have changed.
+    }
   }
 
   const stopListening = sources.listen(({ provider, event }) => {
@@ -1119,9 +1136,11 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           })
           // A reply settles the conversation: nothing new to announce in it.
           announced.set(key, Math.max(announced.get(key) ?? 0, outcome.sentAt))
-          sources.invalidate(provider)
+          if (provider !== 'imessage') {
+            sources.invalidate(provider)
+            lastRemote = 0
+          }
           lastStamp = ''
-          lastRemote = 0
           return json(outcome)
         }
         case 'POST /api/react': {
@@ -1206,6 +1225,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   }
   catch {}
 
+  noticeMessages()
+  const noticeTimer = setInterval(noticeMessages, IMESSAGE_NOTICE_MS)
   void tick()
   if (!usingSample)
     void updates.run('check')
@@ -1214,6 +1235,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     server,
     stop() {
       clearInterval(timer)
+      clearInterval(noticeTimer)
       stopListening()
       sources.close()
       for (const listener of listeners) {
