@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>Chatfold</title>
+  <title>Texts</title>
   <!--
-    Chatfold on the phone. It keeps its own copy of the archive (Craft's native
+    Texts on the phone. It keeps its own copy of the archive (Craft's native
     SQLite, see resources/functions/phone-archive.ts) so it reads anywhere,
     and syncs with the paired Mac on the same Wi-Fi: every request sealed with
     the key from the pairing QR code. Built into the iOS and Android apps by
@@ -242,7 +242,7 @@ async function sync() {
 async function finishPairing(code) {
   const saved = await savePairing(code ?? '')
   if (!saved) {
-    say('That is not an Chatfold pairing code.')
+    say('That is not an Texts pairing code.')
     return
   }
   pairing.set(saved)
@@ -326,8 +326,8 @@ onMount(async () => {
   <main :if="screen() === 'pair'" class="flex flex-col gap-5 justify-center px-6 min-h-screen" style="padding-top: env(safe-area-inset-top)">
     <div class="text-center">
       <div class="mb-3 mx-auto text-[56px] i-hugeicons-archive-02" style="color: var(--accent)"></div>
-      <h1 class="m-0 font-bold text-[30px]">Chatfold</h1>
-      <p class="mb-0 mt-2 leading-snug muted">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Chatfold and choose Pair a phone, then point this phone's camera at the code.</p>
+      <h1 class="m-0 font-bold text-[30px]">Texts</h1>
+      <p class="mb-0 mt-2 leading-snug muted">Your archive from iMessage, WhatsApp, Slack and Discord, kept on this phone too. On your Mac, open Texts and choose Pair a phone, then point this phone's camera at the code.</p>
     </div>
     <button class="button" @click="scan()">Scan the code on your Mac</button>
     <textarea :if="true" rows="3" placeholder="Or paste the pairing code" x-model="pasted"></textarea>
@@ -336,7 +336,7 @@ onMount(async () => {
 
   <!-- The archive (kept here) and the Mac's inbox (when reachable). -->
   <main :if="screen() === 'list'">
-    <NativeNavBar title="Chatfold">
+    <NativeNavBar title="Texts">
       <template #actions>
         <button class="p-2 bg-transparent border-0" style="color: var(--accent)" aria-label="Settings" @click="settingsOpen.set(true)"><span class="text-[22px] i-hugeicons-settings-02"></span></button>
       </template>
@@ -371,7 +371,7 @@ onMount(async () => {
   <main :if="screen() === 'chat' && open()">
     <NativeNavBar :title="open()?.title ?? ''" :large="false">
       <template #leading>
-        <button class="flex gap-1 items-center p-2 bg-transparent border-0" style="color: var(--accent); font: inherit" @click="back()"><span class="text-[22px] i-hugeicons-arrow-left-01"></span>Chatfold</button>
+        <button class="flex gap-1 items-center p-2 bg-transparent border-0" style="color: var(--accent); font: inherit" @click="back()"><span class="text-[22px] i-hugeicons-arrow-left-01"></span>Texts</button>
       </template>
       <template #actions>
         <button class="p-2 bg-transparent border-0" style="color: var(--accent)" :disabled="busy()" :aria-label="open()?.state === 'archived' ? 'Move to Inbox' : 'Archive'" @click="toggleArchive()">
@@ -402,7 +402,7 @@ onMount(async () => {
     <button :for="t in TAPBACKS" :key="t.emoji" :aria-label="t.label" :aria-pressed="isMine(reacting()?.m.reactions ?? [], t.emoji) ? 'true' : 'false'" @click="chooseTapback(t.emoji)">{{ t.emoji }}</button>
   </div>
 
-  <NativeSheet v-model:open="settingsOpen" title="Chatfold">
+  <NativeSheet v-model:open="settingsOpen" title="Texts">
     <div class="flex flex-col gap-3 pb-6 px-4">
       <div class="text-[15px]">Paired with <b>{{ pairing()?.name }}</b></div>
       <div class="text-[14px] muted">{{ syncedAt() ? `Last synced ${when(syncedAt())}` : 'Not synced yet' }} · {{ archive().length.toLocaleString() }} conversations kept here</div>

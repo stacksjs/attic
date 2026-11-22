@@ -133,7 +133,7 @@ onMount(() => {
 </script>
 
 <View class="flex-1 flex-col">
-  <SettingsWindow id="attic-settings" title="Chatfold Settings" storageKey="attic">
+  <SettingsWindow id="attic-settings" title="Texts Settings" storageKey="attic">
     <template #sidebar>
       <SettingsSidebarGroup>
         <SettingsSidebarItem id="archiving" label="Archiving" symbol="archivebox.fill" tone="blue" />
@@ -192,7 +192,7 @@ onMount(() => {
 
     <SettingsPane id="updates" title="Software Update">
       <SettingsGroup>
-        <SettingsUpdateRow appName="Chatfold" :status="update()" @check="updateApp('check')" @install="updateApp('install')" @relaunch="updateApp('relaunch')" />
+        <SettingsUpdateRow appName="Texts" :status="update()" @check="updateApp('check')" @install="updateApp('install')" @relaunch="updateApp('relaunch')" />
       </SettingsGroup>
     </SettingsPane>
 

@@ -7,7 +7,7 @@
   <title>Settings</title>
   <link rel="icon" href="/images/app-icon.png" type="image/png">
   <!--
-    Chatfold > Settings… (Cmd+,): a window of its own, opened by name so a second
+    Texts > Settings… (Cmd+,): a window of its own, opened by name so a second
     Cmd+, brings it forward. Served by the agent like the main window and kept
     in step with it over the same event stream.
   -->
@@ -81,7 +81,7 @@ async function allowAccessibility() {
 
 async function stopRule(rule) {
   rules.set((await post('/api/rules/delete', { id: rule.id })).rules)
-  say(`Stopped always archiving ${rule.label}. What Chatfold kept stays.`)
+  say(`Stopped always archiving ${rule.label}. What Texts kept stays.`)
 }
 
 async function pairPhone() {
@@ -150,18 +150,18 @@ onMount(async () => {
       <select class="button" aria-label="When you archive" :value="removal()" @change="setRemoval($event.target.value)">
         <option value="auto">Take it out of the app</option>
         <option value="confirm">Take it out, Messages asks first</option>
-        <option value="off">Archive in Chatfold only</option>
+        <option value="off">Archive in Texts only</option>
       </select>
     </div>
     <div :if="removal() !== 'off' && !accessible()" class="row">
-      <span class="flex-1 muted">Chatfold needs Accessibility to take conversations out of Messages and WhatsApp.</span>
+      <span class="flex-1 muted">Texts needs Accessibility to take conversations out of Messages and WhatsApp.</span>
       <button class="button primary" @click="allowAccessibility()">Allow</button>
     </div>
   </div>
 
   <div class="heading">Always archive</div>
   <div class="group">
-    <div :if="rules().length === 0" class="muted row">Right-click a conversation and choose Always Archive. Chatfold saves new messages even while Messages is closed.</div>
+    <div :if="rules().length === 0" class="muted row">Right-click a conversation and choose Always Archive. Texts saves new messages even while Messages is closed.</div>
     <div :for="r in rules()" :key="r.id" class="row">
       <span class="flex-1 min-w-0">
         <span class="block truncate">{{ r.label || r.value }}</span>
@@ -179,7 +179,7 @@ onMount(async () => {
     </div>
     <div :if="pairing() && !pairedPhone()" class="flex-col row">
       <div class="p-2 h-[200px] w-[200px] bg-white rounded-[10px] qr" :html="pairing().svg"></div>
-      <div class="text-center muted">Point the phone's camera at this code to open Chatfold there and pair. Waiting for it…</div>
+      <div class="text-center muted">Point the phone's camera at this code to open Texts there and pair. Waiting for it…</div>
     </div>
     <div :if="pairedPhone()" class="row">Paired. The phone is copying the archive.</div>
     <div :for="p in phones()" :key="p.id" class="row">

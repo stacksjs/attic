@@ -169,7 +169,7 @@ async function unarchive(key = selectedKey()) {
 }
 
 /**
- * Write the conversation, or everything Chatfold kept, out as pages anyone can
+ * Write the conversation, or everything Texts kept, out as pages anyone can
  * read. The agent reveals the folder in the Finder when it is done, so the
  * window only has to say what was written and where.
  */
@@ -199,14 +199,14 @@ async function rowMenu(c) {
     { id: 'always', title: 'Always Archive', icon: 'archivebox.circle', checked: !!c.rule, disabled: !!c.rule },
     { separator: true }, { id: 'open', title: `Show in ${SOURCE_NAMES[c.provider]}`, icon: 'arrow.up.forward.app', disabled: !c.url },
     { id: 'export', title: 'Export…', icon: 'square.and.arrow.up', disabled: !c.saved },
-    ...(c.saved ? [{ separator: true }, { id: 'forget', title: 'Delete Chatfold\'s Copy…', icon: 'trash' }] : []),
+    ...(c.saved ? [{ separator: true }, { id: 'forget', title: 'Delete Local Copy…', icon: 'trash' }] : []),
   ])
   if (choice === 'archive') await archive(c.key)
   if (choice === 'restore') await unarchive(c.key)
   if (choice === 'open') await openInApp(c.key)
   if (choice === 'export') await exportKept(c.key)
   if (choice === 'always') { await nativePost('/api/rules/for-conversation', { key: c.key }); say('Always archive is on for this conversation.'); await refresh() }
-  if (choice === 'forget' && await nativeCraft().dialog.confirm({ title: 'Delete Chatfold\'s copy?', message: 'This removes the saved messages and attachments from Chatfold. It leaves the original app alone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', destructive: true })) {
+  if (choice === 'forget' && await nativeCraft().dialog.confirm({ title: 'Delete the local copy?', message: 'This removes the saved messages and attachments from Texts. It leaves the original app alone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', destructive: true })) {
     await nativePost('/api/forget', { key: c.key }); await refresh()
   }
 }
