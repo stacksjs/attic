@@ -161,7 +161,7 @@ onMount(async () => {
 
   <div class="heading">Always archive</div>
   <div class="group">
-    <div :if="rules().length === 0" class="muted row">Right-click a conversation and choose Always Archive. New messages from that person still reach you, then go into their archive and leave the app once the conversation is quiet.</div>
+    <div :if="rules().length === 0" class="muted row">Right-click a conversation and choose Always Archive. Attic saves new messages even while Messages is closed.</div>
     <div :for="r in rules()" :key="r.id" class="row">
       <span class="flex-1 min-w-0">
         <span class="block truncate">{{ r.label || r.value }}</span>
