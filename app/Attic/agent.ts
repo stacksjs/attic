@@ -77,6 +77,7 @@ export interface AgentOptions {
   version: string
   port?: number
   onUpdateRelaunch?: () => void
+  notify?: (id: string, title: string, body: string) => void
 }
 
 export interface Agent {
@@ -478,6 +479,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       return
     announced.set(key, details.at)
     broadcast({ type: 'incoming', key, provider: splitKey(key).provider, ...details })
+    options.notify?.(`attic-${key}-${details.at}`, details.title, details.text)
   }
 
   async function noticeIncoming(): Promise<void> {

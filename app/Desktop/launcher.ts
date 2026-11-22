@@ -19,6 +19,7 @@ import { startAgent } from '../Attic/agent'
 import { serveIMessageReads } from '../Attic/imessage-reader'
 import { stopMessagesControl } from '../Attic/messages-app'
 import { DATA_DIR, LOCK_FILE, LOG_FILE } from '../Attic/paths'
+import { desktopNotifications } from './notifications'
 
 const IN_APP_BUNDLE = process.execPath.includes('.app/Contents/MacOS/')
 
@@ -114,6 +115,7 @@ if (!existsSync(join(root, 'index.html'))) {
 const agent = await startAgent({
   webRoot: root,
   version: pkg.version,
+  notify: desktopNotifications(),
   onUpdateRelaunch: IN_APP_BUNDLE ? () => shutdown(0) : undefined,
 }).catch((error: unknown) => {
   console.error(`[attic] could not start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)

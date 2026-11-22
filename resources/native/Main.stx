@@ -373,12 +373,8 @@ onMount(async () => {
   onDestroy(nativeEvents(async event => {
     if (event.type === 'whatsapp') { whatsapp.set(event.link); await updateQR(); if (event.link.phase === 'open') { connecting.set(''); await refresh() } }
     if (['changed', 'settings', 'sources', 'access'].includes(event.type)) await refresh()
-    if (event.type === 'incoming') {
-      if (selectedKey() === event.key)
-        void select(event.key)
-      if (!nativeCraft().navigation.isFocused())
-        await nativeCraft().notifications.show({ id: `attic-${event.key}-${event.at}`, title: event.title, body: event.text })
-    }
+    if (event.type === 'incoming' && selectedKey() === event.key)
+      void select(event.key)
   }))
   await refresh()
   const remembered = await nativeCraft().storage.get('selected')
