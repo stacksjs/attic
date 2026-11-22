@@ -668,7 +668,7 @@ export class WhatsAppLink implements inbox.InboxDriver {
       // Unlinked from the phone, or logged out here: nothing in the session
       // is any use now.
       this.wipe()
-      this.setState({ phase: 'signed-out', qr: null, me: null, error: 'WhatsApp unlinked Attic. Link it again to carry on.' })
+      this.setState({ phase: 'signed-out', qr: null, me: null, error: 'WhatsApp unlinked Chatfold. Link it again to carry on.' })
       this.options.onLinked?.(false)
       return
     }
@@ -830,7 +830,7 @@ export class WhatsAppLink implements inbox.InboxDriver {
       return { connected: true, detail: 'Reconnecting to WhatsApp. New messages arrive once it is back.' }
     return {
       connected: false,
-      detail: this.state.error ?? 'Link Attic in WhatsApp on your phone: Settings, Linked Devices, Link a Device.',
+      detail: this.state.error ?? 'Link Chatfold in WhatsApp on your phone: Settings, Linked Devices, Link a Device.',
       needs: 'signed-out',
     }
   }
@@ -1005,7 +1005,7 @@ export class WhatsAppLink implements inbox.InboxDriver {
 
   private requireSocket(): WASocket {
     if (!this.socket || this.state.phase !== 'open')
-      throw new Error('WhatsApp is not connected right now. Attic reconnects by itself; try again in a moment.')
+      throw new Error('WhatsApp is not connected right now. Chatfold reconnects by itself; try again in a moment.')
     return this.socket
   }
 
@@ -1042,7 +1042,7 @@ export class WhatsAppLink implements inbox.InboxDriver {
     const socket = this.requireSocket()
     const row = this.store.message(conversationId, messageId)
     if (!row)
-      throw new Error('That message is not in Attic\'s copy of WhatsApp.')
+      throw new Error('That message is not in Chatfold\'s copy of WhatsApp.')
     await socket.sendMessage(conversationId, { react: { text: remove ? '' : reaction, key: this.parse(row).key } })
   }
 

@@ -359,7 +359,7 @@ export class Archiver {
   /** Put it back in the real app where possible, and back in the Inbox. */
   async unarchive(key: string): Promise<void> {
     if (!this.store.conversation(key))
-      throw new Error(`Attic has no copy of ${key}`)
+      throw new Error(`Chatfold has no copy of ${key}`)
     const { provider, id, driver } = this.driverFor(key)
     await driver.unarchive(id)
     this.sources.invalidate(provider)

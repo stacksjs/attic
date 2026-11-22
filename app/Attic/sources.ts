@@ -88,7 +88,7 @@ export class Sources {
             return new Uint8Array(Buffer.from(stored, 'base64'))
           const key = new Uint8Array(randomBytes(32))
           if (!(await writeKeychain('whatsapp-key', Buffer.from(key).toString('base64'))))
-            throw new Error('Attic could not keep the WhatsApp key in the keychain.')
+            throw new Error('Chatfold could not keep the WhatsApp key in the keychain.')
           return key
         },
         onState: state => this.options.onWhatsAppLink?.(state),

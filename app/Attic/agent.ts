@@ -682,7 +682,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     const { provider } = splitKey(key)
     if (before?.removedAt && provider === 'imessage' && !usingSample) {
       const back = await waitUntil(() => visibleInApp(key))
-      detail = `${back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Attic\'s copy is the one that remains.'} ${detail}`.trim()
+      detail = `${back ? 'Recovered in Messages.' : 'Messages did not bring it back. If it has left Recently Deleted, Chatfold\'s copy is the one that remains.'} ${detail}`.trim()
     }
     else if (before?.removedAt && !usingSample) {
       detail = `${await visibleInApp(key) ? `Back in ${LABELS[provider]}.` : `${LABELS[provider]} did not bring it back.`} ${detail}`.trim()
@@ -698,7 +698,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
     const { provider, id } = splitKey(key)
     const driver = sources.driver(provider)
     if (!driver?.react || !driver.capabilities?.().reactions)
-      throw new Error(`Attic cannot react in ${driver?.label ?? provider} yet.`)
+      throw new Error(`Chatfold cannot react in ${driver?.label ?? provider} yet.`)
     await driver.react(id, messageId, reaction, remove)
     sources.invalidate(provider)
     // The reaction lands in the app's own store: look again on the next tick.
@@ -949,7 +949,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const data = await body(req)
           const key = keyFrom(data)
           if (key && !store.conversation(key))
-            return problem('Attic has kept no copy of this conversation yet', 422)
+            return problem('Chatfold has kept no copy of this conversation yet', 422)
           const keys = key ? [key] : undefined
           if (!keys && store.conversations().length === 0)
             return problem('There is nothing in the archive to export yet', 422)
@@ -1033,7 +1033,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
             const appToken = typeof data.appToken === 'string' && data.appToken.trim() ? data.appToken.trim() : undefined
             const list = upsertWorkspace(await sources.slackWorkspaces(), { ...identity, token: secret, appToken })
             if (!(await writeSecret('slack-workspaces', JSON.stringify(list))))
-              return problem('Attic could not keep the Slack token in the keychain.', 500)
+              return problem('Chatfold could not keep the Slack token in the keychain.', 500)
             // The list now holds the workspace Attic used to keep on its own.
             await deleteSecret('slack')
             await deleteSecret('slack-app')
@@ -1107,7 +1107,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
           const { provider, id } = splitKey(key)
           const driver = sources.driver(provider)
           if (!driver?.send)
-            return problem(`Attic cannot send to ${driver?.label ?? provider} yet.`)
+            return problem(`Chatfold cannot send to ${driver?.label ?? provider} yet.`)
           // Only files that came through /api/upload: never an arbitrary path.
           const files = (Array.isArray(data.files) ? data.files : [])
             .filter((f): f is { path: string, name?: string, mimeType?: string } => !!f && typeof (f as { path?: unknown }).path === 'string')
