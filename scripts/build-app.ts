@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 /**
- * `bun run build:app`: Chatfold.app and its DMG, signed when an identity is set.
+ * `bun run build:app`: Texts.app and its DMG, signed when an identity is set.
  *
  * Everything that is framework work - compiling the launcher, bundling the
  * Craft runtime, the manifest, the icon, signing and imaging - is
@@ -63,8 +63,8 @@ await Bun.write(join(distribution, 'provenance.json'), `${JSON.stringify(provena
 await Bun.write(join(distribution, 'checksums.sha256'), `${artifacts.map(a => `${a.sha256}  ${a.name}`).join('\n')}\n`)
 
 step(['./buddy', 'build:dmg'], {
-  DESKTOP_APP_NAME: 'Chatfold',
+  DESKTOP_APP_NAME: 'Texts',
   DESKTOP_BUNDLE_ID: 'com.stacksjs.attic',
   DESKTOP_APP_VERSION: version,
 })
-console.log(`Built Chatfold ${version}: storage/framework/desktop-dmg/`)
+console.log(`Built Texts ${version}: storage/framework/desktop-dmg/`)

@@ -16,7 +16,7 @@ const run = mkdtempSync(join(output, 'run-'))
 const sample = await buildSample(join(run, 'sample'), { olderSam: true })
 const driver = join(run, 'driver')
 mkdirSync(driver)
-const app = process.env.ATTIC_E2E_APP || (existsSync('/Applications/Chatfold.app') ? '/Applications/Chatfold.app' : join(homedir(), 'Applications/Chatfold.app'))
+const app = process.env.ATTIC_E2E_APP || (existsSync('/Applications/Texts.app') ? '/Applications/Texts.app' : join(homedir(), 'Applications/Texts.app'))
 const updateFrom = process.env.ATTIC_E2E_UPDATE_FROM
 if (updateFrom && (!process.env.ATTIC_E2E_APP || !realpathSync(app).startsWith(`${realpathSync(join(import.meta.dir, '../storage'))}/`)))
   throw new Error('Use an isolated app in storage for the update installation test.')

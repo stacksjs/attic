@@ -9,7 +9,7 @@ import { env } from '@stacksjs/env'
  * you have any questions, feel free to reach out via Discord or GitHub Discussions.
  */
 export default {
-  name: env.APP_NAME ?? 'Chatfold',
+  name: env.APP_NAME ?? 'Texts',
   appPath: '/app',
   devLaunch: 'native',
   // Shown on the starter page, the coming-soon page, and any page that sets

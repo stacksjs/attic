@@ -128,7 +128,7 @@ const flags = [
   '--api-url', `http://127.0.0.1:${agent.port}`,
   '--native-bundle', nativeBundle,
   '--title',
-  'Chatfold',
+  'Texts',
   '--titlebar-style', 'transparent',
   '--width', '1280',
   '--height', '800',
