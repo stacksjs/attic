@@ -6,10 +6,10 @@ const releases = 'https://github.com/stacksjs/attic-downloads/releases/latest'
 const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Attic-${pkg.version}.dmg`
 
 const channels = [
-  { name: 'Messages', icon: 'i-hugeicons-message-01', body: 'Read iMessage and SMS conversations from Messages on your Mac.' },
-  { name: 'WhatsApp', icon: 'i-hugeicons-whatsapp', body: 'Link WhatsApp to bring your chats into Attic.' },
-  { name: 'Slack', icon: 'i-hugeicons-slack', body: 'Keep up with conversations in connected workspaces.' },
-  { name: 'Discord', icon: 'i-hugeicons-discord', body: 'Connect a bot to read eligible server channels and threads.' },
+  { name: 'Messages', icon: 'i-hugeicons-message-01' },
+  { name: 'WhatsApp', icon: 'i-hugeicons-whatsapp' },
+  { name: 'Slack', icon: 'i-hugeicons-slack' },
+  { name: 'Discord', icon: 'i-hugeicons-discord' },
 ]
 
 const faqs = [
@@ -17,7 +17,7 @@ const faqs = [
   { question: 'What happens when I archive a chat?', answer: 'Attic saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Attic shows what it can do before you archive.' },
   { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Attic inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
   { question: 'Why does Attic ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Attic asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
-  { question: 'How do updates work?', answer: 'Attic checks its public GitHub releases for updates. You can also open Software Update in Attic Settings to check manually.' },
+  { question: 'How do updates work?', answer: 'Attic checks for updates automatically. To check yourself, open Software Update in Attic Settings.' },
 ]
 </script>
 
@@ -49,10 +49,8 @@ const faqs = [
       --action: #a33b28;
       --action-hover: #862d1e;
       --action-ink: #fffaf4;
-      --frame: #eaded1;
-      --halo: #eab79970;
       --panel: #f4ebe1;
-      --shadow: #3722162e;
+      --shadow: #37221626;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -64,8 +62,6 @@ const faqs = [
         --action: #ffb39b;
         --action-hover: #ffcab6;
         --action-ink: #33170f;
-        --frame: #49372e;
-        --halo: #8c3c2860;
         --panel: #2a211d;
         --shadow: #0007;
       }
@@ -82,7 +78,7 @@ const faqs = [
     .wrap { width: min(78rem, calc(100% - clamp(2rem, 8vw, 9rem))); margin-inline: auto; }
     .skip { position: absolute; top: .75rem; left: .75rem; padding: .6rem 1rem; background: var(--paper); z-index: 2; transform: translateY(-200%); }
     .skip:focus { transform: translateY(0); }
-    .header { min-height: 5rem; padding-block: .8rem; border-bottom: 1px solid var(--line); }
+    .header { min-height: 4.5rem; padding-block: .75rem; border-bottom: 1px solid var(--line); }
     .brand { color: var(--ink); font-weight: 650; letter-spacing: -.04em; font-size: 1.2rem; text-decoration: none; white-space: nowrap; }
     .brand img { border-radius: .45rem; }
     .nav { gap: clamp(.85rem, 3vw, 2.25rem); }
@@ -93,25 +89,20 @@ const faqs = [
     h1.display { font-size: clamp(2.45rem, 5vw, 4.55rem); line-height: .94; }
     h1 span { display: block; color: var(--accent); }
     h2.display { font-size: clamp(2.65rem, 5vw, 4.5rem); line-height: 1; }
-    .intro { margin-top: 1.45rem; max-width: 29ch; color: var(--muted); font-size: clamp(1rem, 1.35vw, 1.16rem); }
+    .intro { margin-top: 1.25rem; max-width: 31ch; color: var(--muted); font-size: clamp(1rem, 1.35vw, 1.16rem); }
     .actions { margin-top: 1.85rem; }
     .download { min-height: 3rem; padding: .65rem 1.05rem; border-radius: .55rem; color: var(--action-ink); background: var(--action); font-size: .925rem; font-weight: 650; text-decoration: none; }
     .download:hover { background: var(--action-hover); }
     .download-mark { width: 1rem; height: 1rem; }
     .system { color: var(--muted); margin-top: .62rem; font-size: .8rem; }
-    .frame { background: radial-gradient(ellipse at 88% 0%, var(--halo), transparent 72%), var(--panel); border: 1px solid var(--line); border-radius: clamp(.75rem, 2vw, 1.2rem); padding: clamp(.6rem, 2vw, 1.65rem); }
+    .frame { background: var(--panel); border: 1px solid var(--line); border-radius: .95rem; padding: clamp(.55rem, 1.45vw, 1.25rem); }
     .frame img { width: 100%; border-radius: .55rem; box-shadow: 0 .65rem 1.75rem var(--shadow); }
-    .section { border-top: 1px solid var(--line); padding-block: clamp(3rem, 6.4vw, 6rem); }
-    .section-summary { color: var(--muted); max-width: 44ch; margin-top: .75rem; }
-    .channels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.75rem; margin: 2.1rem 0 0; padding: 0; list-style: none; }
-    .channels li { border-top: 1px solid var(--line); padding-top: 1.1rem; }
-    .channels h3 { font-size: 1.02rem; font-weight: 650; letter-spacing: -.025em; }
-    .channels p, .workflow p, details p { color: var(--muted); margin-top: .32rem; }
-    .source-icon { display: inline-block; width: 1rem; height: 1rem; color: var(--ink); }
+    .section { border-top: 1px solid var(--line); padding-block: clamp(2.75rem, 5.5vw, 5rem); }
+    .channels { display: flex; flex-wrap: wrap; gap: .55rem 1.15rem; margin: 1.35rem 0 0; padding: 0; list-style: none; }
+    .channels li { color: var(--muted); font-size: .82rem; font-weight: 500; }
+    .source-icon { display: inline-block; width: .95rem; height: .95rem; color: var(--ink); }
     .workflow { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: clamp(1.75rem, 6vw, 6rem); align-items: center; }
-    .workflow ul { margin: 1.5rem 0 0; padding: 0; list-style: none; }
-    .workflow li + li { margin-top: 1.05rem; }
-    .workflow h3 { font-size: 1rem; font-weight: 650; }
+    .workflow p { color: var(--muted); margin-top: 1rem; max-width: 37ch; }
     .faq { display: grid; grid-template-columns: minmax(0, .6fr) minmax(0, 1.4fr); gap: clamp(1.25rem, 6vw, 6rem); }
     details { border-top: 1px solid var(--line); padding-block: .85rem; }
     details:last-child { border-bottom: 1px solid var(--line); }
@@ -119,7 +110,7 @@ const faqs = [
     summary::-webkit-details-marker { display: none; }
     summary::after { content: ''; width: .45rem; height: .45rem; margin: .1rem .3rem .3rem .5rem; flex-shrink: 0; border: solid var(--accent); border-width: 0 1px 1px 0; transform: rotate(45deg); }
     details[open] summary::after { transform: rotate(225deg); }
-    details p { padding-right: 1.55rem; padding-bottom: .25rem; max-width: 63ch; }
+    details p { margin-top: .35rem; color: var(--muted); padding-right: 1.55rem; padding-bottom: .25rem; max-width: 63ch; }
     .footer { border-top: 1px solid var(--line); padding-block: 1.4rem 1.65rem; row-gap: .75rem; }
     .footer .brand { color: var(--ink); font-size: 1rem; }
     @media (max-width: 56rem) {
@@ -130,7 +121,6 @@ const faqs = [
       .hero, .workflow, .faq { grid-template-columns: minmax(0, 1fr); }
       h1.display { font-size: clamp(2.5rem, 12.5vw, 3.6rem); }
       .workflow .frame { order: 1; }
-      .channels { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
       .header { min-height: 4.4rem; }
     }
     @media (prefers-reduced-motion: no-preference) {
@@ -146,9 +136,8 @@ const faqs = [
       Attic
     </a>
     <nav class="flex items-center nav" aria-label="Main navigation">
-      <a href="#features">Features</a>
+      <a href="#features">Archive</a>
       <a href="#faq">FAQ</a>
-      <a href="{{ source }}">GitHub</a>
     </nav>
   </header>
 
@@ -156,7 +145,12 @@ const faqs = [
     <section class="hero" aria-labelledby="hero-title">
       <div>
         <h1 id="hero-title" class="display">Keep the chat. <span>Clear the inbox.</span></h1>
-        <p class="intro">One Mac inbox for Messages, WhatsApp, Slack, and Discord, with a searchable archive you keep.</p>
+        <p class="intro">One inbox for your chats and a searchable archive that lives on your Mac.</p>
+        <ul class="channels" aria-label="Supported sources">
+          @foreach (channels as channel)
+            <li class="flex gap-1.5 items-center"><span class="source-icon {{ channel.icon }}" aria-hidden="true"></span>{{ channel.name }}</li>
+          @endforeach
+        </ul>
         <div class="actions">
           <a class="inline-flex gap-2 items-center download" href="{{ download }}">
             <span class="download-mark i-hugeicons-download-01" aria-hidden="true"></span> Download for Mac
@@ -173,20 +167,7 @@ const faqs = [
       </figure>
     </section>
 
-    <section id="features" class="section" aria-labelledby="sources-title">
-      <h2 id="sources-title" class="display">Your chats in one place.</h2>
-      <p class="section-summary">Connect the services you use. Switch between them or work through everything in one inbox.</p>
-      <ul class="channels">
-        @foreach (channels as channel)
-          <li>
-            <h3 class="flex gap-2 items-center"><span class="source-icon {{ channel.icon }}" aria-hidden="true"></span>{{ channel.name }}</h3>
-            <p>{{ channel.body }}</p>
-          </li>
-        @endforeach
-      </ul>
-    </section>
-
-    <section class="section workflow" aria-labelledby="archive-title">
+    <section id="features" class="section workflow" aria-labelledby="archive-title">
       <figure class="frame">
         <picture>
           <source srcset="/images/screens/attic-find-dark.webp" media="(prefers-color-scheme: dark)">
@@ -195,20 +176,8 @@ const faqs = [
       </figure>
       <div>
         <h2 id="archive-title" class="display">Archive now.<br>Find it later.</h2>
-        <ul>
-          <li>
-            <h3>Keep a local copy</h3>
-            <p>Move quiet conversations out of your inbox while keeping their history on your Mac.</p>
-          </li>
-          <li>
-            <h3>Search across services</h3>
-            <p>Find a message in your inbox or archive without remembering which app it came from.</p>
-          </li>
-          <li>
-            <h3>Pick up where you left off</h3>
-            <p>When new messages arrive, Attic can bring the chat back or keep filing it in the archive.</p>
-          </li>
-        </ul>
+        <p>File away quiet conversations. Search their history whenever you need a detail, even if you’ve forgotten which app it came from.</p>
+        <p>When someone writes again, choose whether the conversation returns to your inbox or stays archived.</p>
       </div>
     </section>
 
