@@ -1,7 +1,7 @@
 <script server>
 import pkg from '../../package.json'
 
-const source = 'https://github.com/stacksjs/attic'
+const source = 'https://github.com/stacksjs/texts'
 const releases = 'https://github.com/stacksjs/attic-downloads/releases/latest'
 const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Texts-${pkg.version}.dmg`
 
@@ -17,7 +17,7 @@ const faqs = [
   { question: 'What happens when I archive a chat?', answer: 'Texts saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Texts shows what it can do before you archive.' },
   { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Texts inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
   { question: 'Why does Texts ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Texts asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
-  { question: 'How do updates work?', answer: 'Open Software Update in Settings to check any time. If you use Attic or Chatfold, the updater installs Texts with your existing archive.' },
+  { question: 'How do updates work?', answer: 'Open Software Update in Settings to update with your existing archive. If you have Attic 0.3.4 or earlier, download Texts and install it once to switch to public updates.' },
 ]
 </script>
 

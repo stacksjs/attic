@@ -8,6 +8,7 @@ import process from 'node:process'
 import { ATTIC_RELEASE_REPO, manifestAsset, UPDATE_KEYS, updateArchive, updateArchiveUrl } from '../app/Attic/updates'
 
 const root = resolve(import.meta.dir, '..')
+const sourceReleaseRepo = 'stacksjs/texts'
 
 async function run(command: string[], options: { capture?: boolean, input?: object, env?: Record<string, string | undefined> } = {}): Promise<string> {
   const child = Bun.spawn(command, {
@@ -112,6 +113,31 @@ async function publicRelease(tag: string): Promise<PublicRelease> {
   }))
 }
 
+async function uploadAssets(repo: string, tag: string, files: string[], assets: PublicRelease['assets']): Promise<void> {
+  for (const file of files) {
+    const name = basename(file)
+    const existing = assets.find(asset => asset.name === name)
+    if (existing) {
+      if (existing.digest !== `sha256:${(await describeArtifact(file)).sha256}`)
+        throw new Error(`GitHub already has a different ${name} in ${repo}.`)
+      continue
+    }
+    await run(['gh', 'release', 'upload', tag, file, '--repo', repo])
+  }
+}
+
+async function publishLegacyDownload(tag: string, diskImage: string): Promise<void> {
+  // The original landing page linked to /releases/latest/download/Attic.dmg in the source repo.
+  const release = JSON.parse(await run(['gh', 'api', `repos/${sourceReleaseRepo}/releases/tags/${tag}`], { capture: true })) as PublicRelease
+  const temporary = mkdtempSync(join(dirname(diskImage), 'legacy-'))
+  try {
+    const file = join(temporary, 'Attic.dmg')
+    copyFileSync(diskImage, file)
+    await uploadAssets(sourceReleaseRepo, tag, [file], release.assets)
+  }
+  finally { rmSync(temporary, { recursive: true, force: true }) }
+}
+
 async function publish(directory: string, tag: string, revision: string, key: string): Promise<void> {
   if (!existsSync(directory))
     await buildAssets(directory, tag, revision, key)
@@ -127,18 +153,10 @@ async function publish(directory: string, tag: string, revision: string, key: st
 
   const release = await publicRelease(tag)
   // The latest URL must keep serving the prior complete release until every asset is present.
-  for (const file of [archive, diskImage, manifestFile]) {
-    const name = basename(file)
-    const existing = release.assets.find(asset => asset.name === name)
-    if (existing) {
-      if (existing.digest !== `sha256:${(await describeArtifact(file)).sha256}`)
-        throw new Error(`GitHub already has a different ${name}.`)
-      continue
-    }
-    await run(['gh', 'release', 'upload', tag, file, '--repo', ATTIC_RELEASE_REPO])
-  }
+  await uploadAssets(ATTIC_RELEASE_REPO, tag, [archive, diskImage, manifestFile], release.assets)
   if (release.draft)
     await run(['gh', 'release', 'edit', tag, '--repo', ATTIC_RELEASE_REPO, '--draft=false', '--latest'])
+  await publishLegacyDownload(tag, diskImage)
   console.log(`Published Texts ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
 }
 
