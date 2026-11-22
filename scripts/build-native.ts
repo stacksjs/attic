@@ -61,7 +61,7 @@ await run([zig, 'build', 'home-tool-bootstrap', '-Doptimize=ReleaseFast'], engin
 const { compileNativeBundle } = await import('@stacksjs/stx/native')
 const { buildMacOSNative } = await import('craft-native/macos')
 const compiled = await compileNativeBundle({
-  screens: { Main: 'resources/native/Main.stx', Settings: 'resources/native/Settings.stx' },
+  screens: { Main: 'resources/native/Main.stx', Settings: 'resources/native/Settings.stx', Cleanup: 'resources/native/Cleanup.stx' },
   initialScreen: 'Main', root, minify: true, outFile: 'storage/attic/native/native-screen.js',
 })
 const diagnostics = compiled.diagnostics.filter((item: { message: string }) => item.message !== 'dropped-subtree: script')

@@ -1,0 +1,75 @@
+<script client>
+import { desktop, nativeApi, nativeCraft, nativeEvents, nativePost, SOURCE_NAMES } from '../functions/native-attic'
+
+const source = nativeCraft().route.params.source || 'all'
+const sourceName = SOURCE_NAMES[source] || 'All Inboxes'
+const cutoff = state('365')
+const preview = state(null)
+const job = state(null)
+const starting = state(false)
+const note = state('')
+const running = derived(() => !!job() && !job().finished)
+const count = derived(() => {
+  const total = preview()?.total
+  if (total === undefined) return note() ? '' : 'Counting…'
+  return `${total} ${total === 1 ? 'conversation' : 'conversations'}`
+})
+let previewRequest = 0
+
+async function loadPreview(value = cutoff()) {
+  const request = ++previewRequest
+  cutoff.set(value)
+  preview.set(null)
+  note.set('')
+  try {
+    const result = await nativePost('/api/bulk/preview', { olderThanDays: Number(value), source })
+    if (request === previewRequest) preview.set(result)
+  }
+  catch (error) { if (request === previewRequest) note.set(error.message) }
+}
+
+function updateJob(next) {
+  if (!next) return
+  const previous = job()
+  if (previous && (next.startedAt < previous.startedAt || (next.startedAt === previous.startedAt && (previous.finished || next.done < previous.done)))) return
+  job.set(next)
+  if (next.finished) void loadPreview()
+}
+
+async function startCleanup() {
+  if (starting() || running()) return
+  starting.set(true)
+  note.set('')
+  try { updateJob((await nativePost('/api/bulk/archive', { olderThanDays: Number(cutoff()), source })).job) }
+  catch (error) { note.set(error.message) }
+  finally { starting.set(false) }
+}
+
+async function stopCleanup() {
+  try { updateJob((await nativePost('/api/bulk/cancel')).job) }
+  catch (error) { note.set(error.message) }
+}
+
+onMount(() => {
+  onDestroy(nativeEvents(event => { if (event.type === 'bulk') updateJob(event.job) }))
+  void nativeApi('/api/bulk').then(result => updateJob(result.job)).catch(error => note.set(error.message))
+  void loadPreview()
+})
+</script>
+
+<ScrollView class="flex-1" style="background-color: windowBackground" testID="cleanup-window">
+  <View class="gap-3 p-6">
+    <Text class="font-semibold text-[16px]" :text="`Archive from ${sourceName}`" />
+    <Text :text="'Last message older than'" />
+    <Picker :value="cutoff()" :disabled="starting() || running()" :options="[{value:'182',label:'6 months'},{value:'365',label:'1 year'},{value:'730',label:'2 years'}]" @change="loadPreview($event.nativeEvent.value)" testID="cleanup-cutoff" accessibilityLabel="Conversation age" />
+    <Text :text="count()" testID="cleanup-count" />
+    <Text class="text-[12px]" style="color: secondaryLabel" :text="'Attic verifies each copy first. Closed apps stay closed during cleanup.'" />
+    <Text :if="job()" :text="`${job().done} of ${job().total} processed. ${job().archived} archived.${job().removed ? ` ${job().removed} removed from their apps.` : ''}${job().failed ? ` ${job().failed} could not be archived.` : ''}`" />
+    <Text :if="note()" :text="note()" />
+    <View class="flex-row gap-2">
+      <Button :if="!running()" title="Archive" variant="primary" :disabled="starting() || !preview()?.total" @click="startCleanup()" testID="cleanup-start" />
+      <Button :if="running()" title="Stop" @click="stopCleanup()" />
+      <Button title="Close" @click="desktop().closeWindow()" testID="cleanup-close" />
+    </View>
+  </View>
+</ScrollView>

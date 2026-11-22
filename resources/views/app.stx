@@ -1996,7 +1996,7 @@ onMount(async () => {
           <span :if="!bulkPreview()" class="muted">Counting…</span>
         </div>
         <div :if="bulkPreview()" class="mb-3 text-[11.5px] muted">{{ bulkBreakdown() }}</div>
-        <p class="mb-1 leading-snug text-[11.5px] muted">{{ removal() === 'off' ? 'They are archived in Attic only, as set under When you archive.' : 'Each is copied and checked, then taken out of its app, as any archive is. Messages keeps deleted threads 30 days in Recently Deleted. With thousands this takes a while; it runs in the background.' }}</p>
+        <p class="mb-1 leading-snug text-[11.5px] muted">{{ removal() === 'off' ? 'They are archived in Attic only, as set under When you archive.' : 'Attic verifies each copy first. Closed apps stay closed during cleanup. Messages keeps deleted threads for 30 days in Recently Deleted.' }}</p>
         <div :if="bulkJob() && bulkJob().finished" class="mt-3 text-[12px] muted">Last run: {{ bulkJob().archived.toLocaleString() }} archived{{ bulkJob().removed ? `, ${bulkJob().removed.toLocaleString()} taken out of the apps` : '' }}{{ bulkJob().failed ? `, ${bulkJob().failed} not copied completely and left in the Inbox` : '' }}{{ bulkJob().cancelled ? ' (stopped)' : '' }}.</div>
         <div class="flex gap-2 justify-end mt-4">
           <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Cancel</button>

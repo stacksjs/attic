@@ -31,10 +31,6 @@ const discordUser = state('')
 const whatsapp = state(null)
 const qrImage = state('')
 const workspaces = state([])
-const cleanup = state(false)
-const cutoff = state('365')
-const bulkPreview = state(null)
-const bulkJob = state(null)
 const rowLimit = state(120)
 const shownRows = derived(() => rows().slice(0, rowLimit()))
 const listTitle = derived(() => view() === 'archived' ? 'Archived' : view() === 'deleted' ? 'Recently Deleted' : source() === 'all' ? 'All Inboxes' : sources().find(s => s.provider === source())?.label ?? 'Inbox')
@@ -122,7 +118,7 @@ async function pickNav(id) {
 }
 
 function openSettings() {
-  desktop().openWindow({ name: 'settings', route: 'Settings', title: 'Settings', width: 600, height: 660, minWidth: 500, minHeight: 430 })
+  desktop().openWindow({ name: 'settings', route: 'Settings', title: 'Settings', width: 740, height: 560, minWidth: 670, minHeight: 440 })
 }
 
 async function archive(key = selectedKey()) {
@@ -269,12 +265,13 @@ async function disconnect(provider, teamId = null) {
   if (provider === 'slack') workspaces.set((await nativeApi('/api/slack/workspaces')).workspaces)
 }
 
-async function previewCleanup() {
-  bulkPreview.set(await nativePost('/api/bulk/preview', { olderThanDays: Number(cutoff()), source: source() }))
+async function openCleanup() {
+  try {
+    await desktop().openWindow({ name: 'cleanup', route: 'Cleanup', title: 'Clean Up', titlebarStyle: 'standard', width: 480, height: 340, minWidth: 420, minHeight: 310, params: { source: source() } })
+  }
+  catch (error) { say(error.message) }
 }
 
-async function openCleanup() { cleanup.set(true); await previewCleanup() }
-async function startCleanup() { bulkJob.set((await nativePost('/api/bulk/archive', { olderThanDays: Number(cutoff()), source: source() })).job) }
 function move(delta) { const index = rows().findIndex(c => c.key === selectedKey()); select(rows()[Math.max(0, Math.min(rows().length - 1, index + delta))]?.key ?? '') }
 
 let searchTimer
@@ -300,7 +297,6 @@ onMount(async () => {
   const remembered = await nativeCraft().storage.get('selected')
   if (rows().some(c => c.key === remembered)) await select(remembered)
   onDestroy(nativeEvents(async event => {
-    if (event.type === 'bulk') { bulkJob.set(event.job); if (event.job.finished) await refresh() }
     if (event.type === 'whatsapp') { whatsapp.set(event.link); await updateQR(); if (event.link.phase === 'open') { connecting.set(''); await refresh() } }
     if (['changed', 'settings', 'sources', 'access'].includes(event.type)) await refresh()
     if (event.type === 'incoming' && !nativeCraft().navigation.isFocused()) nativeCraft().notifications.show({ id: `attic-${event.key}-${event.at}`, title: event.title, body: event.text })
@@ -386,19 +382,6 @@ onMount(async () => {
       <Button :for="workspace in workspaces()" :key="workspace.teamId" :title="`Sign out of ${workspace.team}`" @click="disconnect('slack', workspace.teamId)" />
       <Button :if="connecting() === 'slack' || connecting() === 'discord'" title="Connect" variant="primary" :disabled="!token().trim()" @click="connectToken()" />
       <Button title="Done" @click="connecting.set('')" />
-    </View>
-  </Modal>
-  <Modal :if="cleanup()" :visible="true" title="Clean Up" @close="cleanup.set(false)" testID="cleanup-dialog">
-    <View class="gap-3 p-6">
-      <Text class="font-semibold text-[20px]" :text="'Clean up the Inbox'" />
-      <Text :text="'Archive conversations with no messages in the last:'" />
-      <Picker x-model="cutoff" :options="[{value:'182',label:'6 months'},{value:'365',label:'1 year'},{value:'730',label:'2 years'}]" @change="previewCleanup()" />
-      <Text :text="bulkPreview() ? `${bulkPreview().total} conversations` : 'Counting…'" />
-      <Text :text="'Every message and attachment is copied and checked before a conversation leaves its app.'" />
-      <Text :if="bulkJob()" :text="`${bulkJob().done} of ${bulkJob().total} processed. ${bulkJob().archived} archived.`" />
-      <Button :if="!bulkJob() || bulkJob().finished" title="Archive" variant="primary" :disabled="!bulkPreview()?.total" @click="startCleanup()" />
-      <Button :if="bulkJob() && !bulkJob().finished" title="Stop" @click="nativePost('/api/bulk/cancel')" />
-      <Button title="Close" testID="cleanup-close" @click="cleanup.set(false)" />
     </View>
   </Modal>
 </View>
