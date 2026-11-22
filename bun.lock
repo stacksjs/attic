@@ -30,6 +30,9 @@
       "version": "0.75.41",
     },
   },
+  "patchedDependencies": {
+    "craft-native@0.0.529": "patches/craft-native@0.0.529.patch",
+  },
   "packages": {
     "@babel/helper-string-parser": ["@babel/helper-string-parser@8.1.2", "", {}, "sha512-TRz5Z0MgfIfWqwEIq/pCpUpEXQxUt2Ig2ZbxG3SdmhSbHMAFFYGOix0kI4JLV371/TA+qWnQ4xWHPWjojkyRFA=="],
 

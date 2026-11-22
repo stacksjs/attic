@@ -115,5 +115,8 @@
   },
   "devDependencies": {
     "better-dx": "^0.2.36"
+  },
+  "patchedDependencies": {
+    "craft-native@0.0.529": "patches/craft-native@0.0.529.patch"
   }
 }
