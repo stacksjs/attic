@@ -20,7 +20,7 @@ async function fixture(helperBody: string, task: string) {
   // `waitForHelper` re-stats the path on every poll. A `BunFile` holds on to
   // the stat it took, including the one that found nothing, so a single
   // instance polled in a loop never sees the helper's file appear.
-  writeFileSync(script, `import { removeFromMessages, stopMessagesControl, withBackgroundMessages, MessagesControlDeferred } from ${JSON.stringify(module)}
+  writeFileSync(script, `import { accessibilityTrusted, removeFromMessages, stopMessagesControl, withBackgroundMessages, MessagesControlDeferred } from ${JSON.stringify(module)}
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 async function waitForHelper(name) {
@@ -50,6 +50,19 @@ it('finishes one native operation before starting the next', async () => {
 console.log(JSON.stringify(results.map(result => result.ok)))`,
   )
   expect(JSON.parse(out)).toEqual([true, true])
+})
+
+it('can read Accessibility status while a native operation is waiting', async () => {
+  const { out } = await fixture(
+    'if [ "$1" = "trusted" ]; then exit 0; fi\ntouch started\nsleep 1',
+    `let finished = false
+const removal = removeFromMessages(['Alice'], null, true).then(() => { finished = true })
+await waitForHelper('started')
+console.log(JSON.stringify([await accessibilityTrusted(), finished]))
+stopMessagesControl()
+await removal`,
+  )
+  expect(JSON.parse(out)).toEqual([true, false])
 })
 
 it('does not leave a helper running after Attic exits', async () => {

@@ -331,7 +331,7 @@ export class Archiver {
       if (!(await this.archive(key)).verified)
         return
       this.removalTried.set(key, { cursor, attempts, at: now })
-      const outcome = await withBackgroundMessages(() => this.removeFromApp(key))
+      const outcome = await this.removeFromApp(key, { background: true })
       if (!outcome.removed && outcome.mode !== 'confirm')
         console.warn(`[attic] ${key} stays in its app (attempt ${attempts} of ${REMOVAL_ATTEMPTS}): ${outcome.detail}`)
     }
@@ -347,9 +347,11 @@ export class Archiver {
   }
 
   /** Take an archived conversation out of the real app, as far as it allows. */
-  async removeFromApp(key: string): Promise<inbox.ArchiveOutcome> {
+  async removeFromApp(key: string, options: { background?: boolean } = {}): Promise<inbox.ArchiveOutcome> {
     const { provider, id, driver } = this.driverFor(key)
-    const outcome = await driver.archive(id)
+    const outcome = options.background
+      ? await withBackgroundMessages(() => driver.archive(id))
+      : await driver.archive(id)
     this.sources.invalidate(provider)
     return outcome
   }

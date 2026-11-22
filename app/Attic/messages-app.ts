@@ -1,7 +1,7 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
-import { AsyncLocalStorage } from 'node:async_hooks'
 
 /**
  * Messages' own Delete and Recover, and WhatsApp's own Archive and Unarchive,
@@ -21,7 +21,7 @@ export interface ControlOutcome {
 // must not inherit a background sync's restrictions (or the other way round).
 const backgroundControl = new AsyncLocalStorage<boolean>()
 let pending: Promise<unknown> = Promise.resolve()
-let active: ReturnType<typeof Bun.spawn> | null = null
+const active = new Set<ReturnType<typeof Bun.spawn>>()
 let stopped = false
 
 export class MessagesControlDeferred extends Error {}
@@ -41,7 +41,8 @@ export function openMessagesUrl(url: string): void {
 /** Cancel native automation before closing the archive and exiting Attic. */
 export function stopMessagesControl(): void {
   stopped = true
-  active?.kill()
+  for (const child of active)
+    child.kill()
 }
 
 process.once('exit', stopMessagesControl)
@@ -62,7 +63,7 @@ async function execute(args: string[], background: boolean): Promise<ControlOutc
   if (!helper)
     return { ok: false, code: -1, detail: 'The Messages helper is missing from this build.' }
   const child = Bun.spawn([helper, ...args, ...(background ? ['--background'] : [])], { stdio: ['ignore', 'pipe', 'pipe'] })
-  active = child
+  active.add(child)
   const timeout = setTimeout(() => child.kill('SIGKILL'), 60_000)
   try {
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
@@ -72,7 +73,7 @@ async function execute(args: string[], background: boolean): Promise<ControlOutc
   }
   finally {
     clearTimeout(timeout)
-    active = null
+    active.delete(child)
   }
 }
 
@@ -87,7 +88,8 @@ function run(args: string[]): Promise<ControlOutcome> {
 
 /** Whether Attic may drive Messages; `prompt` raises macOS' own request. */
 export async function accessibilityTrusted(prompt = false): Promise<boolean> {
-  return (await run(prompt ? ['trusted', '--prompt'] : ['trusted'])).ok
+  // Status reads never drive another app and must not wait on its UI.
+  return (await (prompt ? run(['trusted', '--prompt']) : execute(['trusted'], false))).ok
 }
 
 export function removeFromMessages(names: string[], url: string | null, confirm: boolean): Promise<ControlOutcome> {

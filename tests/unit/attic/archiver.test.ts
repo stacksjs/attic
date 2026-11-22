@@ -232,7 +232,7 @@ describe('archiving iMessage', () => {
 })
 
 describe('always archive', () => {
-  it('defers unnamed group URL fallbacks in the background and preserves an explicit Archive click', async () => {
+  it('defers unnamed group URL fallbacks during rules and bulk cleanup but allows explicit Archive', async () => {
     chat.add(chat.group('unnamed', [ALICE, BOB]), { text: 'group without a name' })
     const opened: unknown[] = []
     const spawn = Bun.spawn.bind(Bun)
@@ -257,6 +257,8 @@ describe('always archive', () => {
       store.addRule({ provider: 'imessage', kind: 'conversation', value: entry.key, label: 'Group' })
       const automatic = new Archiver({ store, sources, attachmentsDir })
       await automatic.sync()
+      expect(opened).toEqual([])
+      await expect(automatic.removeFromApp(entry.key, { background: true })).rejects.toBeInstanceOf(MessagesControlDeferred)
       expect(opened).toEqual([])
       await automatic.removeFromApp(entry.key)
       expect(opened).toHaveLength(1)

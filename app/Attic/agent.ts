@@ -15,7 +15,7 @@ import { toSvg } from 'ts-qr-codes'
 import { Archiver, ruleFor, ruleValue } from './archiver'
 import { exportArchive, exportFolder } from './export'
 import { deleteSecret, writeSecret } from './keychain'
-import { accessibilityTrusted } from './messages-app'
+import { accessibilityTrusted, MessagesControlDeferred } from './messages-app'
 import { PhoneLink } from './phone-link'
 import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, EXPORTS_PARENT, messagesDbPath, OUTGOING_DIR, PORT_FILE, PREVIEWS_DIR, whatsappDbPath } from './paths'
 import { slackIdentity, upsertWorkspace } from './slack-workspaces'
@@ -565,21 +565,27 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   }
 
   /** After a verified copy: out of the real app, as far as it allows. */
-  async function takeOutOfApp(key: string, options: { sync?: boolean } = {}): Promise<AppOutcome> {
+  async function takeOutOfApp(key: string, options: { background?: boolean } = {}): Promise<AppOutcome> {
     const mode = removalMode()
     if (mode === 'off')
       return { attempted: false, removed: false, detail: 'Kept in the app, as set.' }
     const { provider } = splitKey(key)
     if (!(await visibleInApp(key)))
       return { attempted: false, removed: true, detail: '' }
-    const outcome = await archiver.removeFromApp(key)
+    const outcome = await archiver.removeFromApp(key, options).catch((error: unknown) => {
+      if (!(error instanceof MessagesControlDeferred))
+        throw error
+      return null
+    })
+    if (!outcome)
+      return { attempted: false, removed: false, detail: `Kept in ${LABELS[provider]}.` }
     if (outcome.mode === 'unsupported')
       return { attempted: false, removed: false, detail: outcome.detail }
     let removed = outcome.removed
     // A delete Attic confirmed lands in chat.db a moment later.
     if (!removed && provider === 'imessage' && mode === 'auto' && !usingSample)
       removed = await waitUntil(async () => !(await visibleInApp(key)))
-    if (options.sync !== false)
+    if (!options.background)
       await announce(await syncArchive(true))
     return { attempted: true, removed, detail: removed ? `Removed from ${LABELS[provider]}.` : outcome.detail }
   }
@@ -589,8 +595,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
    * conversation at a time through the same copy-verify-archive path as a
    * single archive. A real history has thousands of these, so it runs as a
    * job the page follows over the event stream and can cancel. Taking them
-   * out of the apps is opt-in: for iMessage that is one Delete per thread
-   * through Messages, and Messages purges Recently Deleted after 30 days.
+   * out of the apps follows Settings and must never open or focus a local app
+   * while the job runs.
    */
   interface BulkJob {
     total: number
@@ -624,8 +630,7 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
         const result = await archiver.archive(key)
         if (result.verified) {
           job.archived++
-          // Out of the app as any archive is, per the "When you archive" setting.
-          if ((await takeOutOfApp(key, { sync: false })).removed)
+          if ((await takeOutOfApp(key, { background: true })).removed)
             job.removed++
         }
         else {

@@ -81,14 +81,20 @@ func open(_ url: String) {
   if let target = URL(string: url) { NSWorkspace.shared.open(target) }
 }
 
-func appElement() -> AXUIElement {
-  if background {
-    // A timer is not permission to launch, reopen or focus another app.
-    guard let app = messagesApp(), app.isActive, !app.isHidden else {
-      fail(5, "Automatic removal waits until Messages is open and active.")
-    }
-    return AXUIElementCreateApplication(app.processIdentifier)
+func activeMessagesWindow() -> AXUIElement {
+  guard let running = messagesApp(), running.isActive, !running.isHidden else {
+    fail(5, "Automatic removal waits until Messages is open and active.")
   }
+  let app = AXUIElementCreateApplication(running.processIdentifier)
+  guard let window = (value(app, kAXWindowsAttribute) as? [AXUIElement])?.first(where: {
+    text($0, kAXSubroleAttribute) == "AXStandardWindow" && (value($0, kAXMinimizedAttribute) as? Bool) != true
+  }) else {
+    fail(5, "Automatic removal waits until a Messages window is open.")
+  }
+  return window
+}
+
+func appElement() -> AXUIElement {
   if messagesApp() == nil {
     NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Messages.app"))
   }
@@ -272,19 +278,21 @@ case "delete":
     fail(5, "Automatic removal waits for an explicit archive when Messages needs confirmation.")
   }
   if !background, let url = option("--url") { open(url) }
-  let app = appElement()
+  let root = background ? activeMessagesWindow() : appElement()
   // The row's own action, never the menu's "Delete Conversation…", which acts
   // on whatever is selected.
-  guard let target = poll({ row(in: app) }) else { fail(3, "No conversation named \(name) in Messages") }
+  guard let target = poll({ row(in: background ? activeMessagesWindow() : root) }) else { fail(3, "No conversation named \(name) in Messages") }
   guard let delete = actions(target).first(where: { $0.contains("Name:Delete") }) else { fail(4, "Messages offers no Delete for \(name)") }
+  if background { _ = activeMessagesWindow() }
   guard AXUIElementPerformAction(target, delete as CFString) == .success else { fail(4, "Messages did not open its delete confirmation") }
   if args.contains("--confirm") {
-    guard let button = poll({ alertButton(app, titled: "Delete") }) else { fail(4, "Messages did not show its delete confirmation") }
+    guard let button = poll({ alertButton(background ? activeMessagesWindow() : root, titled: "Delete") }) else { fail(4, "Messages did not show its delete confirmation") }
     guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { fail(4, "Could not confirm the delete") }
   }
   print("deleted")
 
 case "recover":
+  if background { fail(5, "Recovery waits for an explicit request.") }
   let app = appElement()
   guard clickMenu(app, "View", "Recently Deleted") else { fail(4, "Messages has no View > Recently Deleted") }
   defer { _ = clickMenu(app, "View", "Messages") }
