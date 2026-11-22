@@ -3,7 +3,7 @@ import pkg from '../../package.json'
 
 const source = 'https://github.com/stacksjs/attic'
 const releases = 'https://github.com/stacksjs/attic-downloads/releases/latest'
-const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Attic-${pkg.version}.dmg`
+const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Chatfold-${pkg.version}.dmg`
 
 const channels = [
   { name: 'Messages', icon: 'i-hugeicons-message-01' },
@@ -13,11 +13,11 @@ const channels = [
 ]
 
 const faqs = [
-  { question: 'Where is my archive stored?', answer: 'Attic stores its archive on your Mac. If you set up phone sync, Attic can share your conversations with a paired device.' },
-  { question: 'What happens when I archive a chat?', answer: 'Attic saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Attic shows what it can do before you archive.' },
-  { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Attic inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
-  { question: 'Why does Attic ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Attic asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
-  { question: 'How do updates work?', answer: 'Attic checks for updates automatically. To check yourself, open Software Update in Attic Settings.' },
+  { question: 'Where is my archive stored?', answer: 'Chatfold stores its archive on your Mac. If you set up phone sync, Chatfold can share your conversations with a paired device.' },
+  { question: 'What happens when I archive a chat?', answer: 'Chatfold saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Chatfold shows what it can do before you archive.' },
+  { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Chatfold inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
+  { question: 'Why does Chatfold ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Chatfold asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
+  { question: 'How do updates work?', answer: 'Open Software Update in Settings to check any time. If you already use Attic, the same updater installs Chatfold with your existing archive.' },
 ]
 </script>
 
@@ -28,41 +28,43 @@ const faqs = [
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Attic | A Mac inbox and archive for your chats</title>
-  <meta name="description" content="Attic brings Messages, WhatsApp, Slack, and Discord together in one Mac inbox with a searchable local archive.">
-  <meta property="og:title" content="Attic | A Mac inbox and archive for your chats">
-  <meta property="og:description" content="Keep the chat. Clear the inbox. Attic is a Mac app for Messages, WhatsApp, Slack, and Discord.">
-  <meta property="og:image" content="https://attic.stacksjs.com/images/screens/attic-inbox-light.webp">
-  <link rel="canonical" href="https://attic.stacksjs.com/">
+  <title>Chatfold | A Mac inbox and archive for your chats</title>
+  <meta name="description" content="Chatfold brings Messages, WhatsApp, Slack, and Discord together in one Mac inbox with a searchable local archive.">
+  <meta property="og:title" content="Chatfold | A Mac inbox and archive for your chats">
+  <meta property="og:description" content="Your chats, one inbox. Chatfold keeps a searchable archive on your Mac.">
+  <meta property="og:site_name" content="Chatfold">
+  <meta property="og:url" content="https://chatfold.stacksjs.com/">
+  <meta property="og:image" content="https://chatfold.stacksjs.com/images/screens/attic-inbox-light.webp">
+  <link rel="canonical" href="https://chatfold.stacksjs.com/">
   <link rel="icon" href="/images/app-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;family=Newsreader:opsz,wght@6..72,400..600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap">
   <style>
     :root {
       color-scheme: light dark;
-      --paper: #fcf9f4;
-      --ink: #241d18;
-      --muted: #63564d;
-      --line: #ded3c8;
-      --accent: #9f3825;
-      --action: #a33b28;
-      --action-hover: #862d1e;
-      --action-ink: #fffaf4;
-      --panel: #f4ebe1;
-      --shadow: #37221626;
+      --paper: #f8f9ff;
+      --ink: #161a2c;
+      --muted: #505873;
+      --line: #dce0ef;
+      --accent: #423abc;
+      --action: #4439be;
+      --action-hover: #342b9d;
+      --action-ink: #ffffff;
+      --panel: #edf0fb;
+      --shadow: #212e5829;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --paper: #1f1916;
-        --ink: #faf0e6;
-        --muted: #c6b5a7;
-        --line: #544339;
-        --accent: #ffae95;
-        --action: #ffb39b;
-        --action-hover: #ffcab6;
-        --action-ink: #33170f;
-        --panel: #2a211d;
+        --paper: #17192a;
+        --ink: #f5f6ff;
+        --muted: #b9bed9;
+        --line: #363953;
+        --accent: #b3adff;
+        --action: #b8b1ff;
+        --action-hover: #c9c5ff;
+        --action-ink: #1b1647;
+        --panel: #222541;
         --shadow: #0007;
       }
     }
@@ -85,11 +87,11 @@ const faqs = [
     .nav a, .footer a { color: var(--muted); font-size: .875rem; font-weight: 500; text-decoration: none; }
     .nav a:hover, .footer a:hover { color: var(--ink); text-decoration: underline; }
     .hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.3fr); gap: clamp(1.5rem, 4vw, 4rem); align-items: center; padding-block: clamp(3.25rem, 6.5vw, 6rem); }
-    .display { font-family: 'Newsreader', Georgia, serif; font-weight: 500; letter-spacing: -.055em; }
-    h1.display { font-size: clamp(2.45rem, 5vw, 4.55rem); line-height: .94; }
+    .display { font-weight: 650; letter-spacing: -.075em; text-wrap: balance; }
+    h1.display { font-size: clamp(2.45rem, 5vw, 4.55rem); line-height: 1.02; }
     h1 span { display: block; color: var(--accent); }
-    h2.display { font-size: clamp(2.65rem, 5vw, 4.5rem); line-height: 1; }
-    .intro { margin-top: 1.25rem; max-width: 31ch; color: var(--muted); font-size: clamp(1rem, 1.35vw, 1.16rem); }
+    h2.display { font-size: clamp(2.35rem, 4.4vw, 4rem); line-height: 1.07; }
+    .intro { margin-top: 1.25rem; max-width: 38ch; color: var(--muted); font-size: clamp(1rem, 1.35vw, 1.16rem); }
     .actions { margin-top: 1.85rem; }
     .download { min-height: 3rem; padding: .65rem 1.05rem; border-radius: .55rem; color: var(--action-ink); background: var(--action); font-size: .925rem; font-weight: 650; text-decoration: none; }
     .download:hover { background: var(--action-hover); }
@@ -132,8 +134,8 @@ const faqs = [
   <a class="skip" href="#main">Skip to content</a>
   <header class="flex gap-4 items-center justify-between header wrap">
     <a class="inline-flex gap-2 items-center brand" href="/">
-      <img src="/images/app-icon.png" alt="" width="30" height="30">
-      Attic
+      <img src="/images/app-icon.png" alt="" width="34" height="34">
+      Chatfold
     </a>
     <nav class="flex items-center nav" aria-label="Main navigation">
       <a href="#features">Archive</a>
@@ -144,8 +146,8 @@ const faqs = [
   <main id="main" class="wrap">
     <section class="hero" aria-labelledby="hero-title">
       <div>
-        <h1 id="hero-title" class="display">Keep the chat. <span>Clear the inbox.</span></h1>
-        <p class="intro">One inbox for your chats and a searchable archive that lives on your Mac.</p>
+        <h1 id="hero-title" class="display">Your chats, <span>one inbox.</span></h1>
+        <p class="intro">Read and organize your messages in one Mac app. Keep a searchable archive on your device.</p>
         <ul class="channels" aria-label="Supported sources">
           @foreach (channels as channel)
             <li class="flex gap-1.5 items-center"><span class="source-icon {{ channel.icon }}" aria-hidden="true"></span>{{ channel.name }}</li>
@@ -162,7 +164,7 @@ const faqs = [
       <figure class="frame">
         <picture>
           <source srcset="/images/screens/attic-inbox-dark.webp" media="(prefers-color-scheme: dark)">
-          <img src="/images/screens/attic-inbox-light.webp" alt="Attic's Mac inbox showing sample conversations and an open message thread" width="1760" height="1163" fetchpriority="high">
+          <img src="/images/screens/attic-inbox-light.webp" alt="Chatfold's Mac inbox showing sample conversations and an open message thread" width="1760" height="1163" fetchpriority="high">
         </picture>
       </figure>
     </section>
@@ -171,7 +173,7 @@ const faqs = [
       <figure class="frame">
         <picture>
           <source srcset="/images/screens/attic-find-dark.webp" media="(prefers-color-scheme: dark)">
-          <img src="/images/screens/attic-find-light.webp" alt="Attic showing search results from an archived sample conversation" width="1760" height="1163" loading="lazy">
+          <img src="/images/screens/attic-find-light.webp" alt="Chatfold showing search results from an archived sample conversation" width="1760" height="1163" loading="lazy">
         </picture>
       </figure>
       <div>
@@ -196,8 +198,8 @@ const faqs = [
 
   <footer class="flex flex-wrap gap-4 items-center justify-between footer wrap">
     <a class="inline-flex gap-2 items-center brand" href="/">
-      <img src="/images/app-icon.png" alt="" width="24" height="24" loading="lazy">
-      Attic
+      <img src="/images/app-icon.png" alt="" width="28" height="28" loading="lazy">
+      Chatfold
     </a>
     <div class="flex flex-wrap items-center nav">
       <a href="{{ releases }}">Releases</a>

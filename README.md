@@ -1,14 +1,14 @@
-# Attic
+# Chatfold
 
-Attic is a Mac inbox for Messages, WhatsApp, Slack, and Discord. It keeps a searchable local copy of archived conversations.
+Chatfold is a Mac inbox for Messages, WhatsApp, Slack, and Discord. It keeps a searchable local copy of archived conversations.
 
-[Visit attic.stacksjs.com](https://attic.stacksjs.com) or [download the latest release for Apple silicon](https://github.com/stacksjs/attic-downloads/releases/latest).
+[Visit chatfold.stacksjs.com](https://chatfold.stacksjs.com) or [download the latest release for Apple silicon](https://github.com/stacksjs/attic-downloads/releases/latest).
 
 ## Marketing site
 
 Run `./buddy dev --frontend --site --with-localhost` to preview the stx site. The entry is `resources/views/index.stx`.
 
-`bun run build:site` builds the public site in `storage/attic/site`. The production configuration attaches Attic to the shared Stacks server. Deploy just this site with `./buddy deploy --prod --site website`.
+`bun run build:site` builds the public site in `storage/attic/site`. The production configuration attaches Chatfold to the shared Stacks server. Deploy just this site with `./buddy deploy --prod --site website`.
 
 ## Development prerequisites
 
