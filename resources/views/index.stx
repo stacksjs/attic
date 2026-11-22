@@ -17,7 +17,7 @@ const faqs = [
   { question: 'What happens when I archive a chat?', answer: 'Attic saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Attic shows what it can do before you archive.' },
   { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Attic inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
   { question: 'Why does Attic ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Attic asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
-  { question: 'How do updates work?', answer: 'Attic checks its public GitHub releases for updates. You can also open Updates in Attic Settings to check manually.' },
+  { question: 'How do updates work?', answer: 'Attic checks its public GitHub releases for updates. You can also open Software Update in Attic Settings to check manually.' },
 ]
 </script>
 
@@ -190,7 +190,7 @@ const faqs = [
       <figure class="frame">
         <picture>
           <source srcset="/images/screens/attic-find-dark.webp" media="(prefers-color-scheme: dark)">
-          <img src="/images/screens/attic-find-light.webp" alt="Attic showing search results across sample conversations" width="1760" height="1100" loading="lazy">
+          <img src="/images/screens/attic-find-light.webp" alt="Attic showing search results from an archived sample conversation" width="1760" height="1163" loading="lazy">
         </picture>
       </figure>
       <div>
