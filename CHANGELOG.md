@@ -1,5 +1,39 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/attic/compare/v0.3.2...v0.3.4)
+
+## ✨ Features
+
+- publish signed macOS update assets on patch release ([1f7806c](https://github.com/stacksjs/attic/commit/1f7806c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- add signed GitHub updates to native Settings ([7401ff0](https://github.com/stacksjs/attic/commit/7401ff0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- use shared stx components for native Settings ([7053b00](https://github.com/stacksjs/attic/commit/7053b00)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🐛 Bug Fixes
+
+- show the inbox selected for native cleanup ([b5f4396](https://github.com/stacksjs/attic/commit/b5f4396)) _(by Chris <chrisbreuer93@gmail.com>)_
+- run Clean Up in a dedicated AppKit window ([51efbb2](https://github.com/stacksjs/attic/commit/51efbb2)) _(by Chris <chrisbreuer93@gmail.com>)_
+- keep bulk archiving from reopening source apps ([804a662](https://github.com/stacksjs/attic/commit/804a662)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **native**: own component precedence and match the engine pin ([a4b525e](https://github.com/stacksjs/attic/commit/a4b525e)) _(by glennmichael123 <gtorregosa@gmail.com>)_ ([stacksjs/stx#2177](https://github.com/stacksjs/stx/issues/2177), [#2177](https://github.com/stacksjs/attic/issues/2177))
+- let sample mode read its invented chat.db anywhere ([1cd49c8](https://github.com/stacksjs/attic/commit/1cd49c8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **tests**: tell the iMessage fixture it is on a Mac ([78a5d69](https://github.com/stacksjs/attic/commit/78a5d69)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+## ✅ Tests
+
+- verify the native Software Update flow ([e6c625d](https://github.com/stacksjs/attic/commit/e6c625d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- exercise native settings and bulk cleanup in the packaged app ([d53834d](https://github.com/stacksjs/attic/commit/d53834d)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🔧 Chores
+
+- **deps**: upgrade the native desktop stack for Attic 0.3.3 ([31f740b](https://github.com/stacksjs/attic/commit/31f740b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: stacks 0.75.628 ([3844295](https://github.com/stacksjs/attic/commit/3844295)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **deps**: stacks 0.75.539 and stx 0.2.849 ([3799b33](https://github.com/stacksjs/attic/commit/3799b33)) _(by glennmichael123 <gtorregosa@gmail.com>)_ ([stacksjs/stacks#3213](https://github.com/stacksjs/stacks/issues/3213), [stacksjs/stx#2175](https://github.com/stacksjs/stx/issues/2175), [stacksjs/stx#2177](https://github.com/stacksjs/stx/issues/2177))
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _Chris Breuer <chris@stacksjs.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 ## v0.3.2
 
 ## ✨ Features
