@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs'
 import type { SlackWorkspace } from './slack-workspaces'
 import { deleteSecret, readSecret as readKeychain, writeSecret as writeKeychain } from './keychain'
 import { archiveInWhatsApp, openMessagesUrl, recoverInMessages, removeFromMessages, unarchiveInWhatsApp } from './messages-app'
+import { runMessagesScript } from './messages-script'
 import { addressBookDir, messagesDbPath, WHATSAPP_LINK_DIR, whatsappDbPath } from './paths'
 import { sampleDiscord, sampleSlack, sampleWhatsApp } from './sample-sources'
 import { parseWorkspaces, slackIdentity, slackSource } from './slack-workspaces'
@@ -124,6 +125,9 @@ export class Sources {
       // builds on it - sees no conversations at all.
       ...(options.sample ? { platform: 'darwin' as const } : {}),
       addressBookDir: addressBookDir() ?? false,
+      runScript: options.sample
+        ? async () => ({ ok: false, output: 'Sample data: the real Messages app is not touched.' })
+        : runMessagesScript,
       // Unnamed groups bypass the controller and fall back to a URL. Keep
       // background rules and fixtures from opening the real app there too.
       openUrl: url => { if (!options.sample) openMessagesUrl(url) },
