@@ -1,5 +1,29 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/attic/compare/v0.3.6...v0.3.7)
+
+## ✨ Features
+
+- release Chatfold through the existing updater ([a35583f](https://github.com/stacksjs/attic/commit/a35583f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- brand new archive exports as Chatfold ([b28d486](https://github.com/stacksjs/attic/commit/b28d486)) _(by Chris <chrisbreuer93@gmail.com>)_
+- show Chatfold throughout the app ([cc8b72f](https://github.com/stacksjs/attic/commit/cc8b72f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- name the macOS application Chatfold ([fa17542](https://github.com/stacksjs/attic/commit/fa17542)) _(by Chris <chrisbreuer93@gmail.com>)_
+- launch the Chatfold website ([e91bcff](https://github.com/stacksjs/attic/commit/e91bcff)) _(by Chris <chrisbreuer93@gmail.com>)_
+- introduce the Chatfold app icon ([51f6a67](https://github.com/stacksjs/attic/commit/51f6a67)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🐛 Bug Fixes
+
+- use the Chatfold name in app messages ([746a486](https://github.com/stacksjs/attic/commit/746a486)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## ✅ Tests
+
+- expect the Chatfold export label ([e08c93b](https://github.com/stacksjs/attic/commit/e08c93b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- cover the composer reply actions ([f580cd0](https://github.com/stacksjs/attic/commit/f580cd0)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/attic/compare/v0.3.5...v0.3.6)
 
 ## ✨ Features
