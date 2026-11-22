@@ -2,7 +2,7 @@
 import { desktop, nativeApi, nativeCraft, nativeEvents, nativePost, SOURCE_NAMES } from '../functions/native-attic'
 
 const source = nativeCraft().route.params.source || 'all'
-const heading = derived(() => `Archive from ${SOURCE_NAMES[source] || 'All Inboxes'}`)
+const heading = derived(() => `Archive from ${SOURCE_NAMES[source] || 'Inbox'}`)
 const cutoff = state('365')
 const preview = state(null)
 const job = state(null)
@@ -58,18 +58,20 @@ onMount(() => {
 </script>
 
 <ScrollView class="flex-1" style="background-color: windowBackground" testID="cleanup-window">
-  <View class="gap-3 p-6">
-    <Text class="font-semibold text-[16px]" :text="heading()" testID="cleanup-heading" />
-    <Text :text="'Last message older than'" />
-    <Picker :value="cutoff()" :disabled="starting() || running()" :options="[{value:'182',label:'6 months'},{value:'365',label:'1 year'},{value:'730',label:'2 years'}]" @change="loadPreview($event.nativeEvent.value)" testID="cleanup-cutoff" accessibilityLabel="Conversation age" />
-    <Text :text="count()" testID="cleanup-count" />
-    <Text class="text-[12px]" style="color: secondaryLabel" :text="'Attic verifies each copy first. Closed apps stay closed during cleanup.'" />
-    <Text :if="job()" :text="`${job().done} of ${job().total} processed. ${job().archived} archived.${job().removed ? ` ${job().removed} removed from their apps.` : ''}${job().failed ? ` ${job().failed} could not be archived.` : ''}`" />
-    <Text :if="note()" :text="note()" />
-    <View class="flex-row gap-2">
-      <Button :if="!running()" title="Archive" variant="primary" :disabled="starting() || !preview()?.total" @click="startCleanup()" testID="cleanup-start" />
+  <View class="gap-4 p-6">
+    <Text class="font-semibold text-[19px]" :text="heading()" testID="cleanup-heading" />
+    <SettingsGroup footer="Closed apps stay closed during cleanup.">
+      <SettingsRow label="Last message older than" setting="cleanup-age">
+        <Picker class="w-[112px]" :value="cutoff()" :disabled="starting() || running()" :options="[{value:'182',label:'6 months'},{value:'365',label:'1 year'},{value:'730',label:'2 years'}]" @change="loadPreview($event.nativeEvent.value)" testID="cleanup-cutoff" accessibilityLabel="Conversation age" />
+      </SettingsRow>
+    </SettingsGroup>
+    <Text class="text-[13px]" style="color: secondaryLabel" :text="count()" testID="cleanup-count" />
+    <Text :if="job()" class="text-[12px]" :text="`${job().done} of ${job().total} processed. ${job().archived} archived.${job().removed ? ` ${job().removed} removed from their apps.` : ''}${job().failed ? ` ${job().failed} could not be archived.` : ''}`" />
+    <Text :if="note()" class="text-[12px]" :text="note()" />
+    <View class="flex-row gap-2 justify-end">
       <Button :if="running()" title="Stop" @click="stopCleanup()" />
       <Button title="Close" @click="desktop().closeWindow()" testID="cleanup-close" />
+      <Button :if="!running()" title="Archive" variant="primary" :disabled="starting() || !preview()?.total" @click="startCleanup()" testID="cleanup-start" />
     </View>
   </View>
 </ScrollView>

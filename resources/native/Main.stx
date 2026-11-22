@@ -8,7 +8,6 @@ const scheme = state(nativeCraft().appearance.colorScheme())
 const source = state('all')
 const sources = state([])
 const rows = state<ConversationSummary[]>([])
-const counts = state({ inbox: 0, archived: 0, deleted: 0 })
 const selectedKey = state('')
 const detail = state(null)
 const messages = state([])
@@ -19,11 +18,14 @@ const fixture = state(false)
 const busy = state(false)
 const flash = state('')
 const query = state('')
+const searchTerm = derived(() => query().trim())
 const results = state([])
+const searchState = state('idle')
 const draft = state('')
 const replyTo = state(null)
 const outgoing = state([])
 const connecting = state('')
+const showConnectionOptions = state(false)
 const token = state('')
 const appToken = state('')
 const account = state('user')
@@ -33,17 +35,21 @@ const qrImage = state('')
 const workspaces = state([])
 const rowLimit = state(120)
 const shownRows = derived(() => rows().slice(0, rowLimit()))
-const listTitle = derived(() => view() === 'archived' ? 'Archived' : view() === 'deleted' ? 'Recently Deleted' : source() === 'all' ? 'All Inboxes' : sources().find(s => s.provider === source())?.label ?? 'Inbox')
+const listTitle = derived(() => searchTerm() ? 'Search' : view() === 'archived' ? 'Archive' : view() === 'deleted' ? 'Recently Deleted' : source() === 'all' ? 'Inbox' : SOURCE_NAMES[source()] ?? 'Inbox')
 const selectedNav = derived(() => view() !== 'inbox' ? view() : source() === 'all' ? 'all' : `source:${source()}`)
 const sourceColors = { imessage: '#0088ff', whatsapp: '#19b963', slack: '#df3675', discord: '#7567f7' }
-const palette = derived(() => ({ selection:'#087bf5', text:scheme() === 'dark' ? '#f4f4f6' : '#1d1d1f', muted:scheme() === 'dark' ? '#a0a0a5' : '#737377', separator:scheme() === 'dark' ? '#353537' : '#dedee0' }))
-function listItem(c) { return { ...c, timestamp:nativeDate(c.lastMessageAt), preview:c.preview || (c.saved ? `${c.savedMessages} messages kept` : ''), sourceSymbol:SOURCE_SYMBOLS[c.provider], sourceColor:sourceColors[c.provider] } }
-const sidebarSections = derived(() => [
-  { id: 'mailboxes', items: [{ id: 'all', label: 'All Inboxes', icon: 'tray.2', badge: counts().inbox }, { id: 'archived', label: 'Archived', icon: 'archivebox', badge: counts().archived }, ...(counts().deleted ? [{ id: 'deleted', label: 'Recently Deleted', icon: 'trash', badge: counts().deleted }] : [])] },
-  { id: 'sources', header: 'Sources', items: sources().map(s => ({ id: `source:${s.provider}`, label: s.label, icon: SOURCE_SYMBOLS[s.provider], color:sourceColors[s.provider], badge: s.status.connected ? null : 'Connect' })) },
-])
+const palette = derived(() => ({ selection:scheme() === 'dark' ? '#215b9a' : '#195eae', text:scheme() === 'dark' ? '#f4f4f6' : '#1d1d1f', muted:scheme() === 'dark' ? '#adaeb3' : '#62646b' }))
+function listItem(c) { return { ...c, timestamp:nativeDate(c.lastMessageAt), preview:c.preview || '', sourceSymbol:sourceSymbol(c), sourceColor:sourceColors[c.provider] } }
+function sourceSymbol(c) { return source() === 'all' ? SOURCE_SYMBOLS[c.provider] : null }
+const connectedSources = derived(() => sources().filter(s => s.status.connected))
+const sidebarSections = derived(() => {
+  const items = [{ id: 'all', label: 'Inbox', icon: 'tray' }, { id: 'archived', label: 'Archive', icon: 'archivebox' }]
+  if (view() === 'deleted') items.push({ id: 'deleted', label: 'Recently Deleted', icon: 'trash' })
+  const sections = [{ id: 'mailboxes', items }]
+  if (connectedSources().length) sections.push({ id: 'sources', header: 'Sources', items: connectedSources().map(s => ({ id: `source:${s.provider}`, label: s.label, icon: SOURCE_SYMBOLS[s.provider], color:sourceColors[s.provider] })) })
+  return sections
+})
 const canSend = derived(() => !!detail() && !!sources().find(s => s.provider === detail().provider)?.capabilities?.send)
-const connected = derived(() => sources().some(s => s.status.connected))
 
 function say(text) {
   flash.set(text)
@@ -58,9 +64,13 @@ async function loadStatus() {
 }
 
 async function loadLists() {
-  const [inbox, archive, deleted] = await Promise.all(['inbox', 'archived', 'deleted'].map(v => nativeApi(`/api/conversations?view=${v}&source=${source()}`)))
-  counts.set({ inbox: inbox.length, archived: archive.length, deleted: deleted.length })
-  rows.set(view() === 'archived' ? archive : view() === 'deleted' ? deleted : inbox)
+  const mailbox = view()
+  const provider = source()
+  const list = (name, filter) => nativeApi(`/api/conversations?view=${name}&source=${filter}`)
+  const allInbox = list('inbox', 'all')
+  const [inbox, visible] = await Promise.all([allInbox, mailbox === 'inbox' && provider === 'all' ? allInbox : list(mailbox, provider)])
+  if (view() !== mailbox || source() !== provider) return
+  rows.set(visible)
   desktop().setBadge(inbox.filter(c => c.unread > 0).length)
 }
 
@@ -100,21 +110,36 @@ async function refresh() {
   finally { loading.set(false) }
 }
 
-async function show(next) {
+async function show(next, provider = 'all') {
   view.set(next)
+  source.set(provider)
   query.set('')
   rowLimit.set(120)
   await loadLists()
-  await select(rows()[0]?.key ?? '')
+  if (view() === next && source() === provider) await select(rows()[0]?.key ?? '')
 }
 
 async function pickNav(id) {
-  if (id === 'settings') { openSettings(); return }
   if (id === 'archived' || id === 'deleted') { await show(id); return }
   const provider = id === 'all' ? 'all' : id.slice('source:'.length)
-  if (provider !== 'all' && !sources().find(s => s.provider === provider)?.status.connected) { await connect(provider); return }
-  source.set(provider)
-  await show('inbox')
+  await show('inbox', provider)
+}
+
+function openMessagesAccess() {
+  return nativeCraft().openURL('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')
+}
+
+async function sourceMenu() {
+  try {
+    const options = sources()
+      .filter(s => !s.status.connected || s.provider === 'slack')
+      .map(s => ({ id: s.provider, title: s.status.connected ? 'Manage Slack Workspaces…' : s.provider === 'imessage' ? 'Allow Messages Access…' : `Connect ${s.label}…`, icon: SOURCE_SYMBOLS[s.provider] }))
+    if (!options.length) return
+    const provider = await desktop().contextMenu(options)
+    if (provider === 'imessage') await openMessagesAccess()
+    else if (provider) await connect(provider)
+  }
+  catch (error) { say(error.message) }
 }
 
 function openSettings() {
@@ -167,10 +192,11 @@ async function openInApp(key = selectedKey()) {
 }
 
 async function rowMenu(c) {
-  await select(c.key)
+  if (!c) return
+  if (selectedKey() !== c.key) await select(c.key)
   const choice = await desktop().contextMenu([
     { id: c.state === 'archived' ? 'restore' : 'archive', title: c.state === 'archived' ? 'Move to Inbox' : 'Archive', icon: 'archivebox' },
-    { id: 'always', title: `Always Archive ${c.title}`, icon: 'archivebox.circle' },
+    { id: 'always', title: 'Always Archive', icon: 'archivebox.circle', checked: !!c.rule, disabled: !!c.rule },
     { separator: true }, { id: 'open', title: `Show in ${SOURCE_NAMES[c.provider]}`, icon: 'arrow.up.forward.app', disabled: !c.url },
     { id: 'export', title: 'Export…', icon: 'square.and.arrow.up', disabled: !c.saved },
     ...(c.saved ? [{ separator: true }, { id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'trash' }] : []),
@@ -240,11 +266,17 @@ async function sendDraft() {
 
 async function connect(provider) {
   connecting.set(provider); token.set(''); appToken.set(''); discordUser.set(''); qrImage.set('')
+  showConnectionOptions.set(false)
+  workspaces.set([])
+  whatsapp.set(null)
   if (provider === 'whatsapp') {
     whatsapp.set(await nativePost('/api/whatsapp/link'))
     await updateQR()
   }
-  if (provider === 'slack') workspaces.set((await nativeApi('/api/slack/workspaces')).workspaces)
+  if (provider === 'slack') {
+    const { workspaces: list } = await nativeApi('/api/slack/workspaces')
+    if (connecting() === provider) workspaces.set(list)
+  }
 }
 
 async function updateQR() {
@@ -267,7 +299,7 @@ async function disconnect(provider, teamId = null) {
 
 async function openCleanup() {
   try {
-    await desktop().openWindow({ name: 'cleanup', route: 'Cleanup', title: 'Clean Up', titlebarStyle: 'standard', width: 480, height: 340, minWidth: 420, minHeight: 310, params: { source: source() } })
+    await desktop().openWindow({ name: 'cleanup', route: 'Cleanup', title: 'Clean Up', titlebarStyle: 'standard', width: 460, height: 330, minWidth: 420, minHeight: 310, params: { source: source() } })
   }
   catch (error) { say(error.message) }
 }
@@ -275,16 +307,27 @@ async function openCleanup() {
 function move(delta) { const index = rows().findIndex(c => c.key === selectedKey()); select(rows()[Math.max(0, Math.min(rows().length - 1, index + delta))]?.key ?? '') }
 
 let searchTimer
+let searchRequest = 0
 effect(() => {
-  const text = query().trim()
+  const text = searchTerm()
+  const request = ++searchRequest
   clearTimeout(searchTimer)
-  if (!text) { results.set([]); return }
+  results.set([])
+  searchState.set(text ? 'loading' : 'idle')
+  if (!text) return
   searchTimer = setTimeout(async () => {
-    try { const hits = await nativeApi(`/api/search?q=${encodeURIComponent(text)}`); if (query().trim() === text) results.set(hits) }
-    catch (error) { say(error.message) }
+    try {
+      const hits = await nativeApi(`/api/search?q=${encodeURIComponent(text)}`)
+      if (request !== searchRequest) return
+      results.set(hits)
+      searchState.set('ready')
+    }
+    catch {
+      if (request === searchRequest) searchState.set('error')
+    }
   }, 180)
 })
-onDestroy(() => clearTimeout(searchTimer))
+onDestroy(() => { searchRequest++; clearTimeout(searchTimer) })
 
 async function openResult(hit) {
   source.set('all'); query.set(''); await select(hit.conversationKey)
@@ -325,63 +368,65 @@ onMount(async () => {
 </script>
 
 <View class="flex-1 flex-row" testID="main-shell">
-  <AtticSidebar :sections="sidebarSections()" :selected="selectedNav()" :fixture="fixture()" @choose="pickNav($event)" @settings="openSettings()" />
-  <View class="flex-col w-[340px] shrink-0 border-r" :style="{borderColor:'separator',backgroundColor:scheme() === 'dark' ? '#202022' : '#fbfbfc'}" testID="inbox-pane">
-    <View class="flex-row gap-2 items-center justify-between px-4 pt-3 pb-2 h-[46px]">
-      <Text class="flex-1 font-semibold text-[16px]" :text="listTitle()" testID="mailbox-title" />
-      <Text class="text-[10.5px]" style="color: secondaryLabel" :text="rows().length + ' conversations'" />
-      <ToolbarButton label="Clean Up…" symbol="sparkles" testID="cleanup" @click="openCleanup()" />
+  <AtticSidebar :sections="sidebarSections()" :selected="selectedNav()" :fixture="fixture()" @choose="pickNav($event)" @sources="sourceMenu()" @settings="openSettings()" />
+  <View class="flex-col shrink-0 w-[328px] border-r" :style="{borderColor:'separator',backgroundColor:scheme() === 'dark' ? '#202022' : '#fafafb'}" testID="inbox-pane">
+    <View class="flex-row gap-2 items-center justify-between px-4 h-[54px]">
+      <Text class="flex-1 font-semibold text-[19px]" :text="listTitle()" testID="mailbox-title" />
+      <ToolbarButton label="Clean Up…" symbol="archivebox.circle" testID="cleanup" @click="openCleanup()" />
     </View>
-    <View class="pb-2 px-3"><TextInput type="search" class="h-[28px] text-[12px]" placeholder="Search everything Attic kept" x-model="query" testID="search" /></View>
+    <View class="pb-3 px-4"><TextInput type="search" class="h-[28px] text-[13px]" placeholder="Search messages" x-model="query" testID="search" /></View>
     <Text :if="loading()" class="p-4 text-[12px]" style="color: secondaryLabel" :text="'Loading conversations…'" />
-    <View :if="!loading() && !rows().length && !query()" class="p-6 gap-2">
-      <Text class="font-medium text-[13px]" :text="view() === 'archived' ? 'Nothing archived yet' : 'All caught up'" />
-      <Text class="text-[12px]" style="color: secondaryLabel" :text="view() === 'archived' ? 'Archive a conversation to keep its history here.' : 'Your connected conversations will appear here.'" />
+    <View :if="!loading() && !rows().length && !searchTerm()" class="gap-1 px-5 py-4">
+      <Text class="font-medium text-[13px]" :text="view() === 'archived' ? 'No archived conversations' : view() === 'deleted' ? 'No recently deleted conversations' : 'Your inbox is empty'" />
+      <Text :if="view() === 'archived'" class="text-[12px]" style="color: secondaryLabel" :text="'Conversations you archive appear here.'" />
     </View>
     <ScrollView class="flex-1" testID="conversation-list">
-      <View :if="!query()" class="gap-[2px] px-2 pb-2">
+      <View :if="!searchTerm()" class="gap-[3px] pb-3 px-2">
         <ConversationListItem :for="c in shownRows()" :key="c.key" :item="listItem(c)" :selected="c.key === selectedKey()" :palette="palette()" :testID="`row-${c.key}`" @choose="select(c.key)" @menu="rowMenu(c)" />
         <Button :if="rows().length > rowLimit()" title="More conversations" variant="ghost" @click="rowLimit.set(rowLimit()+120)" />
       </View>
-      <View :if="query()" class="gap-1 p-2">
-        <Text :if="!results().length" class="p-4 text-[12px]" style="color: secondaryLabel" :text="'Nothing Attic kept matches.'" />
+      <View :if="searchTerm()" class="gap-[3px] pb-3 px-2">
+        <Text :if="!results().length" class="px-3 py-4 text-[12px]" style="color: secondaryLabel" :text="searchState() === 'loading' ? 'Searching…' : searchState() === 'error' ? 'Search failed. Try again.' : 'No matching messages.'" testID="search-status" />
         <ConversationListItem :for="hit in results()" :key="hit.guid" :item="{title:hit.title,preview:hit.snippet.replace(/[\u0001\u0002]/g, ''),initials:hit.title.slice(0,2).toUpperCase()}" :palette="palette()" :testID="`result-${hit.guid}`" @choose="openResult(hit)" />
       </View>
     </ScrollView>
   </View>
   <View class="flex-1 flex-col min-w-0" :style="{backgroundColor:scheme() === 'dark' ? '#1e1e20' : '#ffffff'}" testID="transcript-pane">
-    <View :if="!detail()" class="flex-1 gap-3 items-center justify-center p-8">
-      <Icon symbol="bubble.left.and.bubble.right" class="h-[38px] w-[38px]" style="color: secondaryLabel" />
-      <Text class="font-medium text-[17px]" :text="access() === 'needs-full-disk-access' && !connected() ? 'Connect your conversations' : 'Choose a conversation'" />
-      <Text :if="access() === 'needs-full-disk-access'" class="text-[12px]" style="color: secondaryLabel" :text="'Allow Attic to read Messages in Privacy & Security.'" />
-      <Button :if="access() === 'needs-full-disk-access'" title="Open Privacy & Security" @click="nativeCraft().openURL('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')" />
-      <Button title="Link WhatsApp" variant="ghost" @click="connect('whatsapp')" />
-      <Button title="Connect Slack" variant="ghost" @click="connect('slack')" />
-      <Button title="Connect Discord" variant="ghost" @click="connect('discord')" />
+    <View :if="!detail() && !loading()" class="flex-1 gap-3 items-center justify-center p-8">
+      <Icon symbol="bubble.left.and.bubble.right" class="h-[30px] w-[30px]" style="color: secondaryLabel" />
+      <Text class="font-medium text-[16px]" :text="connectedSources().length ? 'Choose a conversation' : 'Connect a source to get started'" />
+      <Button :if="!connectedSources().length && access() === 'needs-full-disk-access'" title="Allow Messages Access…" @click="openMessagesAccess()" />
+      <Button :if="!connectedSources().length && access() !== 'needs-full-disk-access'" title="Add a Source…" @click="sourceMenu()" />
     </View>
-    <AtticConversationHeader :if="detail()" :conversation="detail()" :busy="busy()" @archive="archive()" @restore="unarchive()" @open="openInApp()" />
-    <View :if="detail() && !detail().inApp" class="flex-row gap-2 items-center px-5 py-2 border-b" style="border-color: separator">
-      <Icon symbol="archivebox" class="w-[15px] h-[15px]" style="color: secondaryLabel" />
-      <Text class="text-[11px]" style="color: secondaryLabel" :text="`Kept in Attic. This conversation is out of ${SOURCE_NAMES[detail().provider]}.`" />
-    </View>
+    <AtticConversationHeader :if="detail()" :conversation="detail()" :busy="busy()" @archive="archive()" @restore="unarchive()" @menu="rowMenu(detail())" />
     <AtticTranscript :if="detail()" :messages="messages()" :conversation="detail()" :earlier="hasEarlier()" :dark="scheme() === 'dark'" @earlier="loadEarlier()" @message-menu="messageMenu($event)" @attachment="previewAttachment($event)" />
     <AtticComposer :if="detail()" v-model:draft="draft" :enabled="canSend()" :canOpen="!!detail().url" :busy="busy()" :provider="detail().provider" :reply="replyTo()" :files="outgoing()" @send="sendDraft()" @attach="attachFiles()" @open="openInApp()" @cancel-reply="replyTo.set(null)" @remove-file="outgoing.set(outgoing().filter(f => f.path !== $event.path))" />
-    <Text :if="flash()" class="px-5 py-2 text-[11px]" style="color: secondaryLabel" :text="flash()" testID="status-message" />
+    <Text :if="flash()" class="px-5 py-2 text-[12px] border-t" style="color: secondaryLabel; border-color: separator" :text="flash()" testID="status-message" />
   </View>
-  <Modal :if="connecting()" :visible="true" title="Connect a source" @close="connecting.set('')" testID="connect-dialog">
-    <View class="gap-3 p-6">
-      <Text class="font-semibold text-[20px]" :text="connecting() === 'whatsapp' ? 'Link WhatsApp' : `Connect ${SOURCE_NAMES[connecting()]}`" />
-      <Text :if="connecting() === 'whatsapp'" :text="'On your phone, open WhatsApp > Settings > Linked Devices and scan this code.'" />
-      <Image :if="connecting() === 'whatsapp' && qrImage()" :source="qrImage()" class="h-[240px] w-[240px]" accessibilityLabel="WhatsApp pairing code" />
-      <Text :if="connecting() === 'whatsapp' && !qrImage()" :text="whatsapp()?.phase === 'open' ? 'WhatsApp is linked.' : 'Preparing the pairing code…'" />
-      <Text :if="connecting() === 'slack'" :text="'Use a Slack User OAuth token. An optional App-Level token enables live updates. Tokens stay in the macOS keychain.'" />
-      <TextInput :if="connecting() === 'slack' || connecting() === 'discord'" type="password" placeholder="Token" x-model.trim="token" testID="source-token" />
-      <TextInput :if="connecting() === 'slack'" type="password" placeholder="App-Level Token (optional)" x-model.trim="appToken" />
-      <Picker :if="connecting() === 'discord'" x-model="account" :options="[{value:'user',label:'User account'},{value:'bot',label:'Bot account'}]" />
-      <TextInput :if="connecting() === 'discord'" placeholder="Discord User ID (optional)" x-model.trim="discordUser" />
-      <Button :for="workspace in workspaces()" :key="workspace.teamId" :title="`Sign out of ${workspace.team}`" @click="disconnect('slack', workspace.teamId)" />
-      <Button :if="connecting() === 'slack' || connecting() === 'discord'" title="Connect" variant="primary" :disabled="!token().trim()" @click="connectToken()" />
-      <Button title="Done" @click="connecting.set('')" />
+  <Modal :if="connecting()" :visible="true" :title="`Connect ${SOURCE_NAMES[connecting()]}`" @close="connecting.set('')" testID="connect-dialog">
+    <View class="gap-4 p-6">
+      <View :if="connecting() === 'whatsapp'" class="gap-3">
+        <Text style="color: secondaryLabel" :text="'In WhatsApp on your phone, open Settings, then Linked Devices.'" />
+        <Image :if="qrImage()" :source="qrImage()" class="h-[208px] w-[208px]" accessibilityLabel="WhatsApp pairing code" />
+        <Text :if="!qrImage()" :text="whatsapp()?.error || 'Preparing the pairing code…'" />
+      </View>
+      <View :if="connecting() !== 'whatsapp'" class="gap-2">
+        <Picker :if="connecting() === 'discord'" x-model="account" :options="[{value:'user',label:'User account'},{value:'bot',label:'Bot account'}]" accessibilityLabel="Discord account type" />
+        <TextInput type="password" :placeholder="connecting() === 'slack' ? 'Slack User OAuth token' : 'Discord token'" x-model.trim="token" testID="source-token" accessibilityLabel="Account token" />
+        <Button :title="showConnectionOptions() ? 'Hide Advanced Options' : 'Advanced Options…'" variant="ghost" @click="showConnectionOptions.set(!showConnectionOptions())" testID="source-options" />
+        <View :if="showConnectionOptions()" class="gap-2">
+          <TextInput :if="connecting() === 'slack'" type="password" placeholder="App-level token for live updates" x-model.trim="appToken" accessibilityLabel="Slack app-level token" />
+          <TextInput :if="connecting() === 'discord'" placeholder="Discord user ID (optional)" x-model.trim="discordUser" accessibilityLabel="Discord user ID" />
+        </View>
+      </View>
+      <View :if="workspaces().length" class="gap-2">
+        <Text class="font-medium" :text="'Connected Workspaces'" />
+        <Button :for="workspace in workspaces()" :key="workspace.teamId" :title="`Sign out of ${workspace.team}`" @click="disconnect('slack', workspace.teamId)" />
+      </View>
+      <View class="flex-row gap-2 justify-end">
+        <Button :title="connecting() === 'whatsapp' ? 'Done' : 'Cancel'" @click="connecting.set('')" />
+        <Button :if="connecting() !== 'whatsapp'" title="Connect" variant="primary" :disabled="!token().trim()" @click="connectToken()" />
+      </View>
     </View>
   </Modal>
 </View>

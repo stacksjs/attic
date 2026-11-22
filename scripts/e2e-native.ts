@@ -66,7 +66,7 @@ async function action(action: string, target?: string, value?: string, name = 'm
 }
 try {
   await wait('AppKit and zig-js boot without a WebView', s => s.renderer === 'appkit' && s.scriptEngine === 'zig-js' && window(s)?.contextClass === 'ZigJSContext' && s.webViews === 0 && !!node(s, 'conversation-title')?.value)
-  await wait('Conversation count renders', s => !!window(s)?.nodes.some(n => n.value === '13 conversations'))
+  await wait('The inbox and its actions render', s => node(s, 'mailbox-title')?.value === 'Inbox' && node(s, 'sources-menu')?.visible === true && node(s, 'conversation-actions')?.visible === true)
   const initial = await state()
   const sam = window(initial!)!.nodes.find(n => n.id.startsWith('row-') && n.id.includes('14155550178'))
   if (!sam) throw new Error('Sample Sam Rivera conversation is missing')
@@ -85,6 +85,8 @@ try {
   await wait('Archive completes', s => !!node(s, 'status-message')?.value?.includes('messages kept'))
   await action('pick', 'mailboxes', 'archived')
   await wait('Archive appears in the native sidebar', s => node(s, 'mailboxes')?.value === 'archived' && !!node(s, sam.id))
+  await action('fill', 'search', 'no fixture message matches this')
+  await wait('A completed search can show an empty state', s => node(s, 'search-status')?.value === 'No matching messages.')
   await action('fill', 'search', 'couch')
   const search = await wait('Native search finds saved messages', s => node(s, 'search')?.nativeClass === 'NSSearchField' && !!window(s)?.nodes.some(n => n.id.startsWith('result-') && n.visible))
   const hit = window(search)!.nodes.find(n => n.id.startsWith('result-') && n.visible)!
@@ -101,9 +103,9 @@ try {
   await action('screenshot', undefined, undefined, 'settings')
   await action('appearance', undefined, 'dark')
   await action('pick', 'resurface', 'stay', 'settings')
-  await wait('Resurface setting finishes saving before another edit', s => node(s,'resurface','settings')?.value === 'stay' && node(s,'removal','settings')?.enabled === true && node(s,'settings-note','settings')?.value === 'Settings saved.')
+  await wait('Resurface setting finishes saving before another edit', s => node(s,'resurface','settings')?.value === 'stay' && node(s,'removal','settings')?.enabled === true)
   await action('pick', 'removal', 'off', 'settings')
-  await wait('Settings changes persist', s => node(s, 'resurface', 'settings')?.value === 'stay' && node(s, 'removal', 'settings')?.value === 'off' && node(s, 'settings-note', 'settings')?.value === 'Settings saved.')
+  await wait('Settings changes complete without a persistent status banner', s => node(s, 'resurface', 'settings')?.value === 'stay' && node(s, 'removal', 'settings')?.value === 'off' && node(s, 'removal', 'settings')?.enabled === true && !node(s, 'settings-note', 'settings')?.visible)
   await action('click', 'settings-item-rules', undefined, 'settings')
   await wait('Settings sidebar opens Always Archive', s => !!window(s, 'settings')?.nodes.some(n => n.visible && n.value === 'No rules yet') && !node(s, 'removal', 'settings')?.visible)
   await action('click', 'settings-item-phone', undefined, 'settings')
@@ -145,7 +147,7 @@ try {
   await wait('Reopened Settings restores saved values', s => node(s, 'resurface', 'settings')?.value === 'stay' && node(s, 'removal', 'settings')?.value === 'off')
   await action('close', undefined, undefined, 'settings')
   await action('click', 'cleanup')
-  await wait('Clean Up opens a native window and counts conversations', s => node(s, 'cleanup-window', 'cleanup')?.visible === true && node(s, 'cleanup-heading', 'cleanup')?.value === 'Archive from All Inboxes' && node(s, 'cleanup-count', 'cleanup')?.value === '0 conversations')
+  await wait('Clean Up opens a native window and counts conversations', s => node(s, 'cleanup-window', 'cleanup')?.visible === true && node(s, 'cleanup-heading', 'cleanup')?.value === 'Archive from Inbox' && node(s, 'cleanup-count', 'cleanup')?.value === '0 conversations')
   await action('pick', 'cleanup-cutoff', '182', 'cleanup')
   await wait('Clean Up updates the archive preview for another cutoff', s => node(s, 'cleanup-cutoff', 'cleanup')?.value === '182' && node(s, 'cleanup-count', 'cleanup')?.value === '1 conversation' && node(s, 'cleanup-start', 'cleanup')?.enabled === true)
   await action('screenshot', undefined, undefined, 'cleanup')

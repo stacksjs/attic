@@ -65,12 +65,12 @@ async function save(key, value) {
   const preference = key === 'resurface' ? resurface : removal
   const previous = preference()
   saving.set(true)
+  note.set('')
   preference.set(value)
   try {
     const result = await nativePost('/api/settings', { [key]: value })
     resurface.set(result.resurface)
     removal.set(result.removal)
-    note.set('Settings saved.')
   }
   catch (error) {
     preference.set(previous)
@@ -85,7 +85,8 @@ async function allowAccessibility() {
 }
 
 async function stop(rule) {
-  try { rules.set((await nativePost('/api/rules/delete', { id: rule.id })).rules); note.set(`Stopped always archiving ${rule.label}. Saved messages stay in Attic.`) }
+  note.set('')
+  try { rules.set((await nativePost('/api/rules/delete', { id: rule.id })).rules) }
   catch (error) { note.set(error.message) }
 }
 
@@ -110,7 +111,7 @@ async function forget(phone) {
     await nativePost('/api/phone/forget', { id: phone.id })
     if (pairing()?.pairing?.device === phone.id) pairing.set(null)
     await loadPhones()
-    note.set(`${phone.name} was disconnected.`)
+    note.set('')
   }
   catch (error) { note.set(error.message) }
 }
@@ -137,32 +138,32 @@ onMount(() => {
       <SettingsSidebarGroup>
         <SettingsSidebarItem id="archiving" label="Archiving" symbol="archivebox.fill" tone="blue" />
         <SettingsSidebarItem id="rules" label="Always Archive" symbol="clock.fill" tone="indigo" />
-        <SettingsSidebarItem id="phone" label="Phone" symbol="iphone" tone="green" keywords="devices sync pairing" />
+        <SettingsSidebarItem id="phone" label="Phone Sync" symbol="iphone" tone="green" keywords="devices sync pairing" />
         <SettingsSidebarItem id="updates" label="Software Update" symbol="arrow.down.circle.fill" tone="blue" />
         <SettingsSidebarItem id="about" label="About" symbol="info.circle.fill" tone="grey" />
       </SettingsSidebarGroup>
     </template>
 
     <SettingsPane id="archiving" title="Archiving" active>
-      <SettingsGroup footer="Attic can save conversations while Messages is closed. Automatic rules and Clean Up leave closed apps alone.">
-        <SettingsRow label="When someone writes again" setting="resurface" keywords="inbox reply new message" layout="stacked">
-          <Picker class="w-[220px]" :value="resurface()" :disabled="saving() || !loaded()" :options="[{value:'inbox',label:'Move it back to the Inbox'},{value:'stay',label:'Keep it archived'}]" @change="save('resurface', $event.nativeEvent.value)" testID="resurface" accessibilityLabel="When someone writes again" />
+      <SettingsGroup footer="Automatic rules and Clean Up leave closed apps closed.">
+        <SettingsRow label="When someone writes again" setting="resurface" keywords="inbox reply new message">
+          <Picker class="w-[184px]" :value="resurface()" :disabled="saving() || !loaded()" :options="[{value:'inbox',label:'Move to Inbox'},{value:'stay',label:'Keep Archived'}]" @change="save('resurface', $event.nativeEvent.value)" testID="resurface" accessibilityLabel="When someone writes again" />
         </SettingsRow>
-        <SettingsRow label="When you archive" setting="removal" keywords="delete remove messages whatsapp" layout="stacked">
-          <Picker class="w-[220px]" :value="removal()" :disabled="saving() || !loaded()" :options="[{value:'auto',label:'Take it out of the app'},{value:'confirm',label:'Messages asks first'},{value:'off',label:'Archive in Attic only'}]" @change="save('removal', $event.nativeEvent.value)" testID="removal" accessibilityLabel="When you archive" />
+        <SettingsRow label="When you archive" setting="removal" keywords="delete remove messages whatsapp">
+          <Picker class="w-[184px]" :value="removal()" :disabled="saving() || !loaded()" :options="[{value:'auto',label:'Remove from Source App'},{value:'confirm',label:'Confirm in Messages'},{value:'off',label:'Keep in Source App'}]" @change="save('removal', $event.nativeEvent.value)" testID="removal" accessibilityLabel="When you archive" />
         </SettingsRow>
       </SettingsGroup>
       <View :if="loaded() && removal() !== 'off' && !accessible()">
         <SettingsGroup>
-          <SettingsRow label="Accessibility" description="Allow Attic to take archived conversations out of Messages and WhatsApp." setting="accessibility" layout="stacked">
-            <Button title="Allow Accessibility" @click="allowAccessibility()" />
+          <SettingsRow label="Accessibility" description="Needed to remove chats from Messages and WhatsApp." setting="accessibility" multiline>
+            <Button title="Allow" accessibilityLabel="Allow Accessibility" @click="allowAccessibility()" />
           </SettingsRow>
         </SettingsGroup>
       </View>
     </SettingsPane>
 
     <SettingsPane id="rules" title="Always Archive">
-      <SettingsGroup header="Conversations" footer="To add a rule, right-click a conversation and choose Always Archive.">
+      <SettingsGroup footer="Choose Always Archive from a conversation’s actions.">
         <SettingsRow :if="!rules().length" label="No rules yet" />
         <SettingsRow :for="rule in rules()" :key="rule.id" :label="rule.label || rule.value" :description="`${rule.kind === 'person' ? 'Person' : 'Group'} on ${SOURCE_NAMES[rule.provider] || rule.provider}`">
           <Button title="Stop" @click="stop(rule)" :testID="`stop-${rule.id}`" />
@@ -170,24 +171,23 @@ onMount(() => {
       </SettingsGroup>
     </SettingsPane>
 
-    <SettingsPane id="phone" title="Phone">
+    <SettingsPane id="phone" title="Phone Sync">
       <SettingsGroup>
-        <SettingsRow label="Pair a phone" description="Sync a copy of your archive with a phone on the same Wi-Fi." setting="pair-phone" keywords="sync device qr" layout="stacked">
-          <Button title="Pair a phone" :disabled="preparingPairing() || (pairing() && !paired())" @click="pairPhone()" testID="pair-phone" />
-          <View :if="pairing() && !paired()" class="gap-2 mt-3">
-            <Image :source="qr()" class="h-[180px] w-[180px]" accessibilityLabel="Phone pairing code" />
-            <Text class="text-[12px]" :text="'Scan this code with your phone.'" />
-            <Button title="Close pairing code" @click="pairing.set(null)" />
-          </View>
-          <Text :if="paired()" :text="'Paired. The phone is copying the archive.'" />
+        <SettingsRow label="Pair a phone" description="Sync your archive over the same Wi-Fi." setting="pair-phone" keywords="sync device qr" multiline>
+          <Button :title="pairing() && !paired() ? 'Close Code' : 'Pair…'" @click="pairing() && !paired() ? pairing.set(null) : pairPhone()" :disabled="preparingPairing()" testID="pair-phone" />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup header="Devices">
-        <SettingsRow :if="!phones().length" label="No paired devices" />
-        <SettingsRow :for="phone in phones()" :key="phone.id" :label="phone.name" :description="phone.lastSeenAt ? `Last synced ${nativeDate(phone.lastSeenAt)}` : 'Not synced yet'">
-          <Button title="Forget" @click="forget(phone)" />
-        </SettingsRow>
-      </SettingsGroup>
+      <View :if="pairing() && !paired()" class="gap-3 items-center p-3">
+        <Image :source="qr()" class="h-[160px] w-[160px]" accessibilityLabel="Phone pairing code" />
+        <Text class="text-[12px]" style="color: secondaryLabel" :text="'Scan this code with your phone.'" />
+      </View>
+      <View :if="phones().length">
+        <SettingsGroup header="Paired Devices">
+          <SettingsRow :for="phone in phones()" :key="phone.id" :label="phone.name" :description="phone.lastSeenAt ? `Last synced ${nativeDate(phone.lastSeenAt)}` : 'Not synced yet'">
+            <Button title="Forget…" @click="forget(phone)" />
+          </SettingsRow>
+        </SettingsGroup>
+      </View>
     </SettingsPane>
 
     <SettingsPane id="updates" title="Software Update">
@@ -198,11 +198,11 @@ onMount(() => {
 
     <SettingsPane id="about" title="About">
       <SettingsGroup>
-        <SettingsRow label="Attic version" setting="version" keywords="build release">
+        <SettingsRow label="Version" setting="version" keywords="build release">
           <Text :text="version()" testID="settings-version" />
         </SettingsRow>
       </SettingsGroup>
     </SettingsPane>
   </SettingsWindow>
-  <Text :if="note()" class="px-4 py-2 text-[12px]" :text="note()" testID="settings-note" />
+  <Text :if="note()" class="px-4 py-2 text-[12px] border-t" style="color: secondaryLabel; border-color: separator" :text="note()" testID="settings-note" />
 </View>
