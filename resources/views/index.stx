@@ -3,7 +3,7 @@ import pkg from '../../package.json'
 
 const source = 'https://github.com/stacksjs/attic'
 const releases = 'https://github.com/stacksjs/attic-downloads/releases/latest'
-const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Chatfold-${pkg.version}.dmg`
+const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Texts-${pkg.version}.dmg`
 
 const channels = [
   { name: 'Messages', icon: 'i-hugeicons-message-01' },
@@ -13,11 +13,11 @@ const channels = [
 ]
 
 const faqs = [
-  { question: 'Where is my archive stored?', answer: 'Chatfold stores its archive on your Mac. If you set up phone sync, Chatfold can share your conversations with a paired device.' },
-  { question: 'What happens when I archive a chat?', answer: 'Chatfold saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Chatfold shows what it can do before you archive.' },
-  { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Chatfold inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
-  { question: 'Why does Chatfold ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Chatfold asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
-  { question: 'How do updates work?', answer: 'Open Software Update in Settings to check any time. If you already use Attic, the same updater installs Chatfold with your existing archive.' },
+  { question: 'Where is my archive stored?', answer: 'Texts stores its archive on your Mac. If you set up phone sync, Texts can share your conversations with a paired device.' },
+  { question: 'What happens when I archive a chat?', answer: 'Texts saves a local copy and moves the chat to its archive. Depending on the service and conversation, it can also archive, close, or remove the thread in the original app. Texts shows what it can do before you archive.' },
+  { question: 'Can I move an archived chat back?', answer: 'You can bring a conversation back to your Texts inbox. Recovery in the original app depends on the service. For example, Messages recovery is available while the thread is in Recently Deleted.' },
+  { question: 'Why does Texts ask for macOS permissions?', answer: 'Reading the local Messages history requires Full Disk Access. Texts asks for Accessibility when it needs to perform an action for you in an app such as Messages or WhatsApp.' },
+  { question: 'How do updates work?', answer: 'Open Software Update in Settings to check any time. If you use Attic or Chatfold, the updater installs Texts with your existing archive.' },
 ]
 </script>
 
@@ -28,11 +28,11 @@ const faqs = [
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Chatfold | A Mac inbox and archive for your chats</title>
-  <meta name="description" content="Chatfold brings Messages, WhatsApp, Slack, and Discord together in one Mac inbox with a searchable local archive.">
-  <meta property="og:title" content="Chatfold | A Mac inbox and archive for your chats">
-  <meta property="og:description" content="Your chats, one inbox. Chatfold keeps a searchable archive on your Mac.">
-  <meta property="og:site_name" content="Chatfold">
+  <title>Texts | A Mac inbox and archive for your chats</title>
+  <meta name="description" content="Texts brings Messages, WhatsApp, Slack, and Discord together in one Mac inbox with a searchable local archive.">
+  <meta property="og:title" content="Texts | A Mac inbox and archive for your chats">
+  <meta property="og:description" content="Your chats, one inbox. Texts keeps a searchable archive on your Mac.">
+  <meta property="og:site_name" content="Texts">
   <meta property="og:url" content="https://chatfold.stacksjs.com/">
   <meta property="og:image" content="https://chatfold.stacksjs.com/images/screens/attic-inbox-light.webp">
   <link rel="canonical" href="https://chatfold.stacksjs.com/">
@@ -135,7 +135,7 @@ const faqs = [
   <header class="flex gap-4 items-center justify-between header wrap">
     <a class="inline-flex gap-2 items-center brand" href="/">
       <img src="/images/app-icon.png" alt="" width="34" height="34">
-      Chatfold
+      Texts
     </a>
     <nav class="flex items-center nav" aria-label="Main navigation">
       <a href="#features">Archive</a>
@@ -164,7 +164,7 @@ const faqs = [
       <figure class="frame">
         <picture>
           <source srcset="/images/screens/attic-inbox-dark.webp" media="(prefers-color-scheme: dark)">
-          <img src="/images/screens/attic-inbox-light.webp" alt="Chatfold's Mac inbox showing sample conversations and an open message thread" width="1760" height="1163" fetchpriority="high">
+          <img src="/images/screens/attic-inbox-light.webp" alt="Texts showing sample conversations and an open message thread" width="1760" height="1163" fetchpriority="high">
         </picture>
       </figure>
     </section>
@@ -173,7 +173,7 @@ const faqs = [
       <figure class="frame">
         <picture>
           <source srcset="/images/screens/attic-find-dark.webp" media="(prefers-color-scheme: dark)">
-          <img src="/images/screens/attic-find-light.webp" alt="Chatfold showing search results from an archived sample conversation" width="1760" height="1163" loading="lazy">
+          <img src="/images/screens/attic-find-light.webp" alt="Texts showing search results from an archived sample conversation" width="1760" height="1163" loading="lazy">
         </picture>
       </figure>
       <div>
@@ -199,7 +199,7 @@ const faqs = [
   <footer class="flex flex-wrap gap-4 items-center justify-between footer wrap">
     <a class="inline-flex gap-2 items-center brand" href="/">
       <img src="/images/app-icon.png" alt="" width="28" height="28" loading="lazy">
-      Chatfold
+      Texts
     </a>
     <div class="flex flex-wrap items-center nav">
       <a href="{{ releases }}">Releases</a>

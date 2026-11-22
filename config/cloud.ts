@@ -2,7 +2,7 @@ import type { CloudConfig as TsCloudConfig } from '@stacksjs/ts-cloud'
 import type { CloudConfig } from '@stacksjs/types'
 
 export const tsCloud: TsCloudConfig = {
-  project: { name: 'Chatfold', slug: 'attic', region: 'us-east-1' },
+  project: { name: 'Texts', slug: 'attic', region: 'us-east-1' },
   stateDir: 'storage/cloud',
   cloud: { provider: 'hetzner', attachTo: 'stacks' },
   environments: {
