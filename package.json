@@ -1,7 +1,7 @@
 {
   "name": "attic",
   "type": "module",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "private": true,
   "description": "A Mac inbox and searchable archive for Messages, WhatsApp, Slack, and Discord.",
   "license": "MIT",

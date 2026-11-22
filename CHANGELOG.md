@@ -1,5 +1,22 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/attic/compare/v0.3.7...v0.3.8)
+
+## ✨ Features
+
+- publish Texts under the existing update channel ([12ba963](https://github.com/stacksjs/attic/commit/12ba963)) _(by Chris <chrisbreuer93@gmail.com>)_
+- use the Texts name in the app ([8bf7984](https://github.com/stacksjs/attic/commit/8bf7984)) _(by Chris <chrisbreuer93@gmail.com>)_
+- show the Texts name in macOS ([17dc23f](https://github.com/stacksjs/attic/commit/17dc23f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- call the website Texts ([574310c](https://github.com/stacksjs/attic/commit/574310c)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🐛 Bug Fixes
+
+- use the Texts name in app messages ([a472ce6](https://github.com/stacksjs/attic/commit/a472ce6)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/attic/compare/v0.3.6...v0.3.7)
 
 ## ✨ Features
