@@ -1,5 +1,25 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/attic/compare/v0.3.5...v0.3.6)
+
+## ✨ Features
+
+- simplify the Attic landing page ([85d7bad](https://github.com/stacksjs/attic/commit/85d7bad)) _(by Chris <chrisbreuer93@gmail.com>)_
+- simplify the Attic icon ([fe4e832](https://github.com/stacksjs/attic/commit/fe4e832)) _(by Chris <chrisbreuer93@gmail.com>)_
+- streamline Attic navigation and settings ([99b5719](https://github.com/stacksjs/attic/commit/99b5719)) _(by Chris <chrisbreuer93@gmail.com>)_
+- simplify the native conversation layout ([eb46c4d](https://github.com/stacksjs/attic/commit/eb46c4d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- attach the Attic site to the Stacks server ([33df907](https://github.com/stacksjs/attic/commit/33df907)) _(by Chris <chrisbreuer93@gmail.com>)_
+- build the Attic marketing page ([de0d34e](https://github.com/stacksjs/attic/commit/de0d34e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🐛 Bug Fixes
+
+- fit the marketing headline across screen sizes ([0acfa53](https://github.com/stacksjs/attic/commit/0acfa53)) _(by Chris <chrisbreuer93@gmail.com>)_
+- show actual search results on the marketing page ([a901472](https://github.com/stacksjs/attic/commit/a901472)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/attic/compare/v0.3.4...v0.3.5)
 
 ## ✨ Features
