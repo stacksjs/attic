@@ -1,5 +1,20 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/texts/compare/v0.3.8...v0.3.9)
+
+## ✨ Features
+
+- move the Texts site to its canonical domain ([af02b09](https://github.com/stacksjs/texts/commit/af02b09)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🐛 Bug Fixes
+
+- keep updates compatible after the downloads repo rename ([ce20992](https://github.com/stacksjs/texts/commit/ce20992)) _(by Chris <chrisbreuer93@gmail.com>)_
+- preserve download links after the repository rename ([c289c2e](https://github.com/stacksjs/texts/commit/c289c2e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/attic/compare/v0.3.7...v0.3.8)
 
 ## ✨ Features
