@@ -148,6 +148,6 @@ describe('export', () => {
       messages: [],
       folder: 'Attachments/%23empty',
     })
-    expect(html).toContain('Attic kept no messages for this conversation.')
+    expect(html).toContain('Chatfold kept no messages for this conversation.')
   })
 })
