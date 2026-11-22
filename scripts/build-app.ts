@@ -45,13 +45,14 @@ step(['bun', 'run', 'build:helper'])
 
 step(['./buddy', 'build:desktop'], { CRAFT_BIN: craft })
 cpSync(join(root, 'storage', 'attic', 'bin', 'attic-messages'), join(root, 'storage', 'framework', 'desktop-dist', 'attic-messages'))
+cpSync(join(root, 'storage', 'attic', 'bin', 'attic-notifications.dylib'), join(root, 'storage', 'framework', 'desktop-dist', 'attic-notifications.dylib'))
 cpSync(join(root, 'storage', 'attic', 'native', 'craft-native-macos'), join(root, 'storage', 'framework', 'desktop-dist', 'craft-runtime'))
 
 // The app replaces the bootstrap runtime with its compiled native host. Keep
 // the packaged checksums and provenance about the bytes actually distributed.
 const distribution = join(root, 'storage/framework/desktop-dist')
 const provenance = await Bun.file(join(distribution, 'provenance.json')).json()
-const artifacts = await Promise.all(['stacks-desktop', 'craft-runtime', 'attic-messages', 'desktop.json'].map(async (name) => {
+const artifacts = await Promise.all(['stacks-desktop', 'craft-runtime', 'attic-messages', 'attic-notifications.dylib', 'desktop.json'].map(async (name) => {
   const bytes = await Bun.file(join(distribution, name)).bytes()
   return { name, bytes: bytes.length, sha256: new Bun.CryptoHasher('sha256').update(bytes).digest('hex') }
 }))

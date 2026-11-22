@@ -26,9 +26,9 @@
     "build:ios": "bun run build:mobile-web && ./buddy build:ios",
     "build:android": "bun run build:mobile-web && ./buddy build:android",
     "build:mobile": "bun run build:mobile-web && ./buddy build:mobile",
-    "app": "bun run build:ui && bun run build:native && bun app/Desktop/launcher.ts",
+    "app": "bun run build:ui && bun run build:native && bun run build:helper && bun app/Desktop/launcher.ts",
     "app:sample": "bun run build:ui && bun run build:native && bun scripts/app-sample.ts",
-    "build:helper": "mkdir -p storage/attic/bin && swiftc -O app/Desktop/messages-control.swift -o storage/attic/bin/attic-messages",
+    "build:helper": "mkdir -p storage/attic/bin && swiftc -O app/Desktop/messages-control.swift -o storage/attic/bin/attic-messages && swiftc -O -emit-library app/Desktop/notifications.swift -o storage/attic/bin/attic-notifications.dylib",
     "build:app": "bun scripts/build-app.ts",
     "deploy": "./buddy deploy",
     "lint": "./buddy lint",
@@ -115,8 +115,5 @@
   },
   "devDependencies": {
     "better-dx": "^0.2.36"
-  },
-  "patchedDependencies": {
-    "craft-native@0.0.529": "patches/craft-native@0.0.529.patch"
   }
 }
