@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Attic</title>
+  <title>Chatfold</title>
   <link rel="icon" href="/images/app-icon.png" type="image/png">
   <!--
-    Attic's window. Served by the Attic agent on 127.0.0.1 and rendered by the
+    Chatfold's window. Served by the Chatfold agent on 127.0.0.1 and rendered by the
     Craft runtime with the titlebar hidden over the system's window material,
     so the page draws its own Mail-style chrome: a translucent sidebar under
     the traffic lights, a conversation list, and the transcript.
@@ -276,9 +276,9 @@ const source = state('all')
 const sources = state([])
 const connecting = state('')
 const tokenDraft = state('')
-/** The Slack workspaces Attic is signed in to, by name. */
+/** The Slack workspaces Chatfold is signed in to, by name. */
 const slackWorkspaces = state([])
-/** Attic's WhatsApp device: the code to scan while linking, the number once linked. */
+/** Chatfold's WhatsApp device: the code to scan while linking, the number once linked. */
 const whatsappLink = state(null)
 const userDraft = state('')
 const inbox = state([])
@@ -404,7 +404,7 @@ function preview(c) {
   if (view() === 'deleted' && !c.saved)
     return `${c.deleted.toLocaleString()} messages in ${appName(c.provider)}' Recently Deleted`
   if (!c.inApp)
-    return c.savedMessages > 0 ? `${c.savedMessages.toLocaleString()} messages kept by Attic` : 'Kept by Attic'
+    return c.savedMessages > 0 ? `${c.savedMessages.toLocaleString()} messages kept by Chatfold` : 'Kept by Chatfold'
   return c.preview ?? 'Attachment'
 }
 
@@ -744,8 +744,8 @@ notifications.onReply(async (event) => {
 })
 
 /**
- * Whether macOS lets Attic notify. It answers "not allowed" without asking
- * again once notifications were turned off for Attic, so the window says so
+ * Whether macOS lets Chatfold notify. It answers "not allowed" without asking
+ * again once notifications were turned off for Chatfold, so the window says so
  * and points at the switch, rather than staying silent about every message.
  */
 const notificationsAllowed = state(true)
@@ -882,7 +882,7 @@ const timeline = derived(() => {
       showAvatar: group && !m.isFromMe && ends,
     })
     // Pushed bottom-up: the timestamp sits directly above its message, and
-    // the "kept by Attic" divider above that.
+    // the "kept by Chatfold" divider above that.
     if (pausedBefore)
       rows.push({ type: 'day', id: `day-${m.guid}`, ...stamp(m.sentAt) })
     if (prev && !prev.inApp && m.inApp)
@@ -1042,7 +1042,7 @@ async function pickSource(next) {
   selectInMailbox()
 }
 
-/** Attic > Settings… (Cmd+,): its own window, brought forward if already open. */
+/** Chatfold > Settings… (Cmd+,): its own window, brought forward if already open. */
 function openSettings() {
   openSettingsWindow().catch(error => say(error.message))
 }
@@ -1143,7 +1143,7 @@ async function deleteRule(rule) {
   const result = await post('/api/rules/delete', { id: rule.id })
   rules.set(result.rules)
   await loadLists()
-  say(`Stopped always archiving ${rule.label}. What Attic already kept stays.`)
+  say(`Stopped always archiving ${rule.label}. What Chatfold already kept stays.`)
 }
 
 function ruleAppName(provider) {
@@ -1239,15 +1239,15 @@ const listTitle = derived(() => {
 })
 
 function archiveLabel() {
-  return view() === 'deleted' ? 'Keep in Attic' : 'Archive'
+  return view() === 'deleted' ? 'Keep in Chatfold' : 'Archive'
 }
 
 function archiveHint(d) {
   if (!d)
     return 'Archive (⌃⌘A)'
   if (view() === 'deleted')
-    return 'Copy it into Attic\'s Archived before Messages purges it'
-  const what = d.archiveMode === 'unsupported' ? 'Archive in Attic' : 'Archive'
+    return 'Copy it into Chatfold\'s Archived before Messages purges it'
+  const what = d.archiveMode === 'unsupported' ? 'Archive in Chatfold' : 'Archive'
   return `${what} (⌃⌘A). ${d.archiveDetail ?? ''}`.trim()
 }
 
@@ -1298,7 +1298,7 @@ async function removeSlackWorkspace(workspace) {
   await loadLists()
 }
 
-/** Show a code to scan, unless Attic is linked already. */
+/** Show a code to scan, unless Chatfold is linked already. */
 async function startWhatsAppLink() {
   try {
     const current = await api('/api/whatsapp')
@@ -1324,12 +1324,12 @@ function whatsappLinked() {
 }
 
 /**
- * The Slack app Attic signs in through: the person's own scopes, and Socket
+ * The Slack app Chatfold signs in through: the person's own scopes, and Socket
  * Mode with events on their behalf so messages arrive as they are sent.
  * Pasted into api.slack.com's "From an app manifest".
  */
 const SLACK_MANIFEST = {
-  display_information: { name: 'Attic', description: 'Your Slack in Attic.' },
+  display_information: { name: 'Chatfold', description: 'Your Slack in Chatfold.' },
   oauth_config: {
     scopes: {
       user: [
@@ -1427,7 +1427,7 @@ async function archive(key = selectedKey()) {
   try {
     const result = await post('/api/archive', { key })
     if (!result.verified) {
-      say('Attic could not copy every message yet, so it stays in the Inbox. Try again in a moment.')
+      say('Chatfold could not copy every message yet, so it stays in the Inbox. Try again in a moment.')
       return
     }
     selectNeighbour(key)
@@ -1474,10 +1474,10 @@ async function forget(key = selectedKey()) {
     return
   const answer = await showMessageBox({
     type: 'warning',
-    title: `Delete Attic's copy of ${target.title}?`,
+    title: `Delete Chatfold's copy of ${target.title}?`,
     message: target.inApp
-      ? 'The conversation stays in the app. Attic forgets its archived copy and attachments.'
-      : 'This conversation is no longer in the app, so Attic\'s copy may be the only one. It cannot be recovered.',
+      ? 'The conversation stays in the app. Chatfold forgets its archived copy and attachments.'
+      : 'This conversation is no longer in the app, so Chatfold\'s copy may be the only one. It cannot be recovered.',
     buttons: ['Delete Copy', 'Cancel'],
     defaultId: 1,
     cancelId: 1,
@@ -1490,13 +1490,13 @@ async function forget(key = selectedKey()) {
 }
 
 /**
- * Write what Attic kept out as pages anyone can read: one conversation, or
+ * Write what Chatfold kept out as pages anyone can read: one conversation, or
  * the whole archive. The agent reveals the folder when it is done.
  */
 async function exportKept(key = '') {
   const target = key ? list().find(c => c.key === key) : null
   if (key && !target?.saved) {
-    say('Attic has kept no copy of this conversation yet.')
+    say('Chatfold has kept no copy of this conversation yet.')
     return
   }
   busy.set(key || 'export')
@@ -1536,7 +1536,7 @@ async function rowMenu(event, c) {
   items.push({ id: 'export', title: 'Export…', icon: 'square.and.arrow.up', shortcut: 'cmd+shift+e', disabled: !c.saved })
   if (c.saved) {
     items.push({ separator: true })
-    items.push({ id: 'forget', title: 'Delete Attic\'s Copy…', icon: 'xmark.bin' })
+    items.push({ id: 'forget', title: 'Delete Chatfold\'s Copy…', icon: 'xmark.bin' })
   }
   const choice = await contextMenu.pick({ x: event.clientX, y: event.clientY, targetId: c.key, items })
   if (choice === 'archive')
@@ -1563,7 +1563,7 @@ function focusSearch() {
 async function installMenus() {
   await menu.set({
     menus: [
-      ...standardMenus.leading('Attic', { settings: () => openSettings() }),
+      ...standardMenus.leading('Chatfold', { settings: () => openSettings() }),
       {
         label: 'Conversation',
         items: [
@@ -1575,7 +1575,7 @@ async function installMenus() {
           { label: 'Export…', shortcut: 'cmd+shift+e', onClick: () => exportKept(selectedKey()) },
           { label: 'Export Everything…', onClick: () => exportKept() },
           { separator: true },
-          { label: 'Delete Attic\'s Copy…', onClick: () => forget() },
+          { label: 'Delete Chatfold\'s Copy…', onClick: () => forget() },
         ],
       },
       {
@@ -1743,7 +1743,7 @@ onMount(async () => {
     <div class="px-6 max-w-[460px] text-center">
       <img src="/images/app-icon.png" alt="" class="mb-4 mx-auto h-[88px] w-[88px]">
       <h1 class="mb-2 font-semibold text-[22px]">Every conversation, one calm place</h1>
-      <p class="mb-5 muted">Attic reads iMessage on this Mac, links to WhatsApp as a device of its own, and brings in Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Attic on in Privacy &amp; Security and this window carries on by itself.</p>
+      <p class="mb-5 muted">Chatfold reads iMessage on this Mac, links to WhatsApp as a device of its own, and brings in Slack and Discord with your tokens. Start with iMessage: macOS keeps your messages behind a privacy wall, so switch Chatfold on in Privacy &amp; Security and this window carries on by itself.</p>
       <div class="flex flex-wrap gap-2 justify-center whitespace-nowrap">
         <button class="toolbar-button" style="background: var(--accent); color: #fff; height: 32px; padding: 0 16px" @click="grantAccess()">Open Privacy &amp; Security</button>
         <button class="toolbar-button" style="height: 32px; padding: 0 14px; background: var(--chip)" @click="openConnect('whatsapp')">Link WhatsApp</button>
@@ -1767,27 +1767,27 @@ onMount(async () => {
       </div>
       <div class="relative">
         <span class="absolute left-2 top-[7px] text-[14px] i-hugeicons-search-01 muted"></span>
-        <input id="search" class="selectable search" type="search" placeholder="Search everything Attic kept" x-model="query" autocomplete="off" spellcheck="false">
+        <input id="search" class="selectable search" type="search" placeholder="Search everything Chatfold kept" x-model="query" autocomplete="off" spellcheck="false">
       </div>
       <button :if="needsAccess()" class="mt-2 w-full text-left border-0 banner" @click="grantAccess()">
         <span class="mt-[1px] text-[16px] i-hugeicons-lock-key" style="color: var(--amber)"></span>
-        <span class="text-[11.5px]"><span class="font-semibold">iMessage needs Full Disk Access.</span> <span class="muted">Switch Attic on in Privacy &amp; Security.</span></span>
+        <span class="text-[11.5px]"><span class="font-semibold">iMessage needs Full Disk Access.</span> <span class="muted">Switch Chatfold on in Privacy &amp; Security.</span></span>
       </button>
       <button :if="source() === 'slack' && connectedTo('slack')" class="mt-2 p-0 text-[11.5px] text-[var(--accent)] bg-transparent border-0 cursor-pointer" @click="openConnect('slack')">Add a Slack workspace…</button>
       <button :if="!notificationsAllowed() && !presenting" class="mt-2 w-full text-left border-0 banner" @click="openNotificationSettings()">
         <span class="mt-[1px] text-[16px] i-hugeicons-notification-off-01" style="color: var(--amber)"></span>
-        <span class="text-[11.5px]"><span class="font-semibold">Notifications are off for Attic.</span> <span class="muted">Turn on Allow Notifications in System Settings to hear new messages.</span></span>
+        <span class="text-[11.5px]"><span class="font-semibold">Notifications are off for Chatfold.</span> <span class="muted">Turn on Allow Notifications in System Settings to hear new messages.</span></span>
       </button>
       <button :if="source() === 'whatsapp' && whatsappLink()?.available && !whatsappLinked()" class="mt-2 w-full text-left border-0 banner" @click="openConnect('whatsapp')">
         <span class="mt-[1px] text-[16px] i-hugeicons-whatsapp" style="color: #25d366"></span>
-        <span class="text-[11.5px]"><span class="font-semibold">Link Attic to WhatsApp.</span> <span class="muted">Send, reply and get every message without WhatsApp for Mac.</span></span>
+        <span class="text-[11.5px]"><span class="font-semibold">Link Chatfold to WhatsApp.</span> <span class="muted">Send, reply and get every message without WhatsApp for Mac.</span></span>
       </button>
     </div>
 
     <div class="flex-1 pb-3 scroller" tabindex="0" @keydown="onListKey($event)" @scroll="onListScroll($event)">
       <!-- Search results. -->
       <div :if="showingResults()">
-        <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">Nothing Attic kept matches.</div>
+        <div :if="!searching() && results().length === 0" class="px-6 py-10 text-center muted">Nothing Chatfold kept matches.</div>
         <button :for="hit in results()" :key="hit.guid" class="w-[calc(100%-16px)] text-left bg-transparent border-0 row" @click="openResult(hit)">
           <div class="mt-0.5 avatar large"><span :class="sourceIcon(hit.provider)"></span></div>
           <div class="min-w-0">
@@ -1877,7 +1877,7 @@ onMount(async () => {
         <span class="mt-[1px] text-[18px] i-hugeicons-archive-02" style="color: var(--amber)"></span>
         <div class="text-[12px]">
           <div class="font-semibold">Out of {{ appName(detail()?.provider) }}</div>
-          <div class="muted">Attic kept every message and attachment it copied; what the app no longer holds is outlined.</div>
+          <div class="muted">Chatfold kept every message and attachment it copied; what the app no longer holds is outlined.</div>
         </div>
       </div>
     </div>
@@ -1888,7 +1888,7 @@ onMount(async () => {
         <div :if="row.type === 'day'" class="pb-1.5 pt-5 text-[11px] text-center muted"><span class="font-semibold">{{ row.day }}</span> {{ row.time }}</div>
         <div :if="row.type === 'kept'" class="flex gap-2 items-center py-3 text-[11px] muted">
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
-          <span>Above: kept by Attic after {{ appName(detail()?.provider) }} removed it</span>
+          <span>Above: kept by Chatfold after {{ appName(detail()?.provider) }} removed it</span>
           <span class="flex-1 h-px" style="background: var(--separator)"></span>
         </div>
         <div :if="row.type === 'message' && row.m.kind === 'event'" class="py-1.5 text-[11px] text-center muted">{{ eventText(row.m) }}</div>
@@ -1956,7 +1956,7 @@ onMount(async () => {
           <span class="text-[16px] i-hugeicons-arrow-up-02"></span>
         </button>
       </div>
-      <!-- An app Attic cannot write to yet: reply there. -->
+      <!-- An app Chatfold cannot write to yet: reply there. -->
       <button :if="!canSend()" class="composer" :title="showHint(detail())" :disabled="!detail()?.url && detail()?.state !== 'archived'" @click="compose()">
         <span class="flex-1 truncate">{{ composerLabel(detail()) }}</span>
         <span class="text-[15px] i-hugeicons-arrow-up-right-01"></span>
@@ -1996,7 +1996,7 @@ onMount(async () => {
           <span :if="!bulkPreview()" class="muted">Counting…</span>
         </div>
         <div :if="bulkPreview()" class="mb-3 text-[11.5px] muted">{{ bulkBreakdown() }}</div>
-        <p class="mb-1 leading-snug text-[11.5px] muted">{{ removal() === 'off' ? 'They are archived in Attic only, as set under When you archive.' : 'Attic verifies each copy first. Closed apps stay closed during cleanup. Messages keeps deleted threads for 30 days in Recently Deleted.' }}</p>
+        <p class="mb-1 leading-snug text-[11.5px] muted">{{ removal() === 'off' ? 'They are archived in Chatfold only, as set under When you archive.' : 'Chatfold verifies each copy first. Closed apps stay closed during cleanup. Messages keeps deleted threads for 30 days in Recently Deleted.' }}</p>
         <div :if="bulkJob() && bulkJob().finished" class="mt-3 text-[12px] muted">Last run: {{ bulkJob().archived.toLocaleString() }} archived{{ bulkJob().removed ? `, ${bulkJob().removed.toLocaleString()} taken out of the apps` : '' }}{{ bulkJob().failed ? `, ${bulkJob().failed} not copied completely and left in the Inbox` : '' }}{{ bulkJob().cancelled ? ' (stopped)' : '' }}.</div>
         <div class="flex gap-2 justify-end mt-4">
           <button class="toolbar-button" style="background: var(--chip)" @click="bulkOpen.set(false)">Cancel</button>
@@ -2029,7 +2029,7 @@ onMount(async () => {
             <button class="p-0 text-[#ff453a] bg-transparent border-0 cursor-pointer" @click="removeSlackWorkspace(w)">Remove</button>
           </div>
         </div>
-        <p class="m-0 mb-2">{{ slackWorkspaces().length > 0 ? 'To add another workspace, make the same app there and paste its tokens:' : 'Attic signs in to Slack through a small app of your own, in each workspace:' }}</p>
+        <p class="m-0 mb-2">{{ slackWorkspaces().length > 0 ? 'To add another workspace, make the same app there and paste its tokens:' : 'Chatfold signs in to Slack through a small app of your own, in each workspace:' }}</p>
         <ol class="flex flex-col gap-1 m-0 pl-5">
           <li><button class="p-0 text-[var(--accent)] bg-transparent border-0 cursor-pointer" @click="startSlackApp()">Copy the app manifest and open Slack</button>, choose <b>From an app manifest</b>, and paste.</li>
           <li><b>Install to Workspace</b>, then copy the <b>User OAuth Token</b> (xoxp-) below.</li>
@@ -2037,10 +2037,10 @@ onMount(async () => {
         </ol>
         <p class="m-0 mt-2">Both stay in your keychain.</p>
       </div>
-      <p :if="connecting() === 'discord'" class="mb-3 leading-relaxed text-[12px] muted">Paste your Discord token, the one the Discord app signs in with: Attic becomes your Discord client, with your DMs, group DMs and servers. Using your own account from another client is against Discord's terms, and Discord can ban accounts for it. Attic identifies itself to Discord as Attic. The token stays in your keychain.</p>
+      <p :if="connecting() === 'discord'" class="mb-3 leading-relaxed text-[12px] muted">Paste your Discord token, the one the Discord app signs in with: Chatfold becomes your Discord client, with your DMs, group DMs and servers. Using your own account from another client is against Discord's terms, and Discord can ban accounts for it. Chatfold identifies itself to Discord as Chatfold. The token stays in your keychain.</p>
       <div :if="connecting() === 'whatsapp'" class="mb-3 leading-relaxed text-[12px] muted">
         <div :if="!whatsappLinked()">
-          <p class="m-0 mb-2">Attic links to WhatsApp as a device of its own, the way WhatsApp Web does, so WhatsApp for Mac is not needed. On your phone, open WhatsApp, then <b>Settings</b>, <b>Linked Devices</b>, <b>Link a Device</b>, and scan this code.</p>
+          <p class="m-0 mb-2">Chatfold links to WhatsApp as a device of its own, the way WhatsApp Web does, so WhatsApp for Mac is not needed. On your phone, open WhatsApp, then <b>Settings</b>, <b>Linked Devices</b>, <b>Link a Device</b>, and scan this code.</p>
           <div class="flex justify-center my-3">
             <div :if="whatsappLink()?.qr" class="p-2 h-[220px] w-[220px] bg-white rounded-[10px] qr" :html="whatsappLink().qr"></div>
             <div :if="!whatsappLink()?.qr" class="grid place-items-center h-[220px] w-[220px] rounded-[10px]" style="background: var(--chip)">{{ whatsappLink()?.error ? '' : 'Asking WhatsApp for a code…' }}</div>
@@ -2050,10 +2050,10 @@ onMount(async () => {
           <p class="m-0 mt-2">Your messages arrive, send and sync straight from WhatsApp. Keep WhatsApp signed in on the phone, and let the phone come online every couple of weeks, or WhatsApp unlinks its devices.</p>
         </div>
         <div :if="whatsappLinked()">
-          <p class="m-0">{{ whatsappLink()?.phase === 'open' ? 'Linked' : 'Linked, reconnecting' }}{{ whatsappLink()?.me ? ' as ' + whatsappLink().me : '' }}. Attic sends and receives WhatsApp by itself, so WhatsApp for Mac can be uninstalled. Disconnecting unlinks Attic on your phone too; what Attic has archived stays.</p>
+          <p class="m-0">{{ whatsappLink()?.phase === 'open' ? 'Linked' : 'Linked, reconnecting' }}{{ whatsappLink()?.me ? ' as ' + whatsappLink().me : '' }}. Chatfold sends and receives WhatsApp by itself, so WhatsApp for Mac can be uninstalled. Disconnecting unlinks Chatfold on your phone too; what Chatfold has archived stays.</p>
         </div>
       </div>
-      <p :if="isLocal(connecting())" class="mb-3 leading-relaxed text-[12px] muted">Attic reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
+      <p :if="isLocal(connecting())" class="mb-3 leading-relaxed text-[12px] muted">Chatfold reads {{ appName(connecting()) }} from this Mac, so there is no token. {{ sourceDetail(connecting()) }}</p>
       <input :if="connecting() === 'slack' || connecting() === 'discord'" class="mb-2 selectable search" style="padding-left: 10px" type="password" :placeholder="connecting() === 'slack' ? 'User OAuth Token (xoxp-…)' : 'Discord token'" x-model.trim="tokenDraft" autocomplete="off" spellcheck="false">
       <input :if="connecting() === 'slack'" class="mb-2 selectable search" style="padding-left: 10px" type="password" placeholder="App-Level Token (xapp-…)" x-model.trim="userDraft" autocomplete="off" spellcheck="false">
       <div class="flex items-center justify-between mt-3">
