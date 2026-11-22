@@ -6,7 +6,7 @@
   "sources": {
     "zig-js": {
       "url": "https://github.com/zig-utils/zig-js.git",
-      "revision": "2e26e227fe74c89b89494934ff57302ab16aded2",
+      "revision": "58885b7dad974d15b4eb410dc617da64d8c29550",
       "paths": [
         "src",
         "include",
@@ -26,7 +26,7 @@
     },
     "zig-gc": {
       "url": "https://github.com/zig-utils/zig-gc.git",
-      "revision": "0285ef801dd221a4ae8e88b31a09ae31627657a3",
+      "revision": "9bdb139cb4c6cdaa37b6fa2abebcf549cfe43762",
       "paths": [
         "src"
       ]
