@@ -1,12 +1,11 @@
 /* eslint-disable no-console */
 /**
- * `Attic.app/Contents/MacOS/Attic`, compiled by `buddy build:desktop`.
+ * The application bundle’s launcher, compiled by `buddy build:desktop`.
  *
  * One process owns everything that needs a permission. It reads Messages and
- * Contacts (Full Disk Access is granted to Attic.app, and this is its
- * executable), keeps the archive, and opens conversations in Messages. The
- * Craft runtime beside it draws the window and talks back to this process
- * over 127.0.0.1.
+ * Contacts (the installed app receives Full Disk Access), keeps the archive,
+ * and opens conversations in Messages. The Craft runtime beside it draws the
+ * window and talks back to this process over 127.0.0.1.
  *
  * Run from source for development with `bun run app`, which builds the UI
  * first; Craft then comes from CRAFT_BIN or PATH (pantry installs it).
@@ -129,7 +128,7 @@ const flags = [
   '--api-url', `http://127.0.0.1:${agent.port}`,
   '--native-bundle', nativeBundle,
   '--title',
-  'Attic',
+  'Chatfold',
   '--titlebar-style', 'transparent',
   '--width', '1280',
   '--height', '800',

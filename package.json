@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.3.6",
   "private": true,
-  "description": "Archive iMessage conversations on your Mac, natively.",
+  "description": "A Mac inbox and searchable archive for Messages, WhatsApp, Slack, and Discord.",
   "license": "MIT",
   "engines": {
     "bun": ">=1.4.2"

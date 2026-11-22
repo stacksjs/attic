@@ -1,6 +1,6 @@
 {
   "LSMinimumSystemVersion": "14.0",
   "LSApplicationCategoryType": "public.app-category.productivity",
-  "NSAppleEventsUsageDescription": "Attic opens your conversations in Messages so archived ones can be removed and recovered there.",
-  "NSHumanReadableCopyright": "Attic. Your messages stay on this Mac."
+  "NSAppleEventsUsageDescription": "Chatfold opens your conversations in Messages so archived ones can be removed and recovered there.",
+  "NSHumanReadableCopyright": "Chatfold"
 }
