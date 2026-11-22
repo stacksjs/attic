@@ -21,6 +21,7 @@
     "build": "./buddy build",
     "prod": "./buddy build",
     "build:ui": "bun x --bun stx build --pages resources/views --out storage/attic/web --no-sitemap",
+    "build:site": "bun scripts/build-site.ts",
     "build:mobile-web": "bun run build:ui && bun scripts/build-mobile-web.ts",
     "build:ios": "bun run build:mobile-web && ./buddy build:ios",
     "build:android": "bun run build:mobile-web && ./buddy build:android",

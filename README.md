@@ -1,45 +1,16 @@
-![Social Card of Stacks](./public/images/social.png)
+# Attic
 
-# Rapid App & Library Development
+Attic is a Mac inbox for Messages, WhatsApp, Slack, and Discord. It keeps a searchable local copy of archived conversations.
 
-[![npm version](https://img.shields.io/npm/v/stacks?style=flat-square)](https://npmjs.com/package/stacks)
-[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/stacksjs/stacks/ci.yml?style=flat-square&branch=main)](https://github.com/stacksjs/stacks/actions?query=workflow%3Aci)
-[![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
-[![npm downloads](https://img.shields.io/npm/dm/stacks?style=flat-square)](https://npmjs.com/package/stacks)
-<!-- [![Codecov][codecov-src]][codecov-href] -->
+[Visit attic.stacksjs.com](https://attic.stacksjs.com) or [download the latest release for Apple silicon](https://github.com/stacksjs/attic-downloads/releases/latest).
 
-> [!NOTE]
-> Stacks is in active development and usable today — every section below
-> is real, runnable functionality. Expect occasional breaking changes
-> while we cut the official 1.0. Feedback and issue reports are welcome.
+## Marketing site
 
-Stacks is a rapid development framework, where the goal is to _help you_ create & maintain frontends, backends, and clouds—without having to worry about the boilerplate. _An all-in-one toolkit that meets all your full stack needs._
+Run `./buddy dev --frontend --site --with-localhost` to preview the stx site. The entry is `resources/views/index.stx`.
 
-<a href="https://stacksjs.com/docs/diagrams/stacks-runtime">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/public/diagrams/stacks-runtime/dark.png">
-    <img alt="Stacks runtime architecture: developer to Buddy CLI to Stacks Cloud, and web or desktop client through rpx to stx, router, actions, ORM, and database" src="./docs/public/diagrams/stacks-runtime/light.png">
-  </picture>
-</a>
+`bun run build:site` builds the public site in `storage/attic/site`. The production configuration attaches Attic to the shared Stacks server. Deploy just this site with `./buddy deploy --prod --site website`.
 
-_[Open the interactive diagram](https://stacksjs.com/docs/diagrams/stacks-runtime) for a theme toggle, node search, route tracing, presentation mode, and SVG, PNG, JPEG, WebP and share-card exports._
-
-- Web & Desktop Applications _(including system tray apps)_
-- Serverless & Traditional APIs
-- Cloud Infrastructure Creation & Maintenance
-- Interactive CLIs
-- Framework-agnostic Component & Function Libraries
-- Deployment & Release Manager _(CI & CD)_
-
-## Convention Over Configuration
-
-As a developer, Stacks helps you every step along the way—in beginner & expert-friendly ways, allowing you to focus on the _what & why_ of your project, all while enabling you to stay in control & ownership of your _(& your users’)_ data.
-
-> “It is the framework’s responsibility to remove patterns that lead to boilerplate code. And Stacks is really good at that.” _- Chris_
-
-<!-- ![Atomic UI & FX Design](./docs/assets/diagram.png) -->
-
-## Prerequisites
+## Development prerequisites
 
 Stacks uses [Pantry](https://pantry.dev) to provision Bun, Git, SQLite, and the project-specific tools declared by the framework. You'll need:
 
