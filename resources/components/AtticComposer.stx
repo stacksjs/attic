@@ -1,4 +1,6 @@
 <script client>
+import { SOURCE_NAMES } from '../functions/native-attic'
+
 const draft = useModel('draft', { default: '' })
 const enabled = useReactiveProp('enabled', false)
 const canOpen = useReactiveProp('canOpen', false)
@@ -8,8 +10,8 @@ const reply = useReactiveProp('reply', null)
 const files = useReactiveProp('files', [])
 const emit = defineEmits(['send', 'attach', 'open', 'cancel-reply', 'remove-file'])
 </script>
-<View class="gap-2 px-4 pt-2 pb-3 shrink-0" testID="composer-area">
-  <View :if="reply()" class="flex-row items-center gap-2 px-3 py-1 rounded-[9px]" style="background-color: controlBackground">
+<View :if="enabled() || canOpen()" class="gap-2 shrink-0 pb-4 pt-2 px-5" testID="composer-area">
+  <View :if="reply()" class="flex-row gap-2 items-center px-3 py-1 rounded-[9px]" style="background-color: controlBackground">
     <Text class="flex-1 text-[11px]" :numberOfLines="1" :text="`Replying to: ${reply()?.text || 'Attachment'}`" />
     <ToolbarButton label="Cancel reply" symbol="xmark" @click="emit('cancel-reply')" />
   </View>
@@ -18,10 +20,12 @@ const emit = defineEmits(['send', 'attach', 'open', 'cancel-reply', 'remove-file
   </View>
   <View :if="enabled()" class="flex-row gap-2 items-center">
     <ToolbarButton label="Attach a file" symbol="plus.circle" @click="emit('attach')" testID="attach" />
-    <View class="flex-1 rounded-[17px] border" style="border-color: separator">
-      <TextInput class="h-[34px] text-[13px]" :multiline="true" :bordered="false" :placeholder="provider() === 'imessage' ? 'iMessage' : 'Message'" x-model="draft" @submit="emit('send')" testID="composer" />
+    <View class="flex-1 border rounded-[10px]" style="border-color: separator">
+      <TextInput class="h-[36px] text-[13px]" :multiline="true" :bordered="false" placeholder="Message" x-model="draft" @submit="emit('send')" testID="composer" accessibilityLabel="Message" />
     </View>
     <ToolbarButton label="Send" symbol="arrow.up.circle.fill" class="text-[25px]" :disabled="busy() || (!draft().trim() && !files().length)" @click="emit('send')" testID="send" />
   </View>
-  <Button :if="!enabled()" title="Reply in App" symbol="arrow.up.forward.app" variant="ghost" :disabled="!canOpen()" @click="emit('open')" />
+  <View :if="!enabled() && canOpen()" class="flex-row justify-end">
+    <Button :title="`Reply in ${SOURCE_NAMES[provider()] || 'App'}`" symbol="arrow.up.forward.app" variant="ghost" @click="emit('open')" />
+  </View>
 </View>

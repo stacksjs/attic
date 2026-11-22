@@ -2,12 +2,15 @@
 const sections = useReactiveProp('sections', [])
 const selected = useReactiveProp('selected', 'all')
 const fixture = useReactiveProp('fixture', false)
-const emit = defineEmits(['choose', 'settings'])
+const emit = defineEmits(['choose', 'sources', 'settings'])
 </script>
-<View class="w-[212px] shrink-0 flex-col border-r" style="border-color: separator" material="sidebar">
+<View class="flex-col shrink-0 w-[200px] border-r" style="border-color: separator" material="sidebar">
   <NativeSidebar class="flex-1" :sections="sections()" :selected="selected()" @change="emit('choose', $event.nativeEvent.value)" testID="mailboxes" />
-  <View class="gap-2 px-3 pb-3">
-    <Text :if="fixture()" class="text-[10px] px-1" style="color: secondaryLabel" :text="'Sample conversations'" />
-    <Button title="Settings…" symbol="gearshape" variant="ghost" class="h-[30px] text-left" style="color: secondaryLabel" @click="emit('settings')" accessibilityLabel="Open Settings" />
+  <View class="gap-2 pb-3 pt-2 px-3">
+    <Text :if="fixture()" class="px-1 text-[10px]" style="color: secondaryLabel" :text="'Sample conversations'" />
+    <View class="flex-row items-center justify-between pt-2 border-t" style="border-color: separator">
+      <ToolbarButton label="Add or manage sources" symbol="plus" @click="emit('sources')" testID="sources-menu" />
+      <ToolbarButton label="Settings" symbol="gearshape" @click="emit('settings')" testID="settings-button" />
+    </View>
   </View>
 </View>

@@ -1,17 +1,23 @@
 <script client>
+import { SOURCE_NAMES } from '../functions/native-attic'
+
 const conversation = useReactiveProp('conversation', {})
 const busy = useReactiveProp('busy', false)
-const emit = defineEmits(['archive', 'restore', 'open'])
+const emit = defineEmits(['archive', 'restore', 'menu'])
+const subtitle = derived(() => {
+  const item = conversation()
+  return !item.inApp && item.saved ? 'Local archive' : SOURCE_NAMES[item.provider] || ''
+})
 </script>
-<View class="h-[70px] shrink-0 flex-row items-center px-3 border-b" style="border-color: separator" testID="conversation-header">
-  <View class="w-[96px] shrink-0" />
-  <View class="flex-1 flex-col items-center justify-center gap-[3px] min-w-0">
-    <Avatar :src="conversation().avatar || ''" :alt="conversation().title || ''" :initials="conversation().initials || ''" size="xs" />
-    <Text class="font-medium text-[11px]" :numberOfLines="1" :text="conversation().title || ''" testID="conversation-title" />
+<View class="flex-row gap-3 items-center shrink-0 px-5 h-[64px] border-b" style="border-color: separator" testID="conversation-header">
+  <Avatar :src="conversation().avatar || ''" :alt="conversation().title || ''" :initials="conversation().initials || ''" size="sm" />
+  <View class="flex-1 flex-col gap-[2px] min-w-0">
+    <Text class="font-semibold text-[14px]" :numberOfLines="1" :text="conversation().title || ''" testID="conversation-title" />
+    <Text :if="subtitle()" class="text-[11px]" style="color: secondaryLabel" :numberOfLines="1" :text="subtitle()" />
   </View>
-  <View class="w-[96px] shrink-0 flex-row gap-1 items-center justify-end">
+  <View class="flex-row gap-1 items-center shrink-0">
     <ToolbarButton :if="conversation().state !== 'archived'" label="Archive" symbol="archivebox" :disabled="busy()" @click="emit('archive')" testID="archive" />
     <ToolbarButton :if="conversation().state === 'archived'" label="Move to Inbox" symbol="tray.and.arrow.up" :disabled="busy()" @click="emit('restore')" testID="restore" />
-    <ToolbarButton label="Show in App" symbol="arrow.up.forward.app" :disabled="!conversation().url" @click="emit('open')" testID="show-in-app" />
+    <ToolbarButton label="More conversation actions" symbol="ellipsis.circle" :disabled="busy()" @click="emit('menu')" testID="conversation-actions" />
   </View>
 </View>
