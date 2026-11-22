@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 /** Drive the installed app's AppKit controls with invented conversations. */
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -17,6 +17,10 @@ const sample = await buildSample(join(run, 'sample'), { olderSam: true })
 const driver = join(run, 'driver')
 mkdirSync(driver)
 const app = process.env.ATTIC_E2E_APP || join(homedir(), 'Applications/Attic.app')
+const updateFrom = process.env.ATTIC_E2E_UPDATE_FROM
+if (updateFrom && (!process.env.ATTIC_E2E_APP || !realpathSync(app).startsWith(`${realpathSync(join(import.meta.dir, '../storage'))}/`)))
+  throw new Error('Use an isolated app in storage for the update installation test.')
+const runningVersion = updateFrom || pkg.version
 const executable = join(app, 'Contents/MacOS/Attic')
 if (!existsSync(executable)) throw new Error(`Install the DMG first: ${app}`)
 const child = Bun.spawn([executable], {
@@ -105,7 +109,29 @@ try {
   await action('click', 'settings-item-phone', undefined, 'settings')
   await wait('Settings sidebar opens Phone', s => node(s, 'pair-phone', 'settings')?.visible === true)
   await action('click', 'settings-item-about', undefined, 'settings')
-  await wait('About shows the running Attic version', s => node(s, 'settings-version', 'settings')?.value === pkg.version && node(s, 'settings-version', 'settings')?.visible === true)
+  await wait('About shows the running Attic version', s => node(s, 'settings-version', 'settings')?.value === runningVersion && node(s, 'settings-version', 'settings')?.visible === true)
+  await action('click', 'settings-item-updates', undefined, 'settings')
+  const updatePane = await wait('Software Update shows the running version and a check button', s => {
+    const nodes = window(s, 'settings')?.nodes.filter(n => n.visible) ?? []
+    return nodes.some(n => n.value === `Attic ${runningVersion}`) && nodes.some(n => n.label === 'Check Now' && n.enabled)
+  })
+  if (updateFrom) {
+    const check = window(updatePane, 'settings')!.nodes.find(n => n.label === 'Check Now' && n.visible)!
+    await action('click', check.id, undefined, 'settings')
+    const available = await wait('GitHub offers the signed update', s => {
+      const nodes = window(s, 'settings')?.nodes.filter(n => n.visible) ?? []
+      return nodes.some(n => n.value === `Version ${pkg.version} is available.`) && nodes.some(n => n.label === 'Download and Install' && n.enabled)
+    })
+    const install = window(available, 'settings')!.nodes.find(n => n.label === 'Download and Install' && n.visible)!
+    await action('click', install.id, undefined, 'settings')
+    await wait('The downloaded update replaces the app and offers to restart', s => !!window(s, 'settings')?.nodes.some(n => n.label === 'Restart to Update' && n.visible && n.enabled), 60_000)
+    const installed = Bun.spawnSync(['/usr/libexec/PlistBuddy', '-c', 'Print CFBundleShortVersionString', join(app, 'Contents/Info.plist')])
+    if (installed.exitCode !== 0 || installed.stdout.toString().trim() !== pkg.version)
+      throw new Error('The downloaded app has the wrong version')
+    if (Bun.spawnSync(['/usr/bin/codesign', '--verify', '--deep', '--strict', app]).exitCode !== 0)
+      throw new Error('The downloaded app signature did not verify')
+  }
+  await action('click', 'settings-item-about', undefined, 'settings')
   const settingsSearch = window((await state())!, 'settings')?.nodes.find(n => n.nativeClass === 'NSSearchField' && n.visible)
   if (!settingsSearch) throw new Error('Native Settings search field is missing')
   await action('fill', settingsSearch.id, 'when you archive', 'settings')
