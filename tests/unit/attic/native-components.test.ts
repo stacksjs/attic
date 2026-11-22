@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { compileNativeBundle } from '@stacksjs/stx/native'
 import { mountNativeScreen } from '@stacksjs/stx/native/testing'
 
-it('disables unavailable reply links and keeps the composer model and send action connected', async () => {
+it('shows only available reply actions and keeps the composer model connected', async () => {
   const root = mkdtempSync(join(tmpdir(), 'attic-composer-'))
   const app = resolve(import.meta.dir, '../../..')
   let screen: ReturnType<typeof mountNativeScreen> | undefined
@@ -15,15 +15,23 @@ it('disables unavailable reply links and keeps the composer model and send actio
 const draft = state('')
 const enabled = state(false)
 const canOpen = state(false)
+const opened = state(0)
 const sent = []
-globalThis.probe = { draft, enabled, canOpen, sent }
-</script><View><AtticComposer v-model:draft="draft" :enabled="enabled()" :canOpen="canOpen()" @send="sent.push(draft())" /></View>`)
+globalThis.probe = { draft, enabled, canOpen, opened, sent }
+</script><View><AtticComposer v-model:draft="draft" :enabled="enabled()" :canOpen="canOpen()" provider="imessage" @open="opened.set(opened() + 1)" @send="sent.push(draft())" /></View>`)
     const { code } = await compileNativeBundle({ root, screens: { Screen: 'Screen.stx' } })
     screen = mountNativeScreen(code, 'Screen')
     await screen.settle()
-    expect(screen.find(node => node.props.title === 'Reply in App')?.props.disabled).toBe(true)
+    const reply = () => screen?.find(node => node.props.title === 'Reply in Messages')
+    expect(reply()).toBeUndefined()
+    screen.context.probe.canOpen.set(true)
+    await screen.settle()
+    expect(reply()).toBeDefined()
+    screen.press(reply()!)
+    expect(screen.context.probe.opened()).toBe(1)
     screen.context.probe.enabled.set(true)
     await screen.settle()
+    expect(reply()).toBeUndefined()
     screen.type(screen.byTestID('composer')!, 'The van is ready')
     await screen.settle()
     expect(screen.context.probe.draft()).toBe('The van is ready')
