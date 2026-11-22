@@ -6,11 +6,12 @@ import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { DATA_DIR } from './paths'
 
-export const ATTIC_RELEASE_REPO = 'stacksjs/attic-downloads'
+export const TEXTS_RELEASE_REPO = 'stacksjs/texts-downloads'
 export const UPDATE_KEYS = {
   main: 'ed25519-public:MCowBQYDK2VwAyEApIrqVX8iqBUC57QeUU-XQqejB-9P67pkvvFjvBALsrQ',
 }
-const releases = `https://github.com/${ATTIC_RELEASE_REPO}/releases`
+const releases = `https://github.com/${TEXTS_RELEASE_REPO}/releases`
+const signedArchiveBase = 'https://github.com/stacksjs/attic-downloads/releases/download'
 const feed = `${releases}/latest`
 const target = { platform: 'darwin', architecture: process.arch }
 
@@ -24,7 +25,8 @@ export function updateArchive(tag: string, arch = target.architecture): string {
 }
 
 export function updateArchiveUrl(tag: string, arch = target.architecture): string {
-  return `${releases}/download/${tag}/${updateArchive(tag, arch)}`
+  // Existing clients accept only the original repository and archive name in signed manifests.
+  return `${signedArchiveBase}/${tag}/${updateArchive(tag, arch)}`
 }
 
 type UpdateAction = 'check' | 'install'
@@ -41,7 +43,7 @@ export function githubUpdateFetcher(fetcher: DesktopFetcher = fetch): DesktopFet
     const tag = url.pathname.split('/').at(-2) ?? ''
     if (!isManifest && (!/^v\d+\.\d+\.\d+$/.test(tag) || url.href !== updateArchiveUrl(tag)))
       throw new Error('The update does not point to a Texts release on GitHub.')
-    const assetUrl = isManifest ? `${feed}/download/${manifestAsset()}` : url.href
+    const assetUrl = isManifest ? `${feed}/download/${manifestAsset()}` : `${releases}/download/${tag}/${updateArchive(tag)}`
     return fetcher(assetUrl, { signal: init?.signal })
   }
 }

@@ -2,8 +2,8 @@
 import pkg from '../../package.json'
 
 const source = 'https://github.com/stacksjs/texts'
-const releases = 'https://github.com/stacksjs/attic-downloads/releases/latest'
-const download = `https://github.com/stacksjs/attic-downloads/releases/download/v${pkg.version}/Texts-${pkg.version}.dmg`
+const releases = 'https://github.com/stacksjs/texts-downloads/releases/latest'
+const download = `https://github.com/stacksjs/texts-downloads/releases/download/v${pkg.version}/Texts-${pkg.version}.dmg`
 
 const channels = [
   { name: 'Messages', icon: 'i-hugeicons-message-01' },

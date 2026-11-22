@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameS
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
-import { ATTIC_RELEASE_REPO, manifestAsset, UPDATE_KEYS, updateArchive, updateArchiveUrl } from '../app/Attic/updates'
+import { manifestAsset, TEXTS_RELEASE_REPO, UPDATE_KEYS, updateArchive, updateArchiveUrl } from '../app/Attic/updates'
 
 const root = resolve(import.meta.dir, '..')
 const sourceReleaseRepo = 'stacksjs/texts'
@@ -96,7 +96,7 @@ interface PublicRelease {
 }
 
 async function publicRelease(tag: string): Promise<PublicRelease> {
-  const endpoint = `repos/${ATTIC_RELEASE_REPO}/releases`
+  const endpoint = `repos/${TEXTS_RELEASE_REPO}/releases`
   const pages = JSON.parse(await run(['gh', 'api', `${endpoint}?per_page=100`, '--paginate', '--slurp'], { capture: true })) as PublicRelease[][]
   const existing = pages.flat().find(release => release.tag_name === tag)
   if (existing)
@@ -153,11 +153,11 @@ async function publish(directory: string, tag: string, revision: string, key: st
 
   const release = await publicRelease(tag)
   // The latest URL must keep serving the prior complete release until every asset is present.
-  await uploadAssets(ATTIC_RELEASE_REPO, tag, [archive, diskImage, manifestFile], release.assets)
+  await uploadAssets(TEXTS_RELEASE_REPO, tag, [archive, diskImage, manifestFile], release.assets)
   if (release.draft)
-    await run(['gh', 'release', 'edit', tag, '--repo', ATTIC_RELEASE_REPO, '--draft=false', '--latest'])
+    await run(['gh', 'release', 'edit', tag, '--repo', TEXTS_RELEASE_REPO, '--draft=false', '--latest'])
   await publishLegacyDownload(tag, diskImage)
-  console.log(`Published Texts ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
+  console.log(`Published Texts ${tag.slice(1)} at https://github.com/${TEXTS_RELEASE_REPO}/releases/tag/${tag}`)
 }
 
 const args = process.argv.slice(2)
