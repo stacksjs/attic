@@ -33,9 +33,9 @@ const faqs = [
   <meta property="og:title" content="Texts | A Mac inbox and archive for your chats">
   <meta property="og:description" content="Your chats, one inbox. Texts keeps a searchable archive on your Mac.">
   <meta property="og:site_name" content="Texts">
-  <meta property="og:url" content="https://chatfold.stacksjs.com/">
-  <meta property="og:image" content="https://chatfold.stacksjs.com/images/screens/attic-inbox-light.webp">
-  <link rel="canonical" href="https://chatfold.stacksjs.com/">
+  <meta property="og:url" content="https://texts.stacksjs.com/">
+  <meta property="og:image" content="https://texts.stacksjs.com/images/screens/attic-inbox-light.webp">
+  <link rel="canonical" href="https://texts.stacksjs.com/">
   <link rel="icon" href="/images/app-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

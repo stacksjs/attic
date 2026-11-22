@@ -2,7 +2,7 @@
 
 Texts is a Mac inbox for Messages, WhatsApp, Slack, and Discord. It keeps a searchable local copy of archived conversations.
 
-[Visit chatfold.stacksjs.com](https://chatfold.stacksjs.com) or [download the latest release for Apple silicon](https://github.com/stacksjs/attic-downloads/releases/latest).
+[Visit texts.stacksjs.com](https://texts.stacksjs.com) or [download the latest release for Apple silicon](https://github.com/stacksjs/attic-downloads/releases/latest).
 
 ## Marketing site
 

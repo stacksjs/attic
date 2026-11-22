@@ -11,15 +11,19 @@ export const tsCloud: TsCloudConfig = {
   sites: {
     website: {
       deploy: 'server',
-      domain: 'chatfold.stacksjs.com',
+      domain: 'texts.stacksjs.com',
       path: '/',
       root: 'storage/attic/site',
       build: 'bun run build:site',
       pathRewriteStyle: 'directory',
     },
-    previousWebsite: {
+    atticRedirect: {
       domain: 'attic.stacksjs.com',
-      redirect: 'https://chatfold.stacksjs.com',
+      redirect: 'https://texts.stacksjs.com',
+    },
+    chatfoldRedirect: {
+      domain: 'chatfold.stacksjs.com',
+      redirect: 'https://texts.stacksjs.com',
     },
   },
 }

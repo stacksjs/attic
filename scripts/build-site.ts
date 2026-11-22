@@ -23,7 +23,7 @@ try {
     '--pages', scratch,
     '--public', publicDir,
     '--out', 'storage/attic/site',
-    '--domain', 'https://chatfold.stacksjs.com',
+    '--domain', 'https://texts.stacksjs.com',
   ], { stdout: 'inherit', stderr: 'inherit' })
 
   if (await build.exited !== 0)
