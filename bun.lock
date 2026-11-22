@@ -9,6 +9,7 @@
         "@stacksjs/chat": "^0.75.628",
         "@stacksjs/components": "^0.2.925",
         "@stacksjs/desktop": "^0.2.925",
+        "@stacksjs/desktop-build": "0.75.628",
         "@stacksjs/env": "^0.75.628",
         "@stacksjs/path": "^0.75.628",
         "@stacksjs/stx": "^0.2.925",

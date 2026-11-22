@@ -18,7 +18,7 @@ export default {
   author: '',
   contributors: [],
   defaultLanguage: 'en',
-  releaseable: true,
+  releaseable: false,
 
   /**
    * One `resources/` tree, any number of npm packages.
