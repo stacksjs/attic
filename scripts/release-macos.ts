@@ -25,7 +25,7 @@ async function version(): Promise<string> {
 }
 
 function diskImageName(tag: string): string {
-  return `Chatfold-${tag.slice(1)}.dmg`
+  return `Texts-${tag.slice(1)}.dmg`
 }
 
 function signingKey(): string {
@@ -64,7 +64,7 @@ async function buildAssets(directory: string, tag: string, revision: string, key
     const mount = join(temporary, 'mount')
     mkdirSync(mount)
     await run(['hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, diskImage], { capture: true })
-    const bundle = join(mount, 'Chatfold.app')
+    const bundle = join(mount, 'Texts.app')
     const archive = join(temporary, updateArchive(tag))
     try {
       await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', bundle])
@@ -105,9 +105,9 @@ async function publicRelease(tag: string): Promise<PublicRelease> {
     capture: true,
     input: {
       tag_name: tag,
-      name: `Chatfold ${tag.slice(1)}`,
+      name: `Texts ${tag.slice(1)}`,
       draft: true,
-      body: `Download **${diskImageName(tag)}** on an Apple silicon Mac. Open the disk image and drag Chatfold into Applications.\n\nAttic is now Chatfold. If Attic is installed, use **Settings → Software Update** to get Chatfold in place with your existing archive.`,
+      body: `Download **${diskImageName(tag)}** on an Apple silicon Mac. Open the disk image and drag Texts into Applications.\n\nIf you use Attic or Chatfold, open **Settings → Software Update** to install Texts with your existing archive.`,
     },
   }))
 }
@@ -139,7 +139,7 @@ async function publish(directory: string, tag: string, revision: string, key: st
   }
   if (release.draft)
     await run(['gh', 'release', 'edit', tag, '--repo', ATTIC_RELEASE_REPO, '--draft=false', '--latest'])
-  console.log(`Published Chatfold ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
+  console.log(`Published Texts ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
 }
 
 const args = process.argv.slice(2)

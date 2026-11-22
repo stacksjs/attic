@@ -133,9 +133,9 @@ describe('export', () => {
   })
 
   it('numbers a second export of the same day instead of writing over the first', () => {
-    const existing = new Set(['/exports/Chatfold Export 2026-11-06'])
+    const existing = new Set(['/exports/Texts Export 2026-11-06'])
     expect(exportFolder('/exports', Date.UTC(2026, 10, 6, 18), path => existing.has(path)))
-      .toBe('/exports/Chatfold Export 2026-11-06 2')
+      .toBe('/exports/Texts Export 2026-11-06 2')
   })
 
   it('says so when a conversation was archived with nothing in it', () => {
@@ -148,6 +148,6 @@ describe('export', () => {
       messages: [],
       folder: 'Attachments/%23empty',
     })
-    expect(html).toContain('Chatfold kept no messages for this conversation.')
+    expect(html).toContain('Texts kept no messages for this conversation.')
   })
 })

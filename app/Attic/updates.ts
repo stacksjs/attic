@@ -40,7 +40,7 @@ export function githubUpdateFetcher(fetcher: DesktopFetcher = fetch): DesktopFet
     const isManifest = `${url.origin}${url.pathname}` === `${feed}/darwin/${target.architecture}`
     const tag = url.pathname.split('/').at(-2) ?? ''
     if (!isManifest && (!/^v\d+\.\d+\.\d+$/.test(tag) || url.href !== updateArchiveUrl(tag)))
-      throw new Error('The update does not point to a Chatfold release on GitHub.')
+      throw new Error('The update does not point to a Texts release on GitHub.')
     const assetUrl = isManifest ? `${feed}/download/${manifestAsset()}` : url.href
     return fetcher(assetUrl, { signal: init?.signal })
   }
@@ -62,14 +62,14 @@ export function createAtticUpdater(version: string, enabled: boolean, changed: (
   const installation = enabled ? installedBundle() : null
   const updater = installation && createDesktopUpdater({
     currentVersion: version, feedUrl: feed, trustedKeys: UPDATE_KEYS, target, installation,
-    appName: 'Chatfold', updatesDir: join(DATA_DIR, 'Updates'), fetcher: githubUpdateFetcher(),
+    appName: 'Texts', updatesDir: join(DATA_DIR, 'Updates'), fetcher: githubUpdateFetcher(),
   })
   let pending: Promise<UpdateStatus> | undefined
   let action: UpdateAction | undefined
 
   function status(): UpdateStatus {
     if (!updater)
-      return { currentVersion: version, state: 'unavailable', selfUpdating: false, reason: 'Install the signed Chatfold app in Applications to enable updates.' }
+      return { currentVersion: version, state: 'unavailable', selfUpdating: false, reason: 'Install the signed Texts app in Applications to enable updates.' }
     const current = updater.status()
     const state = action === 'install' ? 'installing' : current.state === 'refused' ? 'error' : current.state
     return { ...current, state }
