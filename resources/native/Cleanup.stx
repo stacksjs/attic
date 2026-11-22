@@ -2,7 +2,7 @@
 import { desktop, nativeApi, nativeCraft, nativeEvents, nativePost, SOURCE_NAMES } from '../functions/native-attic'
 
 const source = nativeCraft().route.params.source || 'all'
-const sourceName = SOURCE_NAMES[source] || 'All Inboxes'
+const heading = derived(() => `Archive from ${SOURCE_NAMES[source] || 'All Inboxes'}`)
 const cutoff = state('365')
 const preview = state(null)
 const job = state(null)
@@ -59,7 +59,7 @@ onMount(() => {
 
 <ScrollView class="flex-1" style="background-color: windowBackground" testID="cleanup-window">
   <View class="gap-3 p-6">
-    <Text class="font-semibold text-[16px]" :text="`Archive from ${sourceName}`" />
+    <Text class="font-semibold text-[16px]" :text="heading()" testID="cleanup-heading" />
     <Text :text="'Last message older than'" />
     <Picker :value="cutoff()" :disabled="starting() || running()" :options="[{value:'182',label:'6 months'},{value:'365',label:'1 year'},{value:'730',label:'2 years'}]" @change="loadPreview($event.nativeEvent.value)" testID="cleanup-cutoff" accessibilityLabel="Conversation age" />
     <Text :text="count()" testID="cleanup-count" />
