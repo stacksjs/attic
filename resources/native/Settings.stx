@@ -12,11 +12,25 @@ const pairing = state(null)
 const qr = state('')
 const note = state('')
 const version = state('')
+const update = state(null)
 const loaded = state(false)
 const saving = state(false)
 const preparingPairing = state(false)
 const paired = derived(() => phones().find(p => p.id === pairing()?.pairing?.device && p.lastSeenAt))
 let phoneRequest = 0
+
+async function loadUpdate() {
+  try { update.set(await nativeApi('/api/updates')) }
+  catch (error) { note.set(error.message) }
+}
+
+async function updateApp(action) {
+  try {
+    const result = await nativePost(`/api/updates/${action}`)
+    if (action !== 'relaunch') update.set(result)
+  }
+  catch (error) { note.set(error.message) }
+}
 
 async function loadPreferences() {
   try {
@@ -106,13 +120,14 @@ onMount(() => {
     if (id === 'find') componentApi('attic-settings')?.focusSearch()
   }))
   onDestroy(nativeEvents(event => {
+    if (event.type === 'update') update.set(event.status)
     if (event.type === 'settings' || event.type === 'access') return loadPreferences()
     if (event.type === 'changed') return loadRules()
     if (event.type === 'phones') return loadPhones()
   }))
   const timer = setInterval(() => { if (pairing() && !paired()) void loadPhones() }, 2000)
   onDestroy(() => clearInterval(timer))
-  void Promise.all([loadPreferences(), loadRules(), loadPhones()])
+  void Promise.all([loadPreferences(), loadRules(), loadPhones(), loadUpdate()])
 })
 </script>
 
@@ -123,6 +138,7 @@ onMount(() => {
         <SettingsSidebarItem id="archiving" label="Archiving" symbol="archivebox.fill" tone="blue" />
         <SettingsSidebarItem id="rules" label="Always Archive" symbol="clock.fill" tone="indigo" />
         <SettingsSidebarItem id="phone" label="Phone" symbol="iphone" tone="green" keywords="devices sync pairing" />
+        <SettingsSidebarItem id="updates" label="Software Update" symbol="arrow.down.circle.fill" tone="blue" />
         <SettingsSidebarItem id="about" label="About" symbol="info.circle.fill" tone="grey" />
       </SettingsSidebarGroup>
     </template>
@@ -171,6 +187,12 @@ onMount(() => {
         <SettingsRow :for="phone in phones()" :key="phone.id" :label="phone.name" :description="phone.lastSeenAt ? `Last synced ${nativeDate(phone.lastSeenAt)}` : 'Not synced yet'">
           <Button title="Forget" @click="forget(phone)" />
         </SettingsRow>
+      </SettingsGroup>
+    </SettingsPane>
+
+    <SettingsPane id="updates" title="Software Update">
+      <SettingsGroup>
+        <SettingsUpdateRow appName="Attic" :status="update()" @check="updateApp('check')" @install="updateApp('install')" @relaunch="updateApp('relaunch')" />
       </SettingsGroup>
     </SettingsPane>
 

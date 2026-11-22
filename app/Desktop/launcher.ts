@@ -22,6 +22,18 @@ import { DATA_DIR, LOCK_FILE, LOG_FILE } from '../Attic/paths'
 
 const IN_APP_BUNDLE = process.execPath.includes('.app/Contents/MacOS/')
 
+// The updater opens the new bundle before the old copy releases its lock.
+// Wait for that exact owner, then take the lock normally.
+const waitPid = Number(process.argv.find(argument => argument.startsWith('--wait-pid='))?.slice('--wait-pid='.length))
+if (Number.isSafeInteger(waitPid) && waitPid > 1 && waitPid !== process.pid) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    try { process.kill(waitPid, 0) }
+    catch { break }
+    await Bun.sleep(100)
+  }
+}
+
 // Launched from Finder there is no terminal, so keep a log where Console.app
 // looks for one. From a terminal the developer keeps stderr.
 if (!process.stdout.isTTY) {
@@ -94,7 +106,11 @@ if (!existsSync(join(root, 'index.html'))) {
   process.exit(1)
 }
 
-const agent = await startAgent({ webRoot: root, version: pkg.version }).catch((error: unknown) => {
+const agent = await startAgent({
+  webRoot: root,
+  version: pkg.version,
+  onUpdateRelaunch: IN_APP_BUNDLE ? () => shutdown(0) : undefined,
+}).catch((error: unknown) => {
   console.error(`[attic] could not start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
   releaseSingleInstance()
   return process.exit(1)

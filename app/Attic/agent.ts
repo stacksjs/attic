@@ -21,6 +21,7 @@ import { ATTACHMENTS_DIR, AVATARS_DIR, DATA_DIR, DATABASE_PATH, EXPORTS_PARENT, 
 import { slackIdentity, upsertWorkspace } from './slack-workspaces'
 import { Sources } from './sources'
 import { ArchiveStore, splitKey } from './store'
+import { createAtticUpdater } from './updates'
 
 /**
  * The process behind Attic's window: a loopback HTTP server that owns every
@@ -74,6 +75,7 @@ export interface AgentOptions {
   webRoot: string
   version: string
   port?: number
+  onUpdateRelaunch?: () => void
 }
 
 export interface Agent {
@@ -382,6 +384,9 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
       }
     }
   }
+
+  const updates = createAtticUpdater(options.version, !!options.onUpdateRelaunch, status => broadcast({ type: 'update', status }))
+  let restarting = false
 
   /** A sync that follows the "When you archive" setting, for what rules archive. */
   function syncArchive(force = false): Promise<SyncReport> {
@@ -766,6 +771,23 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
 
     try {
       switch (`${req.method} ${url.pathname}`) {
+        case 'GET /api/updates':
+          return json(updates.status())
+        case 'POST /api/updates/check':
+          return json(await updates.run('check'))
+        case 'POST /api/updates/install':
+          return json(await updates.run('install'))
+        case 'POST /api/updates/relaunch': {
+          if (!options.onUpdateRelaunch || updates.status().state !== 'installed')
+            return problem('An update must be installed before restarting.', 409)
+          if (!restarting) {
+            restarting = true
+            try { await updates.relaunch() }
+            catch (error) { restarting = false; throw error }
+            setTimeout(options.onUpdateRelaunch, 100)
+          }
+          return json({ ok: true })
+        }
         case 'GET /api/status': {
           const stored = store.conversations()
           const states = sources.statesList()
@@ -1185,6 +1207,8 @@ export async function startAgent(options: AgentOptions): Promise<Agent> {
   catch {}
 
   void tick()
+  if (!usingSample)
+    void updates.run('check')
   return {
     port,
     server,
