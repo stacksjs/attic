@@ -30,6 +30,7 @@ function reactions(message) { return (message.reactions || []).map(r => r.reacti
           <Button :if="!a.available || attachmentKind(a.mimeType) !== 'image'" :title="a.name + (a.available ? '' : ' (not downloaded)')" symbol="doc" variant="ghost" @click="emit('attachment', a)" />
         </Pressable>
       </MessageBubble>
+      <Text :if="row.message.local" class="px-3 text-[10px] text-right" style="color: secondaryLabel" :text="row.message.pending ? 'Sending…' : 'Sent'" testID="send-feedback" />
     </View>
   </View>
 </ScrollView>

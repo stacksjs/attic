@@ -507,10 +507,10 @@ async function sendDraft() {
   sending.set(true)
   try {
     await post('/api/send', { key, text, replyToId: answering?.guid ?? null, files })
-    setTimeout(() => {
-      if (selectedKey() === key)
-        loadConversation(key)
-    }, 900)
+    if (selectedKey() === key) {
+      messages.set(messages().map(m => m.guid === pending.guid ? { ...m, pending: false } : m))
+      void loadConversation(key)
+    }
   }
   catch (error) {
     messages.set(messages().filter(m => m.guid !== pending.guid))
@@ -1679,6 +1679,7 @@ const params = useSearchParams()
 const presenting = params.get('presentation') !== null
 
 onMount(async () => {
+  listen()
   await refresh()
   api('/api/whatsapp').then(link => whatsappLink.set(link)).catch(() => {})
   loadRules()
@@ -1695,7 +1696,6 @@ onMount(async () => {
   const start = list().find(c => c.key === remembered) ?? list()[0]
   if (start)
     select(start.key)
-  listen()
   installMenus()
   askForNotifications()
 })

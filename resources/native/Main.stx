@@ -11,6 +11,8 @@ const rows = state<ConversationSummary[]>([])
 const selectedKey = state('')
 const detail = state(null)
 const messages = state([])
+const localSends = state([])
+const transcriptMessages = derived(() => [...messages(), ...localSends().filter(m => m.key === selectedKey())])
 const hasEarlier = state(false)
 const loading = state(true)
 const access = state('granted')
@@ -50,6 +52,7 @@ const sidebarSections = derived(() => {
   return sections
 })
 const canSend = derived(() => !!detail() && !!sources().find(s => s.provider === detail().provider)?.capabilities?.send)
+let selectionRequest = 0
 
 function say(text) {
   flash.set(text)
@@ -75,6 +78,7 @@ async function loadLists() {
 }
 
 async function select(key) {
+  const request = ++selectionRequest
   if (selectedKey() !== key) {
     draft.set('')
     replyTo.set(null)
@@ -88,9 +92,20 @@ async function select(key) {
   }
   try {
     const [info, transcript] = await Promise.all([nativeApi(`/api/conversation?key=${encodeURIComponent(key)}`), nativeApi(`/api/messages?key=${encodeURIComponent(key)}`)])
-    if (selectedKey() !== key)
+    if (request !== selectionRequest || selectedKey() !== key)
       return
     detail.set(info)
+    const matched = new Set()
+    localSends.set(localSends().filter((sent) => {
+      if (sent.key !== key || sent.pending)
+        return true
+      const saved = transcript.messages.find(m => !matched.has(m.guid) && m.isFromMe && m.kind === 'message'
+        && (sent.messageId ? m.guid === sent.messageId
+          : m.sentAt >= sent.sentAt - 1000 && (m.text || '') === sent.body && (m.attachments?.length || 0) === sent.fileCount))
+      if (saved)
+        matched.add(saved.guid)
+      return !saved
+    }))
     messages.set(transcript.messages.filter(m => m.kind !== 'reaction'))
     hasEarlier.set(transcript.hasEarlier)
     await nativeCraft().storage.set('selected', key)
@@ -219,6 +234,8 @@ async function loadEarlier() {
 }
 
 async function messageMenu(m) {
+  if (m.local)
+    return
   const caps = sources().find(s => s.provider === detail()?.provider)?.capabilities ?? {}
   const choice = await desktop().contextMenu([
     ...(caps.replies ? [{ id: 'reply', title: 'Reply', icon: 'arrowshape.turn.up.left' }] : []),
@@ -253,14 +270,31 @@ async function sendDraft() {
   const text = draft().trim()
   const files = outgoing()
   if (!detail() || !canSend() || busy() || (!text && !files.length)) return
+  const key = selectedKey()
+  const reply = replyTo()
+  const sentAt = Date.now()
+  const guid = `pending-${sentAt}`
+  const pending = {
+    key, guid, sentAt, local: true, pending: true, isFromMe: true, kind: 'message',
+    text: text || files.map(file => file.name).join(', '), body: text, fileCount: files.length,
+    attachments: [], reactions: [], replyToGuid: reply?.guid ?? null, service: messages().at(-1)?.service ?? null,
+  }
+  localSends.set([...localSends(), pending])
+  draft.set(''); outgoing.set([]); replyTo.set(null)
   busy.set(true)
   try {
-    await nativePost('/api/send', { key: selectedKey(), text, files, replyToId: replyTo()?.guid ?? null })
-    draft.set(''); outgoing.set([]); replyTo.set(null)
-    await select(selectedKey())
-    setTimeout(() => select(selectedKey()), 1000)
+    const result = await nativePost('/api/send', { key, text, files, replyToId: reply?.guid ?? null })
+    localSends.set(localSends().map(m => m.guid === guid ? { ...m, pending: false, messageId: result.id } : m))
+    if (selectedKey() === key)
+      void select(key)
   }
-  catch (error) { say(error.message) }
+  catch (error) {
+    localSends.set(localSends().filter(m => m.guid !== guid))
+    if (selectedKey() === key && !draft() && !outgoing().length) {
+      draft.set(text); outgoing.set(files); replyTo.set(reply)
+    }
+    say(error.message)
+  }
   finally { busy.set(false) }
 }
 
@@ -336,14 +370,19 @@ async function openResult(hit) {
 }
 
 onMount(async () => {
-  await refresh()
-  const remembered = await nativeCraft().storage.get('selected')
-  if (rows().some(c => c.key === remembered)) await select(remembered)
   onDestroy(nativeEvents(async event => {
     if (event.type === 'whatsapp') { whatsapp.set(event.link); await updateQR(); if (event.link.phase === 'open') { connecting.set(''); await refresh() } }
     if (['changed', 'settings', 'sources', 'access'].includes(event.type)) await refresh()
-    if (event.type === 'incoming' && !nativeCraft().navigation.isFocused()) nativeCraft().notifications.show({ id: `attic-${event.key}-${event.at}`, title: event.title, body: event.text })
+    if (event.type === 'incoming') {
+      if (selectedKey() === event.key)
+        void select(event.key)
+      if (!nativeCraft().navigation.isFocused())
+        await nativeCraft().notifications.show({ id: `attic-${event.key}-${event.at}`, title: event.title, body: event.text })
+    }
   }))
+  await refresh()
+  const remembered = await nativeCraft().storage.get('selected')
+  if (rows().some(c => c.key === remembered)) await select(remembered)
   onDestroy(desktop().onCommand(id => {
     if (id === 'appearance') scheme.set(nativeCraft().appearance.colorScheme())
     if (id === 'settings') openSettings()
@@ -399,7 +438,7 @@ onMount(async () => {
       <Button :if="!connectedSources().length && access() !== 'needs-full-disk-access'" title="Add a Source…" @click="sourceMenu()" />
     </View>
     <AtticConversationHeader :if="detail()" :conversation="detail()" :busy="busy()" @archive="archive()" @restore="unarchive()" @menu="rowMenu(detail())" />
-    <AtticTranscript :if="detail()" :messages="messages()" :conversation="detail()" :earlier="hasEarlier()" :dark="scheme() === 'dark'" @earlier="loadEarlier()" @message-menu="messageMenu($event)" @attachment="previewAttachment($event)" />
+    <AtticTranscript :if="detail()" :messages="transcriptMessages()" :conversation="detail()" :earlier="hasEarlier()" :dark="scheme() === 'dark'" @earlier="loadEarlier()" @message-menu="messageMenu($event)" @attachment="previewAttachment($event)" />
     <AtticComposer :if="detail()" v-model:draft="draft" :enabled="canSend()" :canOpen="!!detail().url" :busy="busy()" :provider="detail().provider" :reply="replyTo()" :files="outgoing()" @send="sendDraft()" @attach="attachFiles()" @open="openInApp()" @cancel-reply="replyTo.set(null)" @remove-file="outgoing.set(outgoing().filter(f => f.path !== $event.path))" />
     <Text :if="flash()" class="px-5 py-2 text-[12px] border-t" style="color: secondaryLabel; border-color: separator" :text="flash()" testID="status-message" />
   </View>
