@@ -134,14 +134,14 @@ export class SlackWorkspaces implements inbox.InboxDriver {
   async send(conversationId: string, message: inbox.OutgoingMessage): Promise<inbox.SendOutcome> {
     const driver = await this.owner(conversationId)
     if (!driver.send)
-      throw new Error('Chatfold cannot send to this Slack workspace.')
+      throw new Error('Texts cannot send to this Slack workspace.')
     return driver.send(conversationId, message)
   }
 
   async react(conversationId: string, messageId: string, reaction: string, remove?: boolean): Promise<void> {
     const driver = await this.owner(conversationId)
     if (!driver.react)
-      throw new Error('Chatfold cannot react in this Slack workspace.')
+      throw new Error('Texts cannot react in this Slack workspace.')
     return driver.react(conversationId, messageId, reaction, remove)
   }
 

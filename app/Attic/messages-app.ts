@@ -58,7 +58,7 @@ export function helperPath(): string | null {
 
 async function execute(args: string[], background: boolean): Promise<ControlOutcome> {
   if (stopped)
-    return { ok: false, code: -1, detail: 'Chatfold is closing.' }
+    return { ok: false, code: -1, detail: 'Texts is closing.' }
   const helper = helperPath()
   if (!helper)
     return { ok: false, code: -1, detail: 'The Messages helper is missing from this build.' }
