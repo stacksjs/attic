@@ -1,12 +1,15 @@
 # Native macOS app
 
-Attic's desktop screens live in `resources/native/Main.stx` and
-`resources/native/Settings.stx`. The stx compiler emits a native tree and
+Attic's desktop screens live in `resources/native/`. The stx compiler emits a native tree and
 reactive mutations. Craft draws AppKit controls directly. Transcripts use
 selectable NSTextField text, scrolling uses NSScrollView, composing uses
 NSTextView, Settings uses NSPopUpButton, and the sidebar uses NSOutlineView.
 Menus, sheets, file pickers, attachment previews, QR codes, and windows use
 macOS APIs.
+
+Settings uses the shared stx Settings components for its sidebar, panes, rows,
+and search. Clean Up runs in its own AppKit window. Closing that window leaves
+the job running, and reopening it shows the current progress.
 
 zig-js executes the compiled screen bundle. Its owned `ZigJSContext` avoids
 compatibility-class collisions with Apple frameworks. The host performs an

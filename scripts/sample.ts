@@ -89,7 +89,7 @@ async function addressBook(dir: string): Promise<void> {
   db.close()
 }
 
-export async function buildSample(root = ROOT): Promise<{ chatDb: string, addressBook: string, data: string }> {
+export async function buildSample(root = ROOT, options: { olderSam?: boolean } = {}): Promise<{ chatDb: string, addressBook: string, data: string }> {
   rmSync(root, { recursive: true, force: true })
   const chat = new FakeChatDb(join(root, 'Messages'))
   const now = Date.now()
@@ -97,11 +97,12 @@ export async function buildSample(root = ROOT): Promise<{ chatDb: string, addres
 
   // An old thread, the classic archive candidate.
   const sam = chat.direct(people.sam.handle)
-  chat.add(sam, { text: 'Did you ever find a mover for the couch?', at: at(41 * DAY) })
-  chat.add(sam, { text: 'Not yet. Everyone wants $300 for one couch.', fromMe: true, at: at(41 * DAY - 20 * MINUTE) })
-  chat.add(sam, { text: 'My cousin has a van, I can ask', at: at(40 * DAY) })
-  const thanks = chat.add(sam, { text: 'That would be amazing, thank you', fromMe: true, at: at(40 * DAY - 5 * MINUTE) })
-  chat.add(sam, { text: 'Loved “That would be amazing, thank you”', reaction: { type: 2000, target: thanks }, at: at(40 * DAY - 4 * MINUTE) })
+  const samDate = (ago: number) => at(ago + (options.olderSam ? 180 * DAY : 0))
+  chat.add(sam, { text: 'Did you ever find a mover for the couch?', at: samDate(41 * DAY) })
+  chat.add(sam, { text: 'Not yet. Everyone wants $300 for one couch.', fromMe: true, at: samDate(41 * DAY - 20 * MINUTE) })
+  chat.add(sam, { text: 'My cousin has a van, I can ask', at: samDate(40 * DAY) })
+  const thanks = chat.add(sam, { text: 'That would be amazing, thank you', fromMe: true, at: samDate(40 * DAY - 5 * MINUTE) })
+  chat.add(sam, { text: 'Loved “That would be amazing, thank you”', reaction: { type: 2000, target: thanks }, at: samDate(40 * DAY - 4 * MINUTE) })
 
   // A busy group with a photo and reactions.
   const crew = chat.group('chat481516', [people.maya.handle, people.jordan.handle, people.priya.handle], { name: 'Climbing crew', groupId: 'SAMPLE-GROUP-CLIMB' })

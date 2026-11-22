@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
+import pkg from '../package.json'
 import { buildSample } from './sample'
 
 interface Node { id: string, type: string, nativeClass: string, value?: string, label?: string, editorClass?: string, enabled?: boolean, visible: boolean, frame: number[], windowFrame?: number[], visibleRect?: number[], style?: Record<string, unknown> }
@@ -12,7 +13,7 @@ interface Snapshot { renderer: string, scriptEngine: string, appearance: string,
 const output = join(import.meta.dir, '../storage/attic/e2e-native')
 mkdirSync(output, { recursive: true })
 const run = mkdtempSync(join(output, 'run-'))
-const sample = await buildSample(join(run, 'sample'))
+const sample = await buildSample(join(run, 'sample'), { olderSam: true })
 const driver = join(run, 'driver')
 mkdirSync(driver)
 const app = process.env.ATTIC_E2E_APP || join(homedir(), 'Applications/Attic.app')
@@ -48,6 +49,7 @@ async function action(action: string, target?: string, value?: string, name = 'm
   const id = String(++sequence).padStart(4, '0')
   await Bun.write(join(driver, `action-${id}.json`), JSON.stringify({ action, target, value, window: name, ...(action === 'command' ? { id: target } : {}), ...(action === 'resize' ? {width:Number(target),height:Number(value)} : {}) }))
   for (let i = 0; i < 100; i++) {
+    if (child.exitCode !== null) throw new Error(`App exited (${child.exitCode}) during ${action} ${target ?? ''}`)
     const file = Bun.file(join(driver, `result-${id}.json`))
     if (await file.exists()) {
       const result = await file.json()
@@ -98,14 +100,33 @@ try {
   await wait('Resurface setting finishes saving before another edit', s => node(s,'resurface','settings')?.value === 'stay' && node(s,'removal','settings')?.enabled === true && node(s,'settings-note','settings')?.value === 'Settings saved.')
   await action('pick', 'removal', 'off', 'settings')
   await wait('Settings changes persist', s => node(s, 'resurface', 'settings')?.value === 'stay' && node(s, 'removal', 'settings')?.value === 'off' && node(s, 'settings-note', 'settings')?.value === 'Settings saved.')
+  await action('click', 'settings-item-rules', undefined, 'settings')
+  await wait('Settings sidebar opens Always Archive', s => !!window(s, 'settings')?.nodes.some(n => n.visible && n.value === 'No rules yet') && !node(s, 'removal', 'settings')?.visible)
+  await action('click', 'settings-item-phone', undefined, 'settings')
+  await wait('Settings sidebar opens Phone', s => node(s, 'pair-phone', 'settings')?.visible === true)
+  await action('click', 'settings-item-about', undefined, 'settings')
+  await wait('About shows the running Attic version', s => node(s, 'settings-version', 'settings')?.value === pkg.version && node(s, 'settings-version', 'settings')?.visible === true)
+  const settingsSearch = window((await state())!, 'settings')?.nodes.find(n => n.nativeClass === 'NSSearchField' && n.visible)
+  if (!settingsSearch) throw new Error('Native Settings search field is missing')
+  await action('fill', settingsSearch.id, 'when you archive', 'settings')
+  await wait('Settings search finds the Archive preference', s => !!window(s, 'settings')?.nodes.some(n => n.visible && n.value === 'When you archive'))
+  await action('fill', settingsSearch.id, '', 'settings')
+  await action('click', 'settings-item-archiving', undefined, 'settings')
+  await wait('Settings sidebar returns to Archiving', s => node(s, 'removal', 'settings')?.visible === true)
   await action('close', undefined, undefined, 'settings')
   await wait('Settings disposes its window', s => !window(s, 'settings'))
   await action('command', 'settings')
   await wait('Reopened Settings restores saved values', s => node(s, 'resurface', 'settings')?.value === 'stay' && node(s, 'removal', 'settings')?.value === 'off')
   await action('close', undefined, undefined, 'settings')
   await action('click', 'cleanup')
-  await wait('Clean Up opens a sheet sized to its content', s => !!node(s, 'cleanup-dialog')?.visible && node(s, 'cleanup-dialog')!.frame[3]! >= 290)
-  await action('click', 'cleanup-close')
+  await wait('Clean Up opens a native window and counts conversations', s => node(s, 'cleanup-window', 'cleanup')?.visible === true && node(s, 'cleanup-count', 'cleanup')?.value === '0 conversations')
+  await action('pick', 'cleanup-cutoff', '182', 'cleanup')
+  await wait('Clean Up updates the archive preview for another cutoff', s => node(s, 'cleanup-cutoff', 'cleanup')?.value === '182' && node(s, 'cleanup-count', 'cleanup')?.value === '1 conversation' && node(s, 'cleanup-start', 'cleanup')?.enabled === true)
+  await action('screenshot', undefined, undefined, 'cleanup')
+  await action('click', 'cleanup-start', undefined, 'cleanup')
+  await wait('Clean Up archives the matching conversation and refreshes the preview', s => node(s, 'cleanup-count', 'cleanup')?.value === '0 conversations' && !!window(s, 'cleanup')?.nodes.some(n => n.visible && n.value === '1 of 1 processed. 1 archived.'))
+  await action('click', 'cleanup-close', undefined, 'cleanup')
+  await wait('Closing Clean Up returns to the main window', s => !window(s, 'cleanup') && !!window(s))
   await action('pick', 'mailboxes', 'all')
   const rosa = window((await state())!)!.nodes.find(n => n.id.startsWith('row-whatsapp:15550007777'))
   if (!rosa) throw new Error('Sample Rosa conversation is missing')
