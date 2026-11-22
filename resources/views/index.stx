@@ -88,17 +88,16 @@ const faqs = [
     .nav { gap: clamp(.85rem, 3vw, 2.25rem); }
     .nav a, .footer a { color: var(--muted); font-size: .875rem; font-weight: 500; text-decoration: none; }
     .nav a:hover, .footer a:hover { color: var(--ink); text-decoration: underline; }
-    .hero { display: grid; grid-template-columns: minmax(0, .81fr) minmax(0, 1.45fr); gap: clamp(1.5rem, 4vw, 4rem); align-items: center; padding-block: clamp(3.25rem, 7vw, 7rem); }
+    .hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.3fr); gap: clamp(1.5rem, 4vw, 4rem); align-items: center; padding-block: clamp(3.25rem, 6.5vw, 6rem); }
     .display { font-family: 'Newsreader', Georgia, serif; font-weight: 500; letter-spacing: -.055em; }
-    h1.display { font-size: clamp(3.35rem, 6vw, 6rem); line-height: .94; }
+    h1.display { font-size: clamp(2.45rem, 5vw, 4.55rem); line-height: .94; }
     h1 span { display: block; color: var(--accent); }
     h2.display { font-size: clamp(2.65rem, 5vw, 4.5rem); line-height: 1; }
     .intro { margin-top: 1.45rem; max-width: 29ch; color: var(--muted); font-size: clamp(1rem, 1.35vw, 1.16rem); }
     .actions { margin-top: 1.85rem; }
     .download { min-height: 3rem; padding: .65rem 1.05rem; border-radius: .55rem; color: var(--action-ink); background: var(--action); font-size: .925rem; font-weight: 650; text-decoration: none; }
     .download:hover { background: var(--action-hover); }
-    .download-mark { width: .82rem; height: .82rem; position: relative; border-bottom: 1px solid currentColor; }
-    .download-mark::before { content: ''; position: absolute; width: .42rem; height: .42rem; inset: .05rem auto auto .2rem; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg); }
+    .download-mark { width: 1rem; height: 1rem; }
     .system { color: var(--muted); margin-top: .62rem; font-size: .8rem; }
     .frame { background: radial-gradient(ellipse at 88% 0%, var(--halo), transparent 72%), var(--panel); border: 1px solid var(--line); border-radius: clamp(.75rem, 2vw, 1.2rem); padding: clamp(.6rem, 2vw, 1.65rem); }
     .frame img { width: 100%; border-radius: .55rem; box-shadow: 0 .65rem 1.75rem var(--shadow); }
@@ -129,6 +128,7 @@ const faqs = [
     }
     @media (max-width: 44rem) {
       .hero, .workflow, .faq { grid-template-columns: minmax(0, 1fr); }
+      h1.display { font-size: clamp(2.5rem, 12.5vw, 3.6rem); }
       .workflow .frame { order: 1; }
       .channels { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
       .header { min-height: 4.4rem; }
@@ -159,7 +159,7 @@ const faqs = [
         <p class="intro">One Mac inbox for Messages, WhatsApp, Slack, and Discord, with a searchable archive you keep.</p>
         <div class="actions">
           <a class="inline-flex gap-2 items-center download" href="{{ download }}">
-            <span class="download-mark" aria-hidden="true"></span> Download for Mac
+            <span class="download-mark i-hugeicons-download-01" aria-hidden="true"></span> Download for Mac
           </a>
           <p class="system">For Macs with Apple silicon</p>
         </div>
