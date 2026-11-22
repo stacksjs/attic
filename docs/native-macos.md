@@ -11,15 +11,17 @@ Settings uses the shared stx Settings components for its sidebar, panes, rows,
 and search. Clean Up runs in its own AppKit window. Closing that window leaves
 the job running, and reopening it shows the current progress.
 
-**Settings → Software Update** uses stx's `SettingsUpdateRow`. The signed app
-checks GitHub on startup and uses the active `gh auth login` session to read the
-private Attic releases. It verifies the signed manifest, the ZIP's digest and
-the new bundle's Developer ID team and bundle identifier before replacement.
+**Settings → Software Update** uses stx's `SettingsUpdateRow`. The app checks
+the [public Attic downloads](https://github.com/stacksjs/attic-downloads/releases)
+over HTTPS without signing in. It verifies the signed manifest, the ZIP's
+digest and the new bundle's Developer ID team and bundle identifier before
+replacement.
 
 On an Apple Silicon Mac, `bun run release:patch` bumps and tags the app through
-Buddy, builds a Developer ID DMG and ZIP, and uploads both and the signed update
-manifest to the private GitHub release. Use `bun run release:macos` to resume
-publishing assets for the tag at HEAD. The signing key is read from
+Buddy in the private source repository. It builds a Developer ID DMG and ZIP,
+then publishes them with the signed update manifest in the public downloads
+repository. Use `bun run release:macos` to resume publishing the tag at HEAD.
+Only the publisher needs a GitHub CLI login. The signing key is read from
 `ATTIC_UPDATE_KEY_FILE` or `DESKTOP_UPDATE_PRIVATE_KEY`, with a default file
 under `~/Library/Application Support/Attic Release/`. Keep this key private.
 Set `DESKTOP_NOTARY_PROFILE` or the App Store Connect API key variables to

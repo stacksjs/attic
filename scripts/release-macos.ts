@@ -9,8 +9,11 @@ import { ATTIC_RELEASE_REPO, manifestAsset, UPDATE_KEYS, updateArchive, updateAr
 
 const root = resolve(import.meta.dir, '..')
 
-async function run(command: string[], options: { capture?: boolean, env?: Record<string, string | undefined> } = {}): Promise<string> {
-  const child = Bun.spawn(command, { cwd: root, env: { ...process.env, ...options.env }, stdout: options.capture ? 'pipe' : 'inherit', stderr: 'inherit' })
+async function run(command: string[], options: { capture?: boolean, input?: object, env?: Record<string, string | undefined> } = {}): Promise<string> {
+  const child = Bun.spawn(command, {
+    cwd: root, env: { ...process.env, ...options.env }, stdin: options.input ? Buffer.from(JSON.stringify(options.input)) : 'ignore',
+    stdout: options.capture ? 'pipe' : 'inherit', stderr: 'inherit',
+  })
   const output = options.capture ? await new Response(child.stdout).text() : ''
   if (await child.exited !== 0)
     throw new Error(`${command[0]} ${command[1]} failed.`)
@@ -43,10 +46,9 @@ async function buildAssets(directory: string, tag: string, revision: string, key
   const identity = await developerIdentity()
   const hasNotaryKey = process.env.APP_STORE_CONNECT_API_KEY_ID && process.env.APP_STORE_CONNECT_API_ISSUER_ID
     && (process.env.APP_STORE_CONNECT_API_KEY_PATH || process.env.APP_STORE_CONNECT_API_KEY)
-  const notarize = process.env.DESKTOP_NOTARY_PROFILE || hasNotaryKey ? '1' : undefined
-  if (!notarize)
-    console.warn('Building with Developer ID signing. Configure a notary profile or App Store Connect API key to notarize the release.')
-  await run(['bun', 'run', 'build:app'], { env: { DESKTOP_SIGNING_IDENTITY: identity, DESKTOP_NOTARIZE: notarize } })
+  if (!process.env.DESKTOP_NOTARY_PROFILE && !hasNotaryKey)
+    throw new Error('Configure a notary profile or App Store Connect API key to publish a macOS release.')
+  await run(['bun', 'run', 'build:app'], { env: { DESKTOP_SIGNING_IDENTITY: identity, DESKTOP_NOTARIZE: '1' } })
 
   const releases = dirname(directory)
   mkdirSync(releases, { recursive: true })
@@ -54,6 +56,7 @@ async function buildAssets(directory: string, tag: string, revision: string, key
   try {
     const dmg = `Attic-${tag.slice(1)}.dmg`
     const diskImage = join(root, 'storage/framework/desktop-dmg', dmg)
+    await run(['xcrun', 'stapler', 'validate', diskImage])
     const mount = join(temporary, 'mount')
     mkdirSync(mount)
     await run(['hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, diskImage], { capture: true })
@@ -61,6 +64,11 @@ async function buildAssets(directory: string, tag: string, revision: string, key
     const archive = join(temporary, updateArchive(tag))
     try {
       await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', bundle])
+      await run(['xcrun', 'stapler', 'validate', bundle])
+      for await (const file of new Bun.Glob('**/*').scan({ cwd: bundle, dot: true, onlyFiles: true })) {
+        if (/(?:^|\/)(?:\.git(?:\/|$)|\.env(?:\.|$))|\.(?:p8|p12|key|sqlite3?|db)$/i.test(file))
+          throw new Error(`Private build material was packaged in the app: ${file}`)
+      }
       await run(['/usr/bin/ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', bundle, archive])
     }
     finally { await run(['hdiutil', 'detach', mount], { capture: true }) }
@@ -76,8 +84,31 @@ async function buildAssets(directory: string, tag: string, revision: string, key
   finally { rmSync(temporary, { recursive: true, force: true }) }
 }
 
+interface PublicRelease {
+  tag_name: string
+  draft: boolean
+  assets: Array<{ name: string, digest: string }>
+}
+
+async function publicRelease(tag: string): Promise<PublicRelease> {
+  const endpoint = `repos/${ATTIC_RELEASE_REPO}/releases`
+  const pages = JSON.parse(await run(['gh', 'api', `${endpoint}?per_page=100`, '--paginate', '--slurp'], { capture: true })) as PublicRelease[][]
+  const existing = pages.flat().find(release => release.tag_name === tag)
+  if (existing)
+    return existing
+
+  return JSON.parse(await run(['gh', 'api', '-X', 'POST', endpoint, '--input', '-'], {
+    capture: true,
+    input: {
+      tag_name: tag,
+      name: `Attic ${tag.slice(1)}`,
+      draft: true,
+      body: `Download **Attic-${tag.slice(1)}.dmg** on an Apple silicon Mac. Open the disk image and drag Attic into Applications.\n\nUse **Settings → Software Update** in Attic to get future releases.`,
+    },
+  }))
+}
+
 async function publish(directory: string, tag: string, revision: string, key: string): Promise<void> {
-  const release = JSON.parse(await run(['gh', 'api', `repos/${ATTIC_RELEASE_REPO}/releases/tags/${tag}`], { capture: true }))
   if (!existsSync(directory))
     await buildAssets(directory, tag, revision, key)
 
@@ -90,10 +121,11 @@ async function publish(directory: string, tag: string, revision: string, key: st
   if (manifest.sourceRevision !== revision || manifest.version !== tag.slice(1) || manifest.url !== updateArchiveUrl(tag) || manifest.sha256 !== zip.sha256 || manifest.size !== zip.size)
     throw new Error('The staged update does not match the tagged release.')
 
-  // Advertise the manifest only after both downloads are available.
+  const release = await publicRelease(tag)
+  // The latest URL must keep serving the prior complete release until every asset is present.
   for (const file of [archive, diskImage, manifestFile]) {
     const name = basename(file)
-    const existing = release.assets.find((asset: { name: string }) => asset.name === name)
+    const existing = release.assets.find(asset => asset.name === name)
     if (existing) {
       if (existing.digest !== `sha256:${(await describeArtifact(file)).sha256}`)
         throw new Error(`GitHub already has a different ${name}.`)
@@ -101,7 +133,9 @@ async function publish(directory: string, tag: string, revision: string, key: st
     }
     await run(['gh', 'release', 'upload', tag, file, '--repo', ATTIC_RELEASE_REPO])
   }
-  console.log(`Published Attic ${tag.slice(1)} at ${release.html_url}`)
+  if (release.draft)
+    await run(['gh', 'release', 'edit', tag, '--repo', ATTIC_RELEASE_REPO, '--draft=false', '--latest'])
+  console.log(`Published Attic ${tag.slice(1)} at https://github.com/${ATTIC_RELEASE_REPO}/releases/tag/${tag}`)
 }
 
 const args = process.argv.slice(2)
