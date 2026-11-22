@@ -203,7 +203,7 @@ function attachmentHtml(message: TranscriptMessage, folder: string): string {
   const items = message.attachments.map((a) => {
     const name = escapeHtml(a.name)
     if (a.status !== 'copied' || !a.storedPath)
-      return `<span class="gone">${name} was no longer on this Mac when Attic copied the conversation.</span>`
+      return `<span class="gone">${name} was no longer on this Mac when Chatfold copied the conversation.</span>`
     const href = `${folder}/${encodeURIComponent(basename(a.storedPath))}`
     if (a.mimeType?.startsWith('image/'))
       return `<a href="${href}"><img src="${href}" alt="${name}" loading="lazy"></a>`
@@ -290,8 +290,8 @@ export function renderConversation(options: {
   const header = `<header>`
     + `${options.index ? `<div class="meta"><a href="${options.index}">All conversations</a></div>` : ''}`
     + `<h1>${escapeHtml(title)}</h1><div class="meta">${meta}</div></header>`
-  const empty = `<div class="event">Attic kept no messages for this conversation.</div>`
-  const footer = `<footer>Exported from Attic on ${escapeHtml(dateLabel(options.now ?? Date.now()))}. `
+  const empty = `<div class="event">Chatfold kept no messages for this conversation.</div>`
+  const footer = `<footer>Exported from Chatfold on ${escapeHtml(dateLabel(options.now ?? Date.now()))}. `
     + `This page and the files beside it need no app and no network.</footer>`
   return page(title, header + (body.length ? body.join('\n') : empty) + footer)
 }
@@ -302,10 +302,10 @@ export function renderIndex(entries: ExportedConversation[], now = Date.now()): 
     + `<div class="meta">${entry.messages} message${entry.messages === 1 ? '' : 's'}`
     + `${entry.attachments ? ` · ${entry.attachments} attachment${entry.attachments === 1 ? '' : 's'}` : ''}</div></li>`).join('\n')
   const total = entries.reduce((sum, entry) => sum + entry.messages, 0)
-  const header = `<header><h1>Attic export</h1><div class="meta">`
+  const header = `<header><h1>Chatfold export</h1><div class="meta">`
     + `<span>${entries.length} conversation${entries.length === 1 ? '' : 's'}</span><span>${total} message${total === 1 ? '' : 's'}</span>`
     + `<span>${escapeHtml(dateLabel(now))}</span></div></header>`
-  return page('Attic export', `${header}<ul class="contents">${list}</ul>`
+  return page('Chatfold export', `${header}<ul class="contents">${list}</ul>`
     + `<footer>Every page here reads on its own, with its attachments in the folder beside it.</footer>`)
 }
 
@@ -392,14 +392,14 @@ export async function exportArchive(options: ExportOptions): Promise<ExportResul
 }
 
 /**
- * Where one export goes: `Attic Export 2026-11-06` inside `parent`, with a
+ * Where one export goes: `Chatfold Export 2026-11-06` inside `parent`, with a
  * number added when that folder is already there, so a second export of the
  * day never writes over the first.
  */
 export function exportFolder(parent: string, now = Date.now(), exists: (path: string) => boolean = existsSync): string {
   const date = new Date(now)
   const stamp = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-  const base = `Attic Export ${stamp}`
+  const base = `Chatfold Export ${stamp}`
   let candidate = base
   for (let n = 2; exists(join(parent, candidate)); n++)
     candidate = `${base} ${n}`
