@@ -1,5 +1,15 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/attic/compare/v0.3.4...v0.3.5)
+
+## ✨ Features
+
+- distribute Attic publicly with anonymous updates ([4e62cb2](https://github.com/stacksjs/attic/commit/4e62cb2)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/attic/compare/v0.3.2...v0.3.4)
 
 ## ✨ Features
