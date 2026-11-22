@@ -1,5 +1,20 @@
 # Attic Changelog
 
+[Compare changes](https://github.com/stacksjs/texts/compare/v0.3.9...v0.3.10)
+
+## 🐛 Bug Fixes
+
+- post alerts from the signed Texts app ([443d6bc](https://github.com/stacksjs/texts/commit/443d6bc)) _(by Chris <chrisbreuer93@gmail.com>)_
+- package the native Texts notification bridge ([ff62df9](https://github.com/stacksjs/texts/commit/ff62df9)) _(by Chris <chrisbreuer93@gmail.com>)_
+- request notification permission in the native host ([5b500d0](https://github.com/stacksjs/texts/commit/5b500d0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- show Texts send feedback before refreshing history ([e38c91c](https://github.com/stacksjs/texts/commit/e38c91c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- keep iMessage history scans off the send path ([85d9f49](https://github.com/stacksjs/texts/commit/85d9f49)) _(by Chris <chrisbreuer93@gmail.com>)_
+- restore Messages after sending from Texts ([fca2338](https://github.com/stacksjs/texts/commit/fca2338)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/texts/compare/v0.3.8...v0.3.9)
 
 ## ✨ Features
