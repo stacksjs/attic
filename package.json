@@ -84,21 +84,21 @@
     "test:native": "bun scripts/e2e-native.ts"
   },
   "dependencies": {
-    "@stacksjs/actions": "^0.75.628",
-    "@stacksjs/chat": "^0.75.628",
-    "@stacksjs/components": "^0.2.925",
-    "@stacksjs/desktop": "^0.2.925",
-    "@stacksjs/desktop-build": "0.75.628",
+    "@stacksjs/actions": "^0.75.716",
+    "@stacksjs/chat": "^0.75.716",
+    "@stacksjs/components": "^0.2.960",
+    "@stacksjs/desktop": "^0.2.960",
+    "@stacksjs/desktop-build": "0.75.716",
     "@stacksjs/env": "^0.75.628",
     "@stacksjs/path": "^0.75.628",
-    "@stacksjs/stx": "^0.2.925",
-    "@stacksjs/ts-css": "^0.3.27",
+    "@stacksjs/stx": "^0.2.960",
+    "@stacksjs/ts-css": "^0.3.29",
     "baileys": "^7.0.0-rc14",
-    "craft-native": "0.0.529",
-    "pickier": "^0.1.65",
+    "craft-native": "0.0.548",
+    "pickier": "^0.1.95",
     "stacks": "^0.75.628",
-    "ts-images": "^0.2.25",
-    "ts-qr-codes": "^0.1.8"
+    "ts-images": "^0.2.35",
+    "ts-qr-codes": "^0.1.9"
   },
   "workspaces": [
     "storage/framework",
